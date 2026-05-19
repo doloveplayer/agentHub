@@ -1,0 +1,9 @@
+{
+  "name": "@agenthub/shared",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/types.ts",
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

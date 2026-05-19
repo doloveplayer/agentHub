@@ -1,0 +1,38 @@
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.next/
+
+# Docker sandbox runtime
+.sandboxes/
+
+# Claude Code local state
+.claude/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Prisma
+apps/api/prisma/migrations/*/migration_lock.toml
+
+# Temp files
+tmp/
+temp/
+*.tmp

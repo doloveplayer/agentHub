@@ -1,0 +1,5 @@
+{
+  "name": "agent-hub",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"]
+}

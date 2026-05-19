@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(uuid())
+  githubId  Int       @unique
+  login     String
+  avatarUrl String
+  email     String?
+  sessions  Session[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Session {
+  id                 String         @id @default(uuid())
+  title              String         @default("New Session")
+  type               String         @default("solo")
+  userId             String
+  sandboxContainerId String?
+  user               User           @relation(fields: [userId], references: [id])
+  messages           Message[]
+  agents             SessionAgent[]
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+}
+
+model SessionAgent {
+  id        String  @id @default(uuid())
+  sessionId String
+  agentId   String
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  agent     Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, agentId])
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  sessionId  String
+  senderType String   @default("human")
+  agentId    String?
+  content    String
+  status     String   @default("done")
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Agent {
+  id            String         @id @default(uuid())
+  name          String         @unique
+  displayName   String
+  description   String
+  systemPrompt  String
+  isActive      Boolean        @default(true)
+  sessionAgents SessionAgent[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}

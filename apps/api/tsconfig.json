@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "jsx": "react-jsx",
+    "types": ["node"],
+    "paths": { "@agenthub/shared": ["../../packages/shared/src"] }
+  },
+  "include": ["src/**/*"]
+}
