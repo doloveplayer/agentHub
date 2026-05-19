@@ -5,6 +5,7 @@ import { useChat } from '../hooks/useChat';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { AgentStatusPanel } from './AgentStatusPanel';
+import { agentColor } from './AgentMentionPopup';
 import { Wrench, FileText, GitBranch, CheckCircle, Shield, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Message, AgentConfig } from '@agenthub/shared';
 
@@ -133,6 +134,21 @@ export function ChatView() {
     <div className="flex-1 flex h-full">
       {/* Chat area */}
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Session header — show participants for group sessions */}
+        {activeSession?.type === 'group' && (
+          <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-2">
+            <span className="text-xs text-gray-500 mr-1">Participants:</span>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 border border-blue-700 text-blue-300">You</span>
+            {sessionAgents.map((a) => (
+              <span key={a.id}
+                className="text-xs px-2 py-0.5 rounded-full border text-gray-300"
+                style={{ borderColor: agentColor(a.name), backgroundColor: agentColor(a.name) + '20' }}
+              >
+                {a.displayName}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex-1 overflow-y-auto chat-scroll">
           {messages.map((msg: any) => (
             <React.Fragment key={msg.id}>

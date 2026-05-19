@@ -232,11 +232,16 @@ async function handleChatMessage(
     return;
   }
 
+  // / 指令透明透传：跳过 mention 解析和 system prompt，原样转发给 Claude Code
+  const isSlashCommand = prompt.startsWith('/');
+
   // Normalize mentions: if explicit mentions provided, use them; otherwise single agent
   const mentions: { agentId: string; subPrompt: string; messageId: string }[] =
-    (data.mentions && data.mentions.length > 0)
-      ? data.mentions
-      : [{ agentId: '', subPrompt: prompt, messageId: data.messageId || generateId() }];
+    isSlashCommand
+      ? [{ agentId: '', subPrompt: prompt, messageId: data.messageId || generateId() }]
+      : (data.mentions && data.mentions.length > 0)
+        ? data.mentions
+        : [{ agentId: '', subPrompt: prompt, messageId: data.messageId || generateId() }];
 
   const PER_SESSION_MAX = 3;
 
@@ -282,7 +287,10 @@ async function handleChatMessage(
     // Build agent-specific prompt
     let agentPrompt = mention.subPrompt;
     const history = await buildHistory(sessionId);
-    if (mention.agentId) {
+    if (isSlashCommand) {
+      // / 指令透明透传：不注入 system prompt，原样转发
+      // Claude Code 自行识别和执行 /commands
+    } else if (mention.agentId) {
       const agent = await prisma.agent.findUnique({ where: { id: mention.agentId } });
       if (agent) {
         agentPrompt = `${agent.systemPrompt}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;

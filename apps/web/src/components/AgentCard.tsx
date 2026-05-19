@@ -6,14 +6,35 @@ interface Props {
   displayName: string;
   status: 'running' | 'done' | 'idle';
   events: AgentEvent[];
-  contextUsed?: string;
+  thinkingLevel?: string;
+  contextUsage?: string;
   files?: string[];
 }
 
-export function AgentCard({ agentId, displayName, status, events }: Props) {
+const THINKING_LABELS: Record<string, string> = {
+  'code-agent': 'high',
+  'review-agent': 'standard',
+  'devops-agent': 'standard',
+};
+
+export function AgentCard({ agentId, displayName, status, events, thinkingLevel, contextUsage, files }: Props) {
   const lastEvent = events[events.length - 1];
   const toolEvents = events.filter((e) => e.type === 'tool_use');
   const subagentEvents = events.filter((e) => e.type === 'subagent_start' || e.type === 'subagent_result');
+
+  // Extract files from tool_use events
+  const touchedFiles: string[] = files ?? [];
+  if (touchedFiles.length === 0) {
+    for (const ev of toolEvents) {
+      const input = ev.details.input as Record<string, unknown> | undefined;
+      if (input) {
+        const path = (input.file_path || input.path || input.filePath) as string | undefined;
+        if (path && !touchedFiles.includes(path)) touchedFiles.push(path);
+      }
+    }
+  }
+
+  const level = thinkingLevel ?? THINKING_LABELS[agentId] ?? 'standard';
 
   return (
     <div className="bg-gray-800/80 border border-gray-700 rounded-lg p-3 mb-2">
@@ -28,16 +49,31 @@ export function AgentCard({ agentId, displayName, status, events }: Props) {
         <span className="ml-auto text-[10px] text-gray-500">{status}</span>
       </div>
 
-      {status === 'running' && lastEvent && (
+      {status === 'running' && (
         <div className="mt-2 text-[11px] text-gray-400 space-y-0.5">
           <div className="flex justify-between">
-            <span>Current</span>
-            <span className="text-purple-400 truncate ml-2">
-              {lastEvent.type === 'tool_use' && `Running: ${lastEvent.details.toolName ?? 'tool'}`}
-              {lastEvent.type === 'tool_result' && 'Processing result...'}
-              {lastEvent.type === 'subagent_start' && `Sub-agent: ${lastEvent.details.agentType ?? '?'}`}
-            </span>
+            <span>Think</span><span className="text-gray-300">{level}</span>
           </div>
+          {contextUsage && (
+            <div className="flex justify-between">
+              <span>Context</span><span className="text-gray-300">{contextUsage}</span>
+            </div>
+          )}
+          {lastEvent && (
+            <div className="flex justify-between">
+              <span>Current</span>
+              <span className="text-purple-400 truncate ml-2">
+                {lastEvent.type === 'tool_use' && `${lastEvent.details.toolName ?? 'tool'}`}
+                {lastEvent.type === 'tool_result' && 'Processing result...'}
+                {lastEvent.type === 'subagent_start' && `Sub: ${lastEvent.details.agentType ?? '?'}`}
+              </span>
+            </div>
+          )}
+          {touchedFiles.length > 0 && (
+            <div className="flex justify-between">
+              <span>Files</span><span className="truncate ml-2">{touchedFiles.slice(0, 3).join(', ')}</span>
+            </div>
+          )}
         </div>
       )}
 
