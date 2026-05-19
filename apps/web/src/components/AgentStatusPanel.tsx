@@ -8,11 +8,12 @@ const EMPTY_ARR: any[] = [];
 
 interface Props {
   sessionAgents: AgentConfig[];
+  onStopAgent?: (agentMessageId: string) => void;
 }
 
 type PanelTab = 'Files' | 'Agents' | 'Tasks';
 
-export function AgentStatusPanel({ sessionAgents }: Props) {
+export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>('Agents');
   const agentEvents = useAppStore((s) => s.agentEvents);
   const messages = useAppStore((s) => {
@@ -70,7 +71,10 @@ export function AgentStatusPanel({ sessionAgents }: Props) {
             {agentStates.length === 0 && (
               <p className="text-xs text-gray-500 text-center py-4">No agents in this session</p>
             )}
-            {agentStates.map(({ agent, status, events, contextUsage }) => (
+            {agentStates.map(({ agent, status, events, contextUsage }) => {
+              // Find the running message for this agent to pass its ID to onStop
+              const runningMsg = messages.find((m) => m.agentId === agent.id && m.status === 'streaming');
+              return (
               <AgentCard
                 key={agent.id}
                 agentId={agent.name}
@@ -78,8 +82,10 @@ export function AgentStatusPanel({ sessionAgents }: Props) {
                 status={status}
                 events={events}
                 contextUsage={contextUsage}
+                onStop={runningMsg && onStopAgent ? () => onStopAgent(runningMsg.id) : undefined}
               />
-            ))}
+              );
+            })}
           </>
         )}
         {activeTab === 'Files' && (

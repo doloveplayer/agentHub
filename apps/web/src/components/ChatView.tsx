@@ -24,7 +24,7 @@ export function ChatView() {
   const agentEvents = useAppStore((s) => s.agentEvents);
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const { send } = useChat(activeSessionId ?? '');
+  const { send, stopAgent } = useChat(activeSessionId ?? '');
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
 
   // Agents lookup by id
@@ -168,7 +168,7 @@ export function ChatView() {
 
       {/* Agent status panel — only for group sessions */}
       {activeSession?.type === 'group' && sessionAgents.length > 0 && (
-        <AgentStatusPanel sessionAgents={sessionAgents} />
+        <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} />
       )}
     </div>
   );

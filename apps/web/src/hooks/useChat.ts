@@ -172,6 +172,16 @@ export function useChat(sessionId: string) {
     }
   }, [sessionId, agents, addMessage, addStreamingMessage, ensureConnection]);
 
+  const stopAgent = useCallback(async (agentMessageId: string) => {
+    try {
+      const ws = await ensureConnection();
+      ws.send(JSON.stringify({ type: 'stop_agent', agentMessageId }));
+      removeStreamingMessage(sessionId, agentMessageId);
+    } catch (err) {
+      console.error('[WS] Failed to stop agent:', err);
+    }
+  }, [sessionId, ensureConnection, removeStreamingMessage]);
+
   const connect = useCallback(() => {
     ensureConnection().catch((err) => console.error('[WS] Connect failed:', err));
   }, [ensureConnection]);
@@ -180,5 +190,5 @@ export function useChat(sessionId: string) {
     if (sessionId) connect();
   }, [sessionId, connect]);
 
-  return { send, connect };
+  return { send, connect, stopAgent };
 }

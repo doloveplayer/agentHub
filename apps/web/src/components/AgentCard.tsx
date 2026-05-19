@@ -1,3 +1,4 @@
+import { Square } from 'lucide-react';
 import { agentColor } from './AgentMentionPopup';
 import type { AgentEvent } from '../store/appStore';
 
@@ -9,6 +10,7 @@ interface Props {
   thinkingLevel?: string;
   contextUsage?: string;
   files?: string[];
+  onStop?: () => void;
 }
 
 const THINKING_LABELS: Record<string, string> = {
@@ -17,7 +19,7 @@ const THINKING_LABELS: Record<string, string> = {
   'devops-agent': 'standard',
 };
 
-export function AgentCard({ agentId, displayName, status, events, thinkingLevel, contextUsage, files }: Props) {
+export function AgentCard({ agentId, displayName, status, events, thinkingLevel, contextUsage, files, onStop }: Props) {
   const lastEvent = events[events.length - 1];
   const toolEvents = events.filter((e) => e.type === 'tool_use');
   const subagentEvents = events.filter((e) => e.type === 'subagent_start' || e.type === 'subagent_result');
@@ -46,7 +48,18 @@ export function AgentCard({ agentId, displayName, status, events, thinkingLevel,
           }`}
         />
         <span className="text-sm font-medium text-gray-200">{displayName}</span>
-        <span className="ml-auto text-[10px] text-gray-500">{status}</span>
+        {status === 'running' && onStop && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onStop(); }}
+            className="ml-auto p-1 rounded hover:bg-red-900/50 text-red-400 hover:text-red-300 transition"
+            title="Stop agent"
+          >
+            <Square className="w-3 h-3" />
+          </button>
+        )}
+        {status !== 'running' && (
+          <span className="ml-auto text-[10px] text-gray-500">{status}</span>
+        )}
       </div>
 
       {status === 'running' && (

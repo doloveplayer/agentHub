@@ -209,6 +209,9 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'permission_response':
       handlePermissionResponse(sessionId, data);
       break;
+    case 'stop_agent':
+      handleStopAgent(sessionId, data);
+      break;
     default:
       sendTo(ws, { type: 'error', message: `Unknown message type: ${data.type}` });
   }
@@ -375,6 +378,35 @@ async function handleChatMessage(
       console.error(`[ws] Agent spawn error: ${err.message}`);
     }
   }
+}
+
+function handleStopAgent(
+  sessionId: string,
+  data: { agentMessageId: string },
+): void {
+  const stateMap = agentStates.get(sessionId);
+  if (!stateMap) {
+    broadcast(sessionId, { type: 'stream_error', error: 'No active agents in this session' });
+    return;
+  }
+  const st = stateMap.get(data.agentMessageId);
+  if (!st) {
+    broadcast(sessionId, { type: 'stream_error', error: 'Agent not found' });
+    return;
+  }
+  console.log(`[ws] Stopping agent: session=${sessionId} agentMsg=${data.agentMessageId}`);
+  clearTimeout(st.timer);
+  st.process.kill();
+  stateMap.delete(data.agentMessageId);
+  runningAgentCount = Math.max(0, runningAgentCount - 1);
+  if (stateMap.size === 0) agentStates.delete(sessionId);
+
+  prisma.message.update({
+    where: { id: data.agentMessageId },
+    data: { status: 'done' },
+  }).catch(() => {});
+
+  broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });
 }
 
 function handlePermissionResponse(
