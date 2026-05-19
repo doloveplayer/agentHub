@@ -9,6 +9,7 @@ import { PrismaClient } from '@prisma/client';
 import { config } from './config.js';
 import { attachWebSocket } from './ws/handler.js';
 import { SandboxManager } from './agent/SandboxManager.js';
+import { prisma } from './db/prisma.js';
 import authRoutes from './routes/auth.js';
 import sessionRoutes from './routes/sessions.js';
 import chatRoutes from './routes/chat.js';
@@ -24,6 +25,17 @@ try {
   execSync(`rm -rf ${config.sandbox.root}/*`, { encoding: 'utf8' });
   console.log('[startup] Cleaned orphaned sandbox directories');
 } catch { /* nothing to clean */ }
+
+// Clean up stale streaming messages from previous run
+try {
+  const result = await prisma.message.updateMany({
+    where: { status: 'streaming' },
+    data: { status: 'done' },
+  });
+  if (result.count > 0) {
+    console.log(`[startup] Reset ${result.count} stale streaming message(s) to done`);
+  }
+} catch { /* DB might not be ready or prisma not connected yet */ }
 
 // Auto-seed default agents
 async function seedDefaultAgents() {
