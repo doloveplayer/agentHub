@@ -29,6 +29,7 @@ interface AppState {
   agentEvents: Record<string, AgentEvent[]>;
   agents: AgentConfig[];
   streamingMessages: Record<string, string[]>;
+  trustMode: boolean;
 
   setToken: (token: string | null) => void;
   setUser: (user: any) => void;
@@ -40,6 +41,7 @@ interface AppState {
   setMessageStatus: (sessionId: string, msgId: string, status: string) => void;
   addAgentEvent: (messageId: string, event: AgentEvent) => void;
   addStreamingMessage: (sessionId: string, msgId: string) => void;
+  setTrustMode: (mode: boolean) => void;
   removeStreamingMessage: (sessionId: string, msgId: string) => void;
   isSessionStreaming: (sessionId: string) => boolean;
 }
@@ -53,6 +55,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   agentEvents: {},
   agents: [],
   streamingMessages: {},
+  trustMode: true,
 
   setToken: (token) => {
     if (token) localStorage.setItem('agenthub_token', token);
@@ -67,6 +70,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveSession: (id) => set({ activeSessionId: id }),
 
   setAgents: (agents) => set({ agents }),
+
+  setTrustMode: (trustMode) => set({ trustMode }),
 
   addStreamingMessage: (sessionId, msgId) => set((state) => {
     const existing = state.streamingMessages[sessionId] ?? [];

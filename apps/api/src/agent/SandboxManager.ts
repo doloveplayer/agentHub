@@ -60,6 +60,8 @@ export class SandboxManager {
       workDir?: string;
       stdin?: string;
       env?: Record<string, string>;
+      keepStdinOpen?: boolean;
+      onStdin?: (stdin: NodeJS.WritableStream) => void;
       onStdout: (chunk: string) => void;
       onStderr: (chunk: string) => void;
     },
@@ -71,21 +73,30 @@ export class SandboxManager {
       ? Object.entries(opts.env).map(([k, v]) => `${k}=${v}`)
       : undefined;
 
+    const attachStdin = !!opts.stdin || !!opts.keepStdinOpen;
+
     const exec = await container.exec({
       Cmd: command,
       WorkingDir: opts.workDir ?? '/workspace',
       AttachStdout: true,
       AttachStderr: true,
-      AttachStdin: !!opts.stdin,
+      AttachStdin: attachStdin,
       Env: envList,
     });
 
-    const stream = await exec.start({ Detach: false, Tty: false, stdin: !!opts.stdin });
+    const stream = await exec.start({ Detach: false, Tty: false, stdin: attachStdin });
 
-    // Write stdin if provided
+    // Write stdin and conditionally keep open for interactive permission responses
     const streamAny = stream as any;
     if (opts.stdin && streamAny.stdin) {
       streamAny.stdin.write(opts.stdin);
+    }
+    if (opts.keepStdinOpen && streamAny.stdin) {
+      // Prime the stdin stream so Docker properly initializes the multiplexed channel.
+      // Without this, the stdout demux can stall when stdin is attached but idle.
+      streamAny.stdin.write('\n');
+      if (opts.onStdin) opts.onStdin(streamAny.stdin);
+    } else if (opts.stdin && streamAny.stdin) {
       streamAny.stdin.end();
     }
 
@@ -119,6 +130,16 @@ export class SandboxManager {
 
     const inspect = await exec.inspect();
     return { exitCode: inspect.ExitCode ?? 0 };
+  }
+
+  /** Fire-and-forget shell command inside container (no streaming) */
+  static execShell(containerId: string, shellCmd: string): void {
+    const container = docker.getContainer(containerId);
+    container.exec({
+      Cmd: ['sh', '-c', shellCmd],
+      AttachStdout: false,
+      AttachStderr: false,
+    }).then((exec) => exec.start({ Detach: true })).catch(() => {});
   }
 
   /** Destroy Docker container */

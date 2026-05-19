@@ -24,8 +24,9 @@ export function ChatView() {
   const agentEvents = useAppStore((s) => s.agentEvents);
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const { send, stopAgent } = useChat(activeSessionId ?? '');
+  const { send, stopAgent, respondToPermission } = useChat(activeSessionId ?? '');
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
+  const [resolvedPermissions] = useState<Set<string>>(() => new Set());
 
   // Agents lookup by id
   const agentMap = new Map<string, AgentConfig>();
@@ -96,6 +97,42 @@ export function ChatView() {
     return (
       <div className="mx-4 my-1 space-y-1">
         {events.map((ev) => {
+          // Permission requests render as interactive cards with Allow/Deny
+          if (ev.type === 'permission_request') {
+            const pid = ev.details.permissionId ?? ev.id;
+            const resolved = resolvedPermissions.has(pid);
+            return (
+              <div key={ev.id} className="bg-amber-950/30 border border-amber-700/50 rounded-lg px-4 py-3 my-2">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="w-4 h-4 text-amber-400" />
+                  <span className="text-sm font-medium text-amber-300">Permission Request</span>
+                </div>
+                <div className="text-xs text-gray-400 space-y-1 mb-3">
+                  <div>Tool: <span className="text-gray-300 font-mono">{ev.details.tool ?? 'unknown'}</span></div>
+                  {ev.details.path && <div>Path: <span className="text-gray-300 font-mono">{ev.details.path}</span></div>}
+                </div>
+                {!resolved ? (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, true); }}
+                      className="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white text-xs rounded-md font-medium transition"
+                    >
+                      Allow
+                    </button>
+                    <button
+                      onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, false); }}
+                      className="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs rounded-md font-medium transition"
+                    >
+                      Deny
+                    </button>
+                  </div>
+                ) : (
+                  <span className="text-xs text-gray-500 italic">Response sent</span>
+                )}
+              </div>
+            );
+          }
+
           const isExpanded = expandedEventId === ev.id;
           return (
             <div key={ev.id}>

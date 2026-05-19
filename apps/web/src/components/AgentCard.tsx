@@ -12,11 +12,12 @@ interface Props {
 }
 
 const EVENT_ICONS: Record<string, string> = {
-  thinking: '💭',   // 💭
-  tool_use: '🔧',   // 🔧
-  tool_result: '📋', // 📋
-  subagent_start: '🔀', // 🔀
-  subagent_result: '✅',   // ✅
+  thinking: '💭',
+  tool_use: '🔧',
+  tool_result: '📋',
+  subagent_start: '🔀',
+  subagent_result: '✅',
+  permission_request: '🔐',
 };
 
 export function AgentCard({ agentId, displayName, status, events, onStop }: Props) {
@@ -73,6 +74,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop }: Prop
             ev.type === 'tool_result' ? 'text-emerald-400 bg-emerald-950/20' :
             ev.type === 'subagent_start' ? 'text-blue-300 bg-blue-950/20' :
             ev.type === 'subagent_result' ? 'text-emerald-300 bg-emerald-950/10' :
+            ev.type === 'permission_request' ? 'text-amber-300 bg-amber-950/20' :
             'text-slate-400'
           }`}>
             <span className="flex-shrink-0 w-4 text-center">{EVENT_ICONS[ev.type] ?? '·'}</span>
@@ -91,6 +93,10 @@ export function AgentCard({ agentId, displayName, status, events, onStop }: Prop
               )}
               {ev.type === 'subagent_result' && (
                 <span>{ev.details.agentType} done</span>
+              )}
+              {ev.type === 'permission_request' && (
+                <><span className="font-semibold">{ev.details.tool}</span>
+                {ev.details.path && <span className="text-slate-500"> on {ev.details.path}</span>}</>
               )}
             </span>
           </div>

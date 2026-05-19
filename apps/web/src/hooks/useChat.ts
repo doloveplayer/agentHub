@@ -16,6 +16,7 @@ interface MentionTag {
 export function useChat(sessionId: string) {
   const token = useAppStore((s) => s.token);
   const agents = useAppStore((s) => s.agents);
+  const trustMode = useAppStore((s) => s.trustMode);
   const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage } = useAppStore();
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {
@@ -165,12 +166,25 @@ export function useChat(sessionId: string) {
           messageId: am.agentMessageId,
           subPrompt: mentions.find((m) => m.agentId === am.agentId)?.subPrompt ?? content,
         })),
-        trustMode: true,
+        trustMode,
       }));
     } catch (err: any) {
       console.error('[WS] Failed to send message:', err);
     }
   }, [sessionId, agents, addMessage, addStreamingMessage, ensureConnection]);
+
+  const respondToPermission = useCallback(async (permissionId: string, allowed: boolean) => {
+    try {
+      const ws = await ensureConnection();
+      ws.send(JSON.stringify({
+        type: 'permission_response',
+        permissionId,
+        allowed,
+      }));
+    } catch (err) {
+      console.error('[WS] Failed to send permission response:', err);
+    }
+  }, [ensureConnection]);
 
   const stopAgent = useCallback(async (agentMessageId: string) => {
     try {
@@ -190,5 +204,5 @@ export function useChat(sessionId: string) {
     if (sessionId) connect();
   }, [sessionId, connect]);
 
-  return { send, connect, stopAgent };
+  return { send, connect, stopAgent, respondToPermission };
 }

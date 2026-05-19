@@ -58,3 +58,17 @@ export interface SendResponse {
   userMessageId: string;
   agentMessages: { agentMessageId: string; agentId: string }[];
 }
+
+export interface PermissionRequest {
+  permissionId: string;
+  tool: string;
+  path?: string;
+  agentMessageId: string;
+  timestamp: number;
+}
+
+export interface PermissionResponse {
+  permissionId: string;
+  allowed: boolean;
+  message?: string;
+}

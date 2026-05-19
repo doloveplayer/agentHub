@@ -73,6 +73,7 @@ export class ClaudeCodeProcess {
   private doneEmitted = false;
   private killed = false;
   private partialLine = '';  // buffer for partial lines across Docker multiplex frames
+  private stdinStream: NodeJS.WritableStream | null = null;  // unused — kept for interface compatibility
 
   onEvent(handler: EventHandler): void {
     this.handlers.push(handler);
@@ -133,11 +134,12 @@ export class ClaudeCodeProcess {
       writeFileSync(resolve(hostWorkDir, '_env.sh'), envLines.join('\n'), 'utf-8');
     }
 
-    console.log(`[agent] Starting Docker exec: container=${containerId.slice(0, 12)} workDir=${workDir} promptFile=${promptFile}`);
+    console.log(`[agent] Starting Docker exec: container=${containerId.slice(0, 12)} workDir=${workDir} promptFile=${promptFile} trustMode=${trustMode !== false}`);
     console.log(`[agent] Auth: API_KEY=${safeEnv['ANTHROPIC_API_KEY'] ? 'yes' : 'no'} BASE_URL=${safeEnv['ANTHROPIC_BASE_URL'] ? 'yes' : 'no'}`);
 
-    // Source env file then pipe prompt via cat (more reliable than < redirect)
-    SandboxManager.execStream(containerId, ['sh', '-c', `. /workspace/_env.sh && cat /workspace/${promptFile} | claude ${args.join(' ')}`], {
+    const shellCmd = `. /workspace/_env.sh && cat /workspace/${promptFile} | claude ${args.join(' ')}`;
+
+    SandboxManager.execStream(containerId, ['sh', '-c', shellCmd], {
       workDir,
       onStdout: (chunk) => {
         if (this.killed) return;
@@ -178,14 +180,18 @@ export class ClaudeCodeProcess {
   }
 
   write(input: string): void {
-    // Docker exec via SandboxManager.execStream doesn't currently support interactive stdin
-    // after startup. For permission responses, we'd need a persistent exec session.
-    // For MVP, trustMode=true avoids this path entirely.
+    if (!this.containerId || this.killed) return;
+    // Deliver permission response directly to Claude Code's stdin fd via /proc.
+    // The pipe-based stdin is closed after prompt delivery, so we target the process fd.
+    const escaped = input.replace(/'/g, "'\\''");
+    SandboxManager.execShell(this.containerId,
+      `echo '${escaped}' > /proc/$(pgrep -f 'claude.*--print' 2>/dev/null | head -1)/fd/0 2>/dev/null || true`);
   }
 
   kill(): void {
     this.killed = true;
-    // The Docker exec will naturally terminate when the command finishes
-    // or the container is destroyed by SandboxManager.destroy()
+    if (this.containerId) {
+      SandboxManager.execShell(this.containerId, 'pkill -f "claude.*--print" 2>/dev/null || true');
+    }
   }
 }

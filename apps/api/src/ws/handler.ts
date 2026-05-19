@@ -20,6 +20,10 @@ const sandboxes = new Map<string, { containerId: string; workDir: string; hostWo
 /** Count of currently executing agents across all sessions */
 let runningAgentCount = 0;
 
+/** permissionId → timeout timer for auto-deny on user inaction */
+const permissionTimeouts = new Map<string, NodeJS.Timeout>();
+const PERMISSION_TIMEOUT_MS = 120_000;
+
 // ---- Helpers ----
 
 function generateId(): string {
@@ -56,6 +60,11 @@ function cleanupSessionResources(sessionId: string): void {
   // Kill all agents for this session
   const stateMap = agentStates.get(sessionId);
   if (stateMap) {
+    // Clean up permission timeouts for agents in this session
+    for (const [pid, timeout] of permissionTimeouts) {
+      const agentMsgId = pid.split('|::|')[0];
+      if (stateMap.has(agentMsgId)) { clearTimeout(timeout); permissionTimeouts.delete(pid); }
+    }
     for (const [msgId, state] of stateMap) {
       clearTimeout(state.timer);
       state.process.kill();
@@ -339,6 +348,32 @@ async function handleChatMessage(
             details: { agentType: event.agentType },
             agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
+        case 'permission_request': {
+          const pid = `${mention.messageId}|::|${event.tool}|::|${Date.now()}`;
+          broadcast(sessionId, {
+            type: 'permission_request',
+            permissionId: pid,
+            tool: event.tool,
+            path: event.path,
+            agentMessageId: mention.messageId,
+            timestamp: Date.now(),
+          });
+          broadcast(sessionId, { type: 'agent_status', status: 'permission_request',
+            details: { tool: event.tool, path: event.path, permissionId: pid },
+            agentMessageId: mention.messageId, timestamp: Date.now() });
+          // Auto-deny after timeout if user doesn't respond
+          const timeout = setTimeout(() => {
+            console.log(`[ws] Permission timeout: ${pid}`);
+            permissionTimeouts.delete(pid);
+            const stMap = agentStates.get(sessionId);
+            if (stMap) {
+              const st = stMap.get(mention.messageId);
+              if (st) st.process.write('n\n');
+            }
+          }, PERMISSION_TIMEOUT_MS);
+          permissionTimeouts.set(pid, timeout);
+          break;
+        }
         case 'done': {
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
           // Replace empty content with a placeholder so message bubble isn't blank
@@ -432,22 +467,33 @@ function handlePermissionResponse(
   sessionId: string,
   data: { permissionId: string; allowed: boolean; message?: string },
 ): void {
+  // Parse agentMessageId from permissionId (format: "agentMessageId|::|tool|::|timestamp")
+  const agentMessageId = data.permissionId.split('|::|')[0];
+  if (!agentMessageId) {
+    broadcast(sessionId, { type: 'stream_error', error: 'Invalid permissionId' });
+    return;
+  }
+
   const stateMap = agentStates.get(sessionId);
-  if (!stateMap || stateMap.size === 0) {
-    broadcast(sessionId, { type: 'stream_error', error: 'No active agent process' });
+  if (!stateMap) {
+    broadcast(sessionId, { type: 'stream_error', error: 'No active agents for permission response' });
     return;
   }
-  // Permission proxy with per-agent routing deferred to Phase 3.
-  // In multi-agent mode, we cannot reliably determine which agent requested
-  // the permission, so reject rather than delivering stdin to the wrong agent.
-  if (stateMap.size > 1) {
-    broadcast(sessionId, { type: 'stream_error', error: 'Permission response not supported in multi-agent mode. Use trust mode or wait for Phase 3.' });
+
+  const st = stateMap.get(agentMessageId);
+  if (!st) {
+    broadcast(sessionId, { type: 'stream_error', error: 'Agent not found for permission response' });
     return;
   }
-  for (const [, st] of stateMap) {
-    st.process.write(data.allowed ? 'y\n' : 'n\n');
-    break;
+
+  // Cancel the auto-deny timeout
+  const timeout = permissionTimeouts.get(data.permissionId);
+  if (timeout) {
+    clearTimeout(timeout);
+    permissionTimeouts.delete(data.permissionId);
   }
+
+  st.process.write(data.allowed ? 'y\n' : 'n\n');
 }
 
 // ---- Attach to HTTP server ----

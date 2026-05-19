@@ -18,6 +18,8 @@ interface Props {
 
 export function MessageInput({ onSend, disabled }: Props) {
   const agents = useAppStore((s) => s.agents);
+  const trustMode = useAppStore((s) => s.trustMode);
+  const setTrustMode = useAppStore((s) => s.setTrustMode);
   const [value, setValue] = useState('');
   const [showPopup, setShowPopup] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -141,6 +143,16 @@ export function MessageInput({ onSend, disabled }: Props) {
             position={{ top: 0, left: 8 }}
           />
         )}
+
+        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none shrink-0" title="When off, permission requests are sent to you for approval">
+          <input
+            type="checkbox"
+            checked={trustMode}
+            onChange={(e) => setTrustMode(e.target.checked)}
+            className="rounded border-gray-600 bg-gray-700 text-purple-600 focus:ring-purple-500"
+          />
+          Trust
+        </label>
 
         <button
           onClick={handleSend}
