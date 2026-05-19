@@ -38,11 +38,12 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
         <div className={`rounded-lg px-4 py-2 text-sm leading-relaxed whitespace-pre-wrap font-mono ${
           isHuman ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-200'
         }`}>
-          {message.content || (isStreaming && (
+          {message.content ? (
+            message.content
+          ) : isStreaming ? (
             <span className="inline-block w-2 h-4 bg-gray-400 animate-pulse" />
-          ))}
-          {message.status === 'error' && (
-            <span className="text-red-400 text-xs ml-2">(Error)</span>
+          ) : (
+            <span className="text-gray-500 italic">{message.status === 'error' ? '[Agent stopped]' : '[No output]'}</span>
           )}
         </div>
       </div>

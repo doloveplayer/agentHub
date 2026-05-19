@@ -310,26 +310,45 @@ async function handleChatMessage(
         case 'text':
           accumulatedContent += event.content;
           broadcast(sessionId, { type: 'stream_chunk', content: event.content, agentMessageId: mention.messageId });
+          // Also send as agent_status(thinking) for Agent Card activity feed
+          broadcast(sessionId, { type: 'agent_status', status: 'thinking',
+            details: { content: event.content.slice(0, 120) },
+            agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
-        case 'tool_use':
-          broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: event.toolName, input: event.input }, agentMessageId: mention.messageId, timestamp: Date.now() });
+        case 'tool_use': {
+          const inputStr = JSON.stringify(event.input ?? {});
+          broadcast(sessionId, { type: 'agent_status', status: 'tool_use',
+            details: { toolName: event.toolName, input: event.input, inputPreview: inputStr.slice(0, 80) },
+            agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
-        case 'tool_result':
-          broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { content: typeof event.content === 'string' ? event.content.slice(0, 200) : '' }, agentMessageId: mention.messageId, timestamp: Date.now() });
+        }
+        case 'tool_result': {
+          const resultStr = typeof event.content === 'string' ? event.content : '';
+          broadcast(sessionId, { type: 'agent_status', status: 'tool_result',
+            details: { content: resultStr.slice(0, 200), resultPreview: resultStr.slice(0, 80) },
+            agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
+        }
         case 'subagent_start':
-          broadcast(sessionId, { type: 'agent_status', status: 'subagent_start', details: { agentType: event.agentType, description: event.description }, agentMessageId: mention.messageId, timestamp: Date.now() });
+          broadcast(sessionId, { type: 'agent_status', status: 'subagent_start',
+            details: { agentType: event.agentType, description: event.description },
+            agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
         case 'subagent_result':
-          broadcast(sessionId, { type: 'agent_status', status: 'subagent_result', details: { agentType: event.agentType }, agentMessageId: mention.messageId, timestamp: Date.now() });
+          broadcast(sessionId, { type: 'agent_status', status: 'subagent_result',
+            details: { agentType: event.agentType },
+            agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
         case 'done': {
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
+          // Replace empty content with a placeholder so message bubble isn't blank
+          const finalContent = accumulatedContent || (event.exitCode !== 0 ? '[Agent stopped]' : '[Agent finished]');
           prisma.message.update({
             where: { id: mention.messageId },
-            data: { content: accumulatedContent, status: event.exitCode === 0 ? 'done' : 'error' },
+            data: { content: finalContent, status: event.exitCode === 0 ? 'done' : 'error' },
           }).catch(() => {});
-          broadcast(sessionId, { type: 'stream_end', agentMessageId: mention.messageId, fullContent: accumulatedContent, exitCode: event.exitCode });
+          broadcast(sessionId, { type: 'stream_end', agentMessageId: mention.messageId,
+            fullContent: finalContent, exitCode: event.exitCode });
 
           const stateMap = agentStates.get(sessionId);
           if (stateMap) {

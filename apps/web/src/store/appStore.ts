@@ -3,13 +3,15 @@ import type { Session, Message, AgentConfig } from '@agenthub/shared';
 
 export interface AgentEvent {
   id: string;
-  type: 'tool_use' | 'tool_result' | 'subagent_start' | 'subagent_result' | 'permission_request';
+  type: 'thinking' | 'tool_use' | 'tool_result' | 'subagent_start' | 'subagent_result' | 'permission_request';
   timestamp: number;
   agentId?: string;
   details: {
     toolName?: string;
     input?: Record<string, unknown>;
+    inputPreview?: string;
     content?: string;
+    resultPreview?: string;
     agentType?: string;
     description?: string;
     tool?: string;

@@ -49,6 +49,7 @@ export function ChatView() {
       case 'subagent_start':  return <GitBranch className={cls} />;
       case 'subagent_result': return <CheckCircle className={cls} />;
       case 'permission_request': return <Shield className={cls} />;
+      default: return null;
     }
   };
 
@@ -68,6 +69,7 @@ export function ChatView() {
         return `Sub-agent done: ${d.agentType ?? 'unknown'}`;
       case 'permission_request':
         return `Permission needed: ${d.tool ?? 'unknown'} on ${d.path ?? 'unknown path'}`;
+      default: return '';
     }
   };
 
@@ -84,6 +86,7 @@ export function ChatView() {
         return `Agent type: ${d.agentType ?? 'unknown'}`;
       case 'permission_request':
         return `Tool: ${d.tool ?? 'unknown'}\nPath: ${d.path ?? 'unknown'}`;
+      default: return '';
     }
   };
 

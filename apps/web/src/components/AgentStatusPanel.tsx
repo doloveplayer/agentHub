@@ -36,14 +36,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
       if (evs) events.push(...evs);
     }
 
-    // Estimate context: accumulated content length / ~4 chars per token
-    // Show as percentage of 200k context window
-    const contentLen = agentMsgs.reduce((sum, m) => sum + m.content.length, 0);
-    const estTokens = Math.round(contentLen / 4);
-    const contextPct = Math.min(99, Math.round((estTokens / 200000) * 100));
-    const contextUsage = running ? `${contextPct}% · ${estTokens.toLocaleString()} tok` : undefined;
-
-    return { agent, status, events, contextUsage };
+    return { agent, status, events };
   });
 
   const tabs: PanelTab[] = ['Files', 'Agents', 'Tasks'];
@@ -71,7 +64,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
             {agentStates.length === 0 && (
               <p className="text-xs text-gray-500 text-center py-4">No agents in this session</p>
             )}
-            {agentStates.map(({ agent, status, events, contextUsage }) => {
+            {agentStates.map(({ agent, status, events }) => {
               // Find the running message for this agent to pass its ID to onStop
               const runningMsg = messages.find((m) => m.agentId === agent.id && m.status === 'streaming');
               return (
@@ -81,7 +74,6 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
                 displayName={agent.displayName}
                 status={status}
                 events={events}
-                contextUsage={contextUsage}
                 onStop={runningMsg && onStopAgent ? () => onStopAgent(runningMsg.id) : undefined}
               />
               );

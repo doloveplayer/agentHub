@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { Square } from 'lucide-react';
 import { agentColor } from './AgentMentionPopup';
 import type { AgentEvent } from '../store/appStore';
@@ -7,105 +8,94 @@ interface Props {
   displayName: string;
   status: 'running' | 'done' | 'idle';
   events: AgentEvent[];
-  thinkingLevel?: string;
-  contextUsage?: string;
-  files?: string[];
   onStop?: () => void;
 }
 
-const THINKING_LABELS: Record<string, string> = {
-  'code-agent': 'high',
-  'review-agent': 'standard',
-  'devops-agent': 'standard',
+const EVENT_ICONS: Record<string, string> = {
+  thinking: '💭',   // 💭
+  tool_use: '🔧',   // 🔧
+  tool_result: '📋', // 📋
+  subagent_start: '🔀', // 🔀
+  subagent_result: '✅',   // ✅
 };
 
-export function AgentCard({ agentId, displayName, status, events, thinkingLevel, contextUsage, files, onStop }: Props) {
-  const lastEvent = events[events.length - 1];
-  const toolEvents = events.filter((e) => e.type === 'tool_use');
-  const subagentEvents = events.filter((e) => e.type === 'subagent_start' || e.type === 'subagent_result');
+export function AgentCard({ agentId, displayName, status, events, onStop }: Props) {
+  const feedRef = useRef<HTMLDivElement>(null);
 
-  // Extract files from tool_use events
-  const touchedFiles: string[] = files ?? [];
-  if (touchedFiles.length === 0) {
-    for (const ev of toolEvents) {
-      const input = ev.details.input as Record<string, unknown> | undefined;
-      if (input) {
-        const path = (input.file_path || input.path || input.filePath) as string | undefined;
-        if (path && !touchedFiles.includes(path)) touchedFiles.push(path);
-      }
+  // Auto-scroll activity feed to bottom while running
+  useEffect(() => {
+    if (status === 'running' && feedRef.current) {
+      feedRef.current.scrollTop = feedRef.current.scrollHeight;
     }
-  }
+  }, [events.length, status]);
 
-  const level = thinkingLevel ?? THINKING_LABELS[agentId] ?? 'standard';
+  // Show last 20 events in reverse (newest at bottom)
+  const recentEvents = events.slice(-20);
+  const toolCount = events.filter((e) => e.type === 'tool_use').length;
 
   return (
-    <div className="bg-gray-800/80 border border-gray-700 rounded-lg p-3 mb-2">
-      <div className="flex items-center gap-2">
+    <div className="bg-gray-800/80 border border-gray-700 rounded-lg mb-2 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-700/50">
         <span
           className={`w-2 h-2 rounded-full ${
             status === 'running' ? 'bg-green-500 animate-pulse' :
             status === 'done' ? 'bg-green-500' : 'bg-gray-500'
           }`}
         />
-        <span className="text-sm font-medium text-gray-200">{displayName}</span>
+        <span className="text-sm font-medium text-gray-200 truncate">{displayName}</span>
+        {toolCount > 0 && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700 text-gray-400">{toolCount} tools</span>
+        )}
         {status === 'running' && onStop && (
           <button
             onClick={(e) => { e.stopPropagation(); onStop(); }}
-            className="ml-auto p-1 rounded hover:bg-red-900/50 text-red-400 hover:text-red-300 transition"
+            className="ml-auto p-1 rounded hover:bg-red-900/50 text-red-400 hover:text-red-300 transition flex-shrink-0"
             title="Stop agent"
           >
             <Square className="w-3 h-3" />
           </button>
         )}
         {status !== 'running' && (
-          <span className="ml-auto text-[10px] text-gray-500">{status}</span>
+          <span className="ml-auto text-[10px] text-gray-500 flex-shrink-0">{status}</span>
         )}
       </div>
 
-      {status === 'running' && (
-        <div className="mt-2 text-[11px] text-gray-400 space-y-0.5">
-          <div className="flex justify-between">
-            <span>Think</span><span className="text-gray-300">{level}</span>
+      {/* Activity feed */}
+      <div ref={feedRef} className="max-h-48 overflow-y-auto px-3 py-1.5 space-y-1 text-[11px] leading-relaxed">
+        {recentEvents.length === 0 && status === 'idle' && (
+          <p className="text-gray-600 text-center py-1">Waiting for task...</p>
+        )}
+        {recentEvents.map((ev, i) => (
+          <div key={ev.id || i} className={`flex gap-1.5 ${
+            ev.type === 'thinking' ? 'text-gray-400 italic' :
+            ev.type === 'tool_use' ? 'text-purple-300' :
+            ev.type === 'tool_result' ? 'text-green-400' :
+            ev.type === 'subagent_start' ? 'text-blue-300' :
+            ev.type === 'subagent_result' ? 'text-green-300' :
+            'text-gray-400'
+          }`}>
+            <span className="flex-shrink-0">{EVENT_ICONS[ev.type] ?? '·'}</span>
+            <span className="min-w-0 break-words">
+              {ev.type === 'thinking' && (ev.details.content || '...')}
+              {ev.type === 'tool_use' && (
+                <><span className="font-medium">{ev.details.toolName}</span>{' '}
+                <span className="text-gray-500">{ev.details.inputPreview || ''}</span></>
+              )}
+              {ev.type === 'tool_result' && (
+                <span className="text-gray-500">{ev.details.resultPreview || ev.details.content || ''}</span>
+              )}
+              {ev.type === 'subagent_start' && (
+                <><span className="font-medium">{ev.details.agentType}</span>{' '}
+                <span className="text-gray-500">{ev.details.description || ''}</span></>
+              )}
+              {ev.type === 'subagent_result' && (
+                <span>{ev.details.agentType} done</span>
+              )}
+            </span>
           </div>
-          {contextUsage && (
-            <div className="flex justify-between">
-              <span>Context</span><span className="text-gray-300">{contextUsage}</span>
-            </div>
-          )}
-          {lastEvent && (
-            <div className="flex justify-between">
-              <span>Current</span>
-              <span className="text-purple-400 truncate ml-2">
-                {lastEvent.type === 'tool_use' && `${lastEvent.details.toolName ?? 'tool'}`}
-                {lastEvent.type === 'tool_result' && 'Processing result...'}
-                {lastEvent.type === 'subagent_start' && `Sub: ${lastEvent.details.agentType ?? '?'}`}
-              </span>
-            </div>
-          )}
-          {touchedFiles.length > 0 && (
-            <div className="flex justify-between">
-              <span>Files</span><span className="truncate ml-2">{touchedFiles.slice(0, 3).join(', ')}</span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {subagentEvents.length > 0 && (
-        <div className="mt-2">
-          {subagentEvents.slice(-3).map((ev, i) => (
-            <div key={i} className="text-[10px] bg-gray-900/60 px-2 py-0.5 rounded mt-1 text-gray-400">
-              {ev.type === 'subagent_start' ? '🔀' : '✅'} {ev.details.agentType ?? 'subagent'}
-              {ev.type === 'subagent_result' && <span className="text-green-500 ml-1">done</span>}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {toolEvents.length > 0 && (
-        <div className="mt-2 text-[10px] text-gray-500">
-          {toolEvents.length} tool call{toolEvents.length !== 1 ? 's' : ''}
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

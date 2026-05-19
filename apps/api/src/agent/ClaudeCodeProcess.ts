@@ -72,6 +72,7 @@ export class ClaudeCodeProcess {
   private handlers: EventHandler[] = [];
   private doneEmitted = false;
   private killed = false;
+  private partialLine = '';  // buffer for partial lines across Docker multiplex frames
 
   onEvent(handler: EventHandler): void {
     this.handlers.push(handler);
@@ -140,8 +141,11 @@ export class ClaudeCodeProcess {
       workDir,
       onStdout: (chunk) => {
         if (this.killed) return;
-        // Parse lines from stdout
-        const lines = chunk.split('\n');
+        // Accumulate partial lines across Docker multiplex frames
+        this.partialLine += chunk;
+        const lines = this.partialLine.split('\n');
+        // Last element is either empty (if chunk ends with \n) or a partial line
+        this.partialLine = lines.pop() ?? '';
         for (const line of lines) {
           if (!line.trim()) continue;
           const event = EventParser.parseLine(line);
