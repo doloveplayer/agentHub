@@ -4,19 +4,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-AgentHub is an IM-style web chat app that manages multiple Claude Code instances inside Docker sandboxes. Users log in via GitHub OAuth, create sessions, and chat with Claude Code agents through a WebSocket-driven streaming interface. Each session gets an isolated Docker container with a bind-mounted workspace directory at `.sandboxes/{sessionId}/`.
+AgentHub is an IM-style web chat app that manages multiple Claude Code instances inside Docker sandboxes. Users log in via GitHub OAuth, create sessions (solo or group), and chat with Claude Code agents through a WebSocket-driven streaming interface. Each session gets an isolated Docker container with a bind-mounted workspace directory at `.sandboxes/{sessionId}/`.
+
+**Phase 2 complete (2026-05-19):** Multi-agent group chat with @mentions, agent registry, Agent Card live activity feed, / command passthrough, agent stop control.
 
 ## Commands
 
 ```bash
-# Start PostgreSQL + Redis
-docker compose up -d postgres redis
+# Start PostgreSQL
+docker compose up -d postgres
 
 # Build sandbox image (after Dockerfile changes)
 docker build -t agenthub-sandbox:latest -f docker/sandbox.Dockerfile .
 
-# Prisma migrate (after schema changes)
-cd apps/api && source ../.env 2>/dev/null; npx prisma migrate dev --name init
+# Prisma migrate (project root — .env must export DATABASE_URL)
+export $(grep -v '^#' .env | grep -v '^$' | xargs) && cd apps/api && npx prisma migrate dev --name init
 
 # Backend (port 3000)
 cd apps/api && npx tsx src/index.ts
@@ -28,14 +30,21 @@ cd apps/web && npx vite
 npx tsc --noEmit -p apps/api/tsconfig.json
 npx tsc --noEmit -p apps/web/tsconfig.json
 
+# Force stop
+fuser -k 3000/tcp  # backend
+fuser -k 5173/tcp  # frontend
+
 # Cleanup orphaned sandboxes
 docker rm -f $(docker ps -aq --filter name=agenthub-sandbox) 2>/dev/null
 rm -rf .sandboxes/*
+
+# Git push (HTTPS blocked by GFW — use SSH)
+git remote set-url origin git@github.com:doloveplayer/agentHub.git
 ```
 
 ## Architecture
 
-### Data flow (chat message)
+### Data flow (single agent)
 
 ```
 Browser (React) → POST /api/chat/send → DB (user + agent placeholder messages)
@@ -44,40 +53,91 @@ Claude Code stdout → EventParser → WebSocket → Browser renders stream chun
 Agent done → DB updated with final content
 ```
 
+### Data flow (multi-agent with @mentions)
+
+```
+Browser → parse @agent from text (mentionParser.ts) → POST /api/chat/send with mentions[]
+  → DB creates 1 user msg + N agent placeholder msgs (each with agentId)
+  → WebSocket sends { type: 'chat', mentions: [{ agentId, subPrompt, messageId }] }
+  → Backend spawns N Claude Code instances IN PARALLEL inside same Docker container
+  → Each instance: systemPrompt + history + subPrompt → Claude Code CLI
+  → Per-agent prompt file `_prompt_{messageId}.txt` (prevents parallel overwrite)
+  → stdout → EventParser → agent_status + stream_chunk → WebSocket multiplexed by agentMessageId
+  → Frontend routes stream chunks to correct MessageBubble; tool events to correct AgentCard
+```
+
+### / command passthrough
+
+```
+Input starts with "/" → backend skips mention parsing + system prompt injection
+  → raw prompt forwarded to Claude Code (Claude handles /commands natively)
+```
+
 ### Key boundaries
 
 | Layer | Tech | Responsibility |
 |-------|------|----------------|
-| `apps/web` | React 18 + Vite + Tailwind + Zustand | Chat UI, session list, streaming display, GitHub OAuth callback |
-| `apps/api` | Hono + @hono/node-server | REST routes (`/api/auth`, `/api/sessions`, `/api/chat`), JWT auth, WebSocket handler |
-| `agent/` | Dockerode + child_process | Sandbox lifecycle, Claude Code exec inside Docker, env filtering, stream-json parsing |
-| `packages/shared` | TypeScript interfaces | `User`, `Session`, `Message`, `AgentConfig` types |
+| `apps/web` | React 18 + Vite + Tailwind + Zustand + Inter font | Chat UI, session list, streaming display, @mentions, agent status panel, GitHub OAuth callback |
+| `apps/api` | Hono + @hono/node-server | REST routes (`/api/auth`, `/api/sessions`, `/api/chat`, `/api/agents`), JWT auth, WebSocket handler |
+| `apps/api/src/agent/` | Dockerode | Sandbox lifecycle, Claude Code exec inside Docker, env filtering, stream-json parsing, cross-frame line buffering |
+| `packages/shared` | TypeScript interfaces | `User`, `Session`, `Message`, `AgentConfig`, `Mention`, `SendRequest`, `SendResponse` |
 | `docker/` | Dockerfile + compose | Sandbox image (`node:20-slim` + claude-code, `node` user), PostgreSQL, Redis |
+
+### Database (Prisma + PostgreSQL)
+
+| Model | Key Fields | Notes |
+|-------|-----------|-------|
+| `User` | id, githubId, login, avatarUrl | GitHub OAuth |
+| `Session` | id, userId, type ("solo"\|"group"), sandboxContainerId | FK→User |
+| `SessionAgent` | sessionId, agentId | Join table, cascade delete |
+| `Message` | id, sessionId, senderType, agentId, content, status | status: sending/streaming/done/error |
+| `Agent` | id, name, displayName, description, systemPrompt, isActive | 3 defaults seeded at startup |
 
 ### Claude Code integration
 
-Claude Code runs **inside a Docker container** via `docker exec`. The container is created per-session with a bind-mounted workspace at `.sandboxes/{sessionId}/`.
+- Runs **inside Docker** via `docker exec`, `cwd=/workspace`, `--print --output-format stream-json --verbose --dangerously-skip-permissions`
+- **Prompt**: per-agent `_prompt_{messageId}.txt` written to hostWorkDir (bind-mounted), piped via `cat file | claude`
+- **Auth**: Only 3 vars (`ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`) written to `_env.sh`, sourced before claude
+- **Env filter** (`buildSafeEnv()`): Whitelist prefixes (`ANTHROPIC_`, `CLAUDE_`, `PATH`, `HOME`, `NVM_`, `LANG`, `LC_`, `TERM`, `COLOR`, `TZ`, `DEBIAN_FRONTEND`) pass through. Blocklist suffixes (`_TOKEN`, `_SECRET`, `_KEY`, `_PASSWORD`) blocked for non-whitelisted vars. Host-specific `CLAUDE_CODE_SESSION_ID`/`SSE_PORT` excluded.
+- **Line buffering**: `ClaudeCodeProcess.partialLine` accumulates across Docker multiplex frames to prevent split JSON lines from being lost
+- **Permissions**: `--dangerously-skip-permissions` (trustMode=true). Container runs as `node` user (non-root). Permission proxy deferred to Phase 3.
+- **Config** (`apps/api/src/config.ts`): `AGENT_TIMEOUT_MS` (default 5 min), `MAX_CONCURRENT_AGENTS` (default 5 global). Per-session max: 3.
 
-**Prompt delivery**: Written to `_prompt.txt` on the host (bind-mounted to `/workspace/_prompt.txt`), piped via `cat /workspace/_prompt.txt | claude`.
+### WebSocket message types
 
-**Auth delivery**: Only `ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN` are written to `_env.sh` and sourced before claude runs. All other env vars are filtered by `buildSafeEnv()` — whitelist prefixes (`ANTHROPIC_`, `CLAUDE_`, `PATH`, `HOME`, `NVM_`) pass through; blocklist suffixes (`_TOKEN`, `_SECRET`, `_KEY`) are blocked for non-whitelisted vars.
+| Type | Direction | Purpose |
+|------|-----------|---------|
+| `chat` | Client→Server | Send message with optional `mentions[]` and `trustMode` |
+| `stream_chunk` | Server→Client | Text content appended to message bubble (by `agentMessageId`) |
+| `stream_end` | Server→Client | Agent finished: `exitCode`, `fullContent`, `stopped` flag |
+| `stream_error` | Server→Client | Agent error message |
+| `agent_status` | Server→Client | Real-time event: `thinking`/`tool_use`/`tool_result`/`subagent_start`/`subagent_result` |
+| `permission_request` | Server→Client | Permission needed (currently suppressed by trustMode) |
+| `permission_response` | Client→Server | User allow/deny (routed to single agent only; multi-agent blocked) |
+| `stop_agent` | Client→Server | Kill running agent by `agentMessageId` |
+| `connected` | Server→Client | Connection confirmation |
 
-**Auth env vars MUST be in the project `.env` file** — they are loaded by dotenv at startup. The backend process does NOT inherit them from the shell unless they're in `.env`.
+### Startup sequence (`index.ts`)
 
-**Permissions**: `--dangerously-skip-permissions` is used (trustMode=true from frontend). Container runs as `node` user (non-root) for this flag to work.
-
-### Debug endpoint
-
-`GET /api/debug/claude-auth` — creates a temp sandbox, runs Claude Code with a test prompt, returns the output. Useful for diagnosing auth/env issues without browser/WebSocket.
-
-### Database
-
-PostgreSQL via Prisma. Models: `User` (GitHub OAuth), `Session` (per-user, linked to sandbox container), `Message` (per-session, with `senderType` and `status`), `Agent` (config for future multi-agent support).
+1. `docker rm -f` all `agenthub-sandbox-*` containers (clean orphans)
+2. `rm -rf .sandboxes/*` (clean host sandbox dirs)
+3. Reset stale `streaming` messages to `done` in DB (prevent phantom running state)
+4. Seed 3 default agents (upsert: code-agent, review-agent, devops-agent)
+5. Mount routes + WebSocket + listen on port 3000
 
 ### Key patterns
 
-- **Env vars**: Config loaded from project root `.env` by `apps/api/src/config.ts` using dotenv. Required: `DATABASE_URL`, `JWT_SECRET`, `GITHUB_CLIENT_ID/SECRET/CALLBACK_URL/ALLOWED_USERS`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`.
-- **Auth**: JWT tokens (7d expiry) issued after GitHub OAuth callback. Stored in localStorage as `agenthub_token`. Middleware checks `Authorization: Bearer <token>` on protected routes. Whitelist middleware validates GitHub username.
-- **WebSocket**: Authenticated via `?token=JWT&sessionId=UUID` query params. Message types: `chat`, `stream_chunk`, `stream_end`, `stream_error`, `agent_status`, `permission_request`, `permission_response`.
-- **Frontend state**: Zustand store (`appStore.ts`) manages `token`, `user`, `sessions`, `messages`, `agentEvents`. Selectors must return stable references — never return `[]` literal.
-- **Startup cleanup**: `index.ts` runs `docker rm -f` on all `agenthub-sandbox-*` containers and `rm -rf .sandboxes/*` on boot.
+- **Multi-agent state**: `Map<sessionId, Map<agentMessageId, { process, timer, agentId }>>` in `handler.ts`. Each agent tracked independently for timeout, stop, cleanup.
+- **Agent defaults**: Shared in `apps/api/src/defaultAgents.ts`, imported by both `seed.ts` (standalone) and `index.ts` (startup seed).
+- **Auth middleware** (`auth.ts`): Verifies JWT THEN checks user exists in DB (defense against DB resets). Returns 401 "User not found — please re-authenticate" if user missing.
+- **WS connection** (`handler.ts`): Same user-existence check as REST auth middleware.
+- **Frontend 401 handling** (`api.ts`): Any 401 response → clears `agenthub_token` from localStorage → redirects to `/login`.
+- **Zustand store** (`appStore.ts`): `agents`, `streamingMessages`, `agentEvents` (with `thinking` type). Stable empty references (`EMPTY_MESSAGES`, `EMPTY_ARR`) to prevent infinite re-renders.
+- **Agent Card activity feed**: Shows 💭thinking / 🔧tool_use / 📋tool_result / 🔀subagent events, last 20 entries, auto-scrolls while running.
+- **Concurrency**: Per-session max 3 agents + global max from `config.agent.maxConcurrent`.
+- **Group session auto-assign**: Creating group session without `agentIds` → backend assigns ALL active agents.
+- **Solo session protection**: Mentions rejected with 400 on solo sessions.
+- **Agent stop**: Stop button in AgentCard → WebSocket `stop_agent` → backend kills process + clears state + updates DB.
+- **Git**: Uses SSH remote (`git@github.com:doloveplayer/agentHub.git`) because HTTPS/443 blocked by GFW.
+- **Design system**: Inter font, slate-based dark palette (slate-900/slate-800), green accent (#22C55E), 150ms ease-out transitions, lucide-react icons.
+- **Refer to `RUNBOOK.md`** for startup/shutdown/reset procedures and `PRD.md` for feature roadmap.
