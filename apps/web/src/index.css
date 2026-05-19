@@ -1,21 +1,74 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Smooth transitions on all interactive elements */
+  a, button, input, textarea, select, [tabindex] {
+    transition-property: color, background-color, border-color, opacity, box-shadow;
+    transition-duration: 150ms;
+    transition-timing-function: ease-out;
+  }
+
+  /* Focus ring */
+  *:focus-visible {
+    outline: 2px solid #6c47ff;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
 
-/* Custom scrollbar for chat */
-.chat-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-.chat-scroll::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 3px;
-}
-.chat-scroll::-webkit-scrollbar-track {
-  background: transparent;
+@layer components {
+  /* Chat scrollbar */
+  .chat-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+  .chat-scroll::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 3px;
+  }
+  .chat-scroll::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+  }
+  .chat-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Panel scrollbar */
+  .panel-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+  .panel-scroll::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 2px;
+  }
+  .panel-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Agent status pulse */
+  @keyframes agent-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+  }
+  .agent-pulse {
+    animation: agent-pulse 2s ease-in-out infinite;
+  }
+
+  /* Streaming cursor */
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  .streaming-cursor {
+    animation: blink 1s step-end infinite;
+  }
 }

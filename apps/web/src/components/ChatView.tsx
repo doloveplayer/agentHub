@@ -126,7 +126,10 @@ export function ChatView() {
   if (!activeSessionId) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-600">
-        Select or create a session to start
+        <div className="text-center">
+          <p className="text-slate-500 text-lg font-medium mb-1">Select or create a session</p>
+          <p className="text-slate-600 text-sm">Choose an existing session or start a new one to begin</p>
+        </div>
       </div>
     );
   }
@@ -139,9 +142,9 @@ export function ChatView() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Session header — show participants for group sessions */}
         {activeSession?.type === 'group' && (
-          <div className="px-4 py-2 border-b border-gray-800 flex items-center gap-2">
-            <span className="text-xs text-gray-500 mr-1">Participants:</span>
-            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/50 border border-blue-700 text-blue-300">You</span>
+          <div className="px-4 py-2 border-b border-slate-800/60 flex items-center gap-2 bg-slate-900/40">
+            <span className="text-[11px] text-slate-500 mr-1 font-medium">Participants</span>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-900/40 border border-blue-700/50 text-blue-300 font-medium">You</span>
             {sessionAgents.map((a) => (
               <span key={a.id}
                 className="text-xs px-2 py-0.5 rounded-full border text-gray-300"

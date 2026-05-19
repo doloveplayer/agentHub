@@ -42,23 +42,23 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
   const tabs: PanelTab[] = ['Files', 'Agents', 'Tasks'];
 
   return (
-    <div className="w-72 bg-gray-900 border-l border-gray-800 flex flex-col h-full">
-      <div className="flex border-b border-gray-800">
+    <div className="w-72 bg-slate-900/80 border-l border-slate-800 flex flex-col h-full backdrop-blur-sm">
+      <div className="flex border-b border-slate-800/60">
         {tabs.map((tab) => (
           <div
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`flex-1 text-center py-2.5 text-xs cursor-pointer border-b-2 ${
+            className={`flex-1 text-center py-2.5 text-xs cursor-pointer border-b-2 font-medium select-none ${
               activeTab === tab
-                ? 'text-gray-200 border-purple-500'
-                : 'text-gray-500 border-transparent hover:text-gray-400'
+                ? 'text-slate-100 border-purple-500'
+                : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-slate-800/40'
             }`}
           >
             {tab}
           </div>
         ))}
       </div>
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className="flex-1 overflow-y-auto panel-scroll p-2.5">
         {activeTab === 'Agents' && (
           <>
             {agentStates.length === 0 && (
