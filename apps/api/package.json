@@ -11,9 +11,11 @@
     "@agenthub/shared": "*",
     "@hono/node-server": "^1.13.0",
     "@prisma/client": "^5.22.0",
+    "bullmq": "^5.76.10",
     "dockerode": "^4.0.0",
     "dotenv": "^17.4.2",
     "hono": "^4.6.0",
+    "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.0",
     "ws": "^8.18.0",
     "zod": "^3.23.0"

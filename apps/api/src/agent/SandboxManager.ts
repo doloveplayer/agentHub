@@ -142,6 +142,31 @@ export class SandboxManager {
     }).then((exec) => exec.start({ Detach: true })).catch(() => {});
   }
 
+  /** Execute a command and capture stdout as a string (non-streaming) */
+  static async execCapture(containerId: string, shellCmd: string): Promise<string> {
+    const container = docker.getContainer(containerId);
+    const exec = await container.exec({
+      Cmd: ['sh', '-c', shellCmd],
+      AttachStdout: true,
+      AttachStderr: true,
+    });
+    const stream = await exec.start({ Detach: false, Tty: false });
+    let output = '';
+    await new Promise<void>((resolve, reject) => {
+      docker.modem.demuxStream(
+        stream as any,
+        { write: (chunk: unknown) => {
+          output += typeof chunk === 'string' ? chunk : (chunk as Buffer).toString();
+          return true;
+        } } as any,
+        { write: () => true } as any,
+      );
+      stream.on('end', resolve);
+      stream.on('error', reject);
+    });
+    return output.trim();
+  }
+
   /** Destroy Docker container */
   static async destroy(containerId: string): Promise<void> {
     try {

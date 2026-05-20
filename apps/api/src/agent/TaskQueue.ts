@@ -1,0 +1,193 @@
+import { Queue, Worker, Job } from 'bullmq';
+import { config, redis } from '../config.js';
+import { ClaudeCodeProcess } from './ClaudeCodeProcess.js';
+import type { TaskNode, TaskPlan } from '@agenthub/shared';
+
+/** Topological sort: DAG → ordered execution layers */
+function topologicalSort(tasks: TaskNode[]): TaskNode[][] {
+  const layers: TaskNode[][] = [];
+  const remaining = new Map(tasks.map(t => [t.id, { ...t, dependsOn: [...t.dependsOn] }]));
+  const completed = new Set<string>();
+
+  while (remaining.size > 0) {
+    const layer: TaskNode[] = [];
+    for (const [id, task] of remaining) {
+      if (task.dependsOn.every((did: string) => completed.has(did))) {
+        layer.push(task);
+        remaining.delete(id);
+      }
+    }
+    if (layer.length === 0) {
+      // Circular dependency or stuck tasks — add as final layer
+      layers.push(Array.from(remaining.values()));
+      break;
+    }
+    layers.push(layer);
+    layer.forEach(t => completed.add(t.id));
+  }
+  return layers;
+}
+
+export interface TaskJobData {
+  planId: string;
+  sessionId: string;
+  task: TaskNode;
+  contextPrompt: string;
+  containerId: string;
+  workDir: string;
+  hostWorkDir: string;
+}
+
+export class TaskQueueManager {
+  private queue: Queue<TaskJobData>;
+  private worker: Worker<TaskJobData> | null = null;
+
+  constructor() {
+    this.queue = new Queue<TaskJobData>('agenthub-tasks', {
+      connection: { host: redis.host, port: redis.port },
+    });
+  }
+
+  /** Submit an entire Plan to the queue, handling dependency ordering */
+  async submitPlan(
+    planId: string,
+    sessionId: string,
+    plan: TaskPlan,
+    containerId: string,
+    workDir: string,
+    hostWorkDir: string,
+  ): Promise<void> {
+    const layers = topologicalSort(plan.tasks);
+
+    for (const layer of layers) {
+      const children: { name: string; data: TaskJobData; opts: any }[] = [];
+
+      for (const task of layer) {
+        const depsInfo = task.dependsOn.map(did => {
+          const dep = plan.tasks.find(t => t.id === did);
+          return dep
+            ? `- ${dep.title}: expected output ${dep.expectedOutput}`
+            : `- task ${did}`;
+        }).join('\n');
+
+        const contextPrompt = `Task: ${task.title}
+Description: ${task.description}
+Expected Output: ${task.expectedOutput}
+
+${depsInfo ? `Previous tasks completed:\n${depsInfo}\n` : ''}
+Execute this task now. Output the results to the specified files.`;
+
+        children.push({
+          name: task.id,
+          data: {
+            planId,
+            sessionId,
+            task,
+            contextPrompt,
+            containerId,
+            workDir,
+            hostWorkDir,
+          },
+          opts: {
+            attempts: config.taskQueue.maxRetries + 1,
+            backoff: { type: 'fixed' as const, delay: config.taskQueue.retryDelayMs },
+            priority: task.priority === 'high' ? 1 : task.priority === 'medium' ? 2 : 3,
+          },
+        });
+      }
+
+      await this.queue.addBulk(children);
+    }
+  }
+
+  /** Get execution progress for a plan */
+  async getPlanProgress(planId: string): Promise<{
+    total: number; completed: number; failed: number; running: number; waiting: number;
+  }> {
+    const jobs = await this.queue.getJobs(['completed', 'failed', 'active', 'waiting', 'delayed']);
+    const relevant = jobs.filter(j => (j as any).data?.planId === planId);
+
+    return {
+      total: relevant.length,
+      completed: relevant.filter(j => !!(j as any).finishedOn && !(j as any).failedReason).length,
+      failed: relevant.filter(j => !!(j as any).failedReason).length,
+      running: relevant.filter(j => !(j as any).finishedOn && (j as any).attemptsStarted > 0).length,
+      waiting: relevant.filter(j => !(j as any).finishedOn && (j as any).attemptsStarted === 0).length,
+    };
+  }
+
+  /** Start the worker to process tasks */
+  startWorker(onTaskComplete?: (planId: string, taskId: string, result: any) => void): void {
+    this.worker = new Worker<TaskJobData>(
+      'agenthub-tasks',
+      async (job: Job<TaskJobData>) => {
+        const { contextPrompt, containerId, workDir, hostWorkDir, sessionId, task } = job.data;
+
+        const proc = new ClaudeCodeProcess();
+        let output = '';
+
+        return new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            proc.kill();
+            reject(new Error(`Task ${task.id} timed out`));
+          }, 300_000);
+
+          proc.onEvent((event) => {
+            if (event.type === 'text') output += event.content;
+            if (event.type === 'done') {
+              clearTimeout(timeout);
+              if (event.exitCode === 0) {
+                resolve({ output, taskId: task.id });
+              } else {
+                reject(new Error(`Task ${task.id} failed (exit ${event.exitCode}): ${output.slice(-500)}`));
+              }
+            }
+            if (event.type === 'error') {
+              clearTimeout(timeout);
+              reject(new Error(event.message));
+            }
+          });
+
+          proc.start(
+            sessionId, contextPrompt, containerId, workDir,
+            /* trustMode= */ true, hostWorkDir, `task-${task.id}`
+          ).catch((err) => {
+            clearTimeout(timeout);
+            reject(err);
+          });
+        });
+      },
+      {
+        connection: { host: redis.host, port: redis.port },
+        concurrency: config.taskQueue.concurrency,
+      }
+    );
+
+    this.worker.on('completed', (job, result) => {
+      if (onTaskComplete) onTaskComplete(job.data.planId, job.data.task.id, result);
+    });
+
+    this.worker.on('failed', (job, err) => {
+      console.error(`[queue] Task ${job?.data?.task?.id} failed: ${err?.message || err}`);
+    });
+  }
+
+  /** Block dependents when a task exhausts retries */
+  async blockDependents(planId: string, failedTaskId: string): Promise<void> {
+    const jobs = await this.queue.getJobs(['waiting', 'delayed']);
+    for (const job of jobs) {
+      const data = (job as any).data as TaskJobData | undefined;
+      if (data?.planId === planId && data?.task?.dependsOn?.includes(failedTaskId)) {
+        await job.moveToFailed(
+          new Error(`Blocked: upstream task ${failedTaskId} failed`),
+          'agenthub-tasks',
+        );
+      }
+    }
+  }
+
+  async shutdown(): Promise<void> {
+    await this.worker?.close();
+    await this.queue.close();
+  }
+}

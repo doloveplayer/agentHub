@@ -72,3 +72,28 @@ export interface PermissionResponse {
   allowed: boolean;
   message?: string;
 }
+
+export interface TaskNode {
+  id: string;
+  title: string;
+  description: string;
+  agentType: 'CodeAgent' | 'ReviewAgent' | 'DevOpsAgent';
+  dependsOn: string[];
+  expectedOutput: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface TaskPlan {
+  planTitle: string;
+  summary: string;
+  tasks: TaskNode[];
+}
+
+export interface TaskPlanResult {
+  planId: string;
+  userId: string;
+  sessionId: string;
+  plan: TaskPlan;
+  status: 'pending_confirmation' | 'executing' | 'completed' | 'failed';
+  createdAt: string;
+}

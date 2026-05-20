@@ -60,4 +60,15 @@ export const config = {
     timeoutMs: optionalInt('AGENT_TIMEOUT_MS', 300_000),  // 5 min default
     maxConcurrent: optionalInt('MAX_CONCURRENT_AGENTS', 5),
   },
+
+  taskQueue: {
+    concurrency: optionalInt('TASK_CONCURRENCY', 3),
+    maxRetries: optionalInt('TASK_MAX_RETRIES', 2),
+    retryDelayMs: optionalInt('TASK_RETRY_DELAY_MS', 30_000),
+  },
 } as const;
+
+export const redis = {
+  host: optional('REDIS_HOST', 'localhost'),
+  port: optionalInt('REDIS_PORT', 6379),
+};
