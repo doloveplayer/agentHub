@@ -36,3 +36,6 @@ apps/api/prisma/migrations/*/migration_lock.toml
 tmp/
 temp/
 *.tmp
+
+# Dev utility scripts (contain dev secrets)
+apps/api/scripts/gen_token.ts
