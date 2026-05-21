@@ -1,6 +1,6 @@
 # AgentHub Phase 3 — Core Infrastructure Design (Tier 0)
 
-> Status: Complete · Date: 2026-05-20
+> Status: Complete · Date: 2026-05-20 · Updated: 2026-05-21
 
 ## Key Decisions
 

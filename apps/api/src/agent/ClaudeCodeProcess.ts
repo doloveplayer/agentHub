@@ -1,12 +1,11 @@
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
+import { spawn, execSync, type ChildProcess } from 'child_process';
 import { EventParser, ParsedEvent } from './EventParser.js';
-import { SandboxManager } from './SandboxManager.js';
 
 export type EventHandler = (event: ParsedEvent) => void;
 
 // Safe env vars to forward into the sandbox container.
-// Everything else is stripped to prevent leakage of SSH keys, GitHub tokens, etc.
 const SAFE_ENV_PREFIXES = [
   'ANTHROPIC_', 'CLAUDE_',      // Claude auth
   'PATH', 'HOME',                // Essential
@@ -24,30 +23,14 @@ function buildSafeEnv(): Record<string, string> {
   const safe: Record<string, string> = {};
   for (const [key, value] of Object.entries(process.env)) {
     if (!value) continue;
-
     const upperKey = key.toUpperCase();
-
-    // Exclude host-specific session identifiers
     if (upperKey === 'CLAUDE_CODE_SESSION_ID' || upperKey === 'CLAUDE_CODE_SSE_PORT') continue;
-
-    // Whitelisted prefixes (ANTHROPIC_, CLAUDE_, PATH, HOME, etc.) ALWAYS pass
     const isWhitelisted = SAFE_ENV_PREFIXES.some((prefix) => upperKey.startsWith(prefix));
-    if (isWhitelisted) {
-      safe[key] = value;
-      continue;
-    }
-
-    // Block sensitive suffixes for non-whitelisted vars (GITHUB_TOKEN, SSH_KEY, etc.)
+    if (isWhitelisted) { safe[key] = value; continue; }
     const blocked = ENV_BLOCKLIST_SUFFIXES.some((suffix) => upperKey.endsWith(suffix));
     if (blocked) continue;
-
-    // Pass everything else
     safe[key] = value;
   }
-
-  // Claude Code standard auth expects ANTHROPIC_API_KEY, but many proxy setups
-  // (DeepSeek, etc.) use ANTHROPIC_AUTH_TOKEN. Copy if API_KEY is missing.
-  // Case-insensitive lookup (process.env keys may vary).
   const apiKey = Object.keys(safe).find(k => k.toUpperCase() === 'ANTHROPIC_API_KEY');
   const authToken = Object.keys(safe).find(k => k.toUpperCase() === 'ANTHROPIC_AUTH_TOKEN');
   if (!apiKey && authToken) {
@@ -57,14 +40,11 @@ function buildSafeEnv(): Record<string, string> {
   if (!apiKey && !authToken) {
     console.log('[agent:env] WARNING: No ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN in safe env!');
   }
-
   return safe;
 }
 
-// Startup diagnostic
 console.log('[agent:env] Host ANTHROPIC_* vars:', Object.keys(process.env).filter(k => k.toUpperCase().startsWith('ANTHROPIC')));
 
-// Export for debug endpoint
 export { buildSafeEnv };
 
 export class ClaudeCodeProcess {
@@ -72,16 +52,14 @@ export class ClaudeCodeProcess {
   private handlers: EventHandler[] = [];
   private doneEmitted = false;
   private killed = false;
-  private partialLine = '';  // buffer for partial lines across Docker multiplex frames
-  private stdinStream: NodeJS.WritableStream | null = null;  // unused — kept for interface compatibility
+  private partialLine = '';
+  private childProc: ChildProcess | null = null;
 
-  onEvent(handler: EventHandler): void {
-    this.handlers.push(handler);
-  }
+  onEvent(handler: EventHandler): void { this.handlers.push(handler); }
 
   private emit(event: ParsedEvent): void {
     for (const handler of this.handlers) {
-      try { handler(event); } catch { /* isolate handler errors */ }
+      try { handler(event); } catch { /* isolate */ }
     }
   }
 
@@ -94,33 +72,22 @@ export class ClaudeCodeProcess {
   async start(
     sessionId: string,
     prompt: string,
-    containerId: string,
-    workDir: string,         // container path, e.g. /workspace
+    _containerId: string,        // kept for API compat, unused
+    workDir: string,
     trustMode?: boolean,
-    hostWorkDir?: string,    // host path for writing files that bind-mount into container
-    promptFileId?: string,   // unique per-agent ID to avoid file race between parallel agents
+    hostWorkDir?: string,
+    promptFileId?: string,
   ): Promise<void> {
     this.doneEmitted = false;
     this.killed = false;
-    this.containerId = containerId;
 
-    // REPL mode (trustMode=false): no --print, no --dangerously-skip-permissions.
-    // Claude Code stays alive in interactive mode and emits tool_use events
-    // that we intercept as permission requests (Write/Edit/Bash).
-    // Pipe: cat file - | claude — keeps stdin open for y/n responses.
-    const isReplMode = trustMode === false;
-    const args = isReplMode
-      ? ['--output-format', 'stream-json', '--verbose']  // REPL: no --print
-      : ['--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
-
-    // Build safe env (includes ANTHROPIC_API_KEY copied from ANTHROPIC_AUTH_TOKEN)
     const safeEnv = buildSafeEnv();
+    const agentTag = promptFileId || 'agent';
+    const containerName = `agenthub-agent-${sessionId.slice(0, 8)}-${agentTag.slice(0, 12)}`;
+    this.containerId = containerName;
+    const promptFile = `_prompt_${agentTag}.txt`;
 
-    const promptFile = promptFileId ? `_prompt_${promptFileId}.txt` : '_prompt.txt';
-
-    // Write prompt to bind-mounted host file for stdin delivery.
-    // Each agent gets its own prompt file to avoid race conditions when
-    // multiple agents run in parallel inside the same container.
+    // Write prompt + env files to bind-mounted hostWorkDir
     if (hostWorkDir) {
       writeFileSync(resolve(hostWorkDir, promptFile), prompt, 'utf-8');
       const authKeys = ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'];
@@ -133,77 +100,91 @@ export class ClaudeCodeProcess {
       writeFileSync(resolve(hostWorkDir, '_env.sh'), envLines.join('\n'), 'utf-8');
     }
 
-    console.log(`[agent] Starting Docker exec: container=${containerId.slice(0, 12)} workDir=${workDir} promptFile=${promptFile} trustMode=${trustMode !== false} replMode=${isReplMode}`);
-    console.log(`[agent] Auth: API_KEY=${safeEnv['ANTHROPIC_API_KEY'] ? 'yes' : 'no'} BASE_URL=${safeEnv['ANTHROPIC_BASE_URL'] ? 'yes' : 'no'}`);
+    // docker run -i: native stdin/stdout pipes, no Docker multiplex.
+    // Container PID 1 = claude, dies when claude exits.
+    // --rm auto-removes container on exit.
+    const hwDir = hostWorkDir || workDir;
+    const args: string[] = [
+      'run', '--rm', '-i',
+      '--name', containerName,
+      '-v', `${hwDir}:/workspace`,
+      '-w', '/workspace',
+      'agenthub-sandbox:latest',
+      'sh', '-c',
+      `. /workspace/_env.sh && cat /workspace/${promptFile} | claude --print --output-format stream-json --verbose --dangerously-skip-permissions`,
+    ];
 
-    // REPL mode: deliver prompt + keep stdin open via `cat -`.
-    // The prompt is written to the stdin mux channel, not from a file.
-    // This avoids the `cat file -` buffering issue.
-    const shellCmd = isReplMode
-      ? `. /workspace/_env.sh && cat - | claude ${args.join(' ')}`
-      : `. /workspace/_env.sh && cat /workspace/${promptFile} | claude ${args.join(' ')}`;
+    // Per-agent CLAUDE_CONFIG_DIR for independent memory/skills (only when hostWorkDir is set)
+    if (hostWorkDir) {
+      const agentConfigDir = resolve(hostWorkDir, `_agent_${agentTag}`, '.claude');
+      const agentHomeInside = '/home/node/.claude';
+      // Insert CLAUDE_CONFIG_DIR mount + env after workspace mount
+      args.splice(6, 0, '-v', `${agentConfigDir}:${agentHomeInside}`, '-e', `CLAUDE_CONFIG_DIR=${agentHomeInside}`);
+    }
 
-    SandboxManager.execStream(containerId, ['sh', '-c', shellCmd], {
-      workDir,
-      stdin: isReplMode ? (prompt + '\n') : undefined,
-      keepStdinOpen: isReplMode,
-      onStdin: isReplMode ? (stdin) => { this.stdinStream = stdin; } : undefined,
-      onStdout: (chunk) => {
-        if (this.killed) return;
-        // Accumulate partial lines across Docker multiplex frames
-        this.partialLine += chunk;
-        const lines = this.partialLine.split('\n');
-        // Last element is either empty (if chunk ends with \n) or a partial line
-        this.partialLine = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const event = EventParser.parseLine(line);
-          if (event) {
-            if (event.type === 'done') {
-              this.emitDone(event.exitCode);
-            } else {
-              this.emit(event);
-            }
-          }
+    console.log(`[agent:spawn] docker ${args.slice(0, 6).join(' ')} ... container=${containerName}`);
+    console.log(`[agent:spawn] Auth: API_KEY=${safeEnv['ANTHROPIC_API_KEY'] ? 'yes' : 'no'} BASE_URL=${safeEnv['ANTHROPIC_BASE_URL'] ? 'yes' : 'no'}`);
+
+    const proc = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    this.childProc = proc;
+
+    proc.stdout.on('data', (chunk: Buffer) => {
+      if (this.killed) return;
+      this.partialLine += chunk.toString();
+      const lines = this.partialLine.split('\n');
+      this.partialLine = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = EventParser.parseLine(line);
+        if (event) {
+          if (event.type === 'done') this.emitDone(event.exitCode);
+          else this.emit(event);
         }
-      },
-      onStderr: (chunk) => {
-        if (this.killed) return;
-        const message = chunk.trim();
-        if (message) {
-          this.emit({ type: 'error', message });
-        }
-      },
-    }).then(({ exitCode }) => {
-      if (!this.killed) {
-        this.emitDone(exitCode);
       }
-    }).catch((err) => {
+    });
+
+    proc.stderr.on('data', (chunk: Buffer) => {
+      if (this.killed) return;
+      const message = chunk.toString().trim();
+      if (!message) return;
+      // Filter Docker CLI progress noise (image pull, etc.) from agent errors
+      const isDockerNoise = /^(Unable to find|Pulling from|Digest:|Status:|Downloaded|Extracting|Pull complete)/.test(message);
+      if (!isDockerNoise) this.emit({ type: 'error', message });
+    });
+
+    proc.on('close', (code) => {
       if (!this.killed) {
-        this.emit({ type: 'error', message: `Docker exec error: ${err.message}` });
+        // Flush remaining partial line if any
+        if (this.partialLine.trim()) {
+          const event = EventParser.parseLine(this.partialLine);
+          if (event && event.type !== 'done') this.emit(event);
+        }
+        this.emitDone(code ?? 1);
+      }
+    });
+
+    proc.on('error', (err) => {
+      if (!this.killed) {
+        this.emit({ type: 'error', message: `docker run error: ${err.message}` });
         this.emitDone(1);
       }
     });
   }
 
   write(input: string): void {
-    if (this.killed) return;
-    // REPL mode: write directly to the persistent stdin stream
-    if (this.stdinStream) {
-      try { this.stdinStream.write(input); } catch { /* process exited */ }
-      return;
-    }
-    // Fallback for old --print mode: /proc/pid/fd/0
-    if (!this.containerId) return;
-    const escaped = input.replace(/'/g, "'\\''");
-    SandboxManager.execShell(this.containerId,
-      `echo '${escaped}' > /proc/$(pgrep -f 'claude.*--(print|verbose)' 2>/dev/null | head -1)/fd/0 2>/dev/null || true`);
+    if (this.killed || !this.childProc?.stdin) return;
+    try { this.childProc.stdin.write(input); } catch { /* process exited */ }
   }
 
   kill(): void {
     this.killed = true;
+    if (this.childProc) {
+      try { this.childProc.stdin?.end(); } catch { /* ignore */ }
+      try { this.childProc.kill('SIGTERM'); } catch { /* ignore */ }
+    }
+    // docker rm -f as fallback
     if (this.containerId) {
-      SandboxManager.execShell(this.containerId, 'pkill -f "claude.*--print" 2>/dev/null || true');
+      try { execSync(`docker rm -f ${this.containerId} 2>/dev/null`, { timeout: 5000 }); } catch { /* ignore */ }
     }
   }
 }

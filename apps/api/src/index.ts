@@ -20,7 +20,8 @@ import agentRoutes from './routes/agents.js';
 // from previous backend runs
 try {
   execSync("docker rm -f $(docker ps -aq --filter name=agenthub-sandbox) 2>/dev/null", { encoding: 'utf8' });
-  console.log('[startup] Cleaned orphaned sandbox containers');
+  execSync("docker rm -f $(docker ps -aq --filter name=agenthub-agent-) 2>/dev/null", { encoding: 'utf8' });
+  console.log('[startup] Cleaned orphaned containers');
 } catch { /* no orphaned containers */ }
 try {
   execSync(`rm -rf ${config.sandbox.root}/*`, { encoding: 'utf8' });

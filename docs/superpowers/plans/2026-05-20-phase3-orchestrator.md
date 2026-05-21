@@ -8,7 +8,7 @@
 
 **Tech Stack:** BullMQ + Redis, React Flow (DAG 可视化), Zod (JSON schema 校验), PTY via node-pty
 
-**Status (2026-05-21):** Tier 0 ✅ 完成 | Tier 1 ✅ 完成 | Tier 2 ✅ 完成 | Tier 3 ✅ 完成 | #10 PTY ⚠️ 基础设施完成，完整交互被 Claude Code CLI --print 模式限制阻塞
+**Status (2026-05-21):** Tier 0 ✅ | Tier 1 ✅ | Tier 2 ✅ | Tier 3 ✅ | REPL 传输层 ✅ (spawn + docker run -i) | #10 ⚠️ Claude Code CLI stream-json 不支持交互式 stdin 权限
 
 ---
 

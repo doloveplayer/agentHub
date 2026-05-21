@@ -1,6 +1,6 @@
 # AgentHub — Agent 协作协议、生产项目集成、多厂商适配设计规格
 
-> Status: Draft · Date: 2026-05-21
+> Status: Draft · Date: 2026-05-21 · Updated: 2026-05-21
 
 ## §1 Agent 协作协议（Agent Collaboration Protocol）
 
@@ -249,11 +249,11 @@ interface ProviderConfig {
 
 ### Provider Implementations
 
-| Provider | CLI Command | Output Format | Parser |
-|----------|------------|---------------|--------|
-| claude-code | `claude --print --output-format stream-json --verbose` | stream-json (JSON lines) | EventParser (existing) |
-| codex | `codex exec --json` | JSON lines + plain text | CodexParser (new) |
-| opencode | `opencode --json` | JSON lines | OpenCodeParser (new) |
+| Provider | Execution Model | Output Format | Parser |
+|----------|----------------|---------------|--------|
+| claude-code | `spawn docker run -i` native pipes | stream-json (JSON lines) | EventParser (existing) |
+| codex | `spawn docker run -i` native pipes | JSON lines + plain text | CodexParser (new) |
+| opencode | `spawn docker run -i` native pipes | JSON lines | OpenCodeParser (new) |
 
 ### Agent Card Differentiation
 
