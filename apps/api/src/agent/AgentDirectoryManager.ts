@@ -34,6 +34,7 @@ ${systemPrompt}
 - Your personal files (memory, config) are at /workspace/_agent_${agentName}/
 - When you complete a significant phase, note it in your output.
 - You may be contacted by other agents. Check your inbox at /workspace/_agent_${agentName}/_inbox.jsonl
+- This CLAUDE.md defines your persistent identity and behavior rules. The user message passed at runtime contains only the task — do not expect system prompt in each message.
 `;
 
     writeFileSync(resolve(agentDir, 'CLAUDE.md'), claudeMd, 'utf-8');

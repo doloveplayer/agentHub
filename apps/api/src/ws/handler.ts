@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
-import { ClaudeCodeProcess } from '../agent/ClaudeCodeProcess.js';
+import { ClaudeCodeProcess, buildSafeEnv } from '../agent/ClaudeCodeProcess.js';
+import { ClaudeCodeProvider } from '../agent/providers/claude-code.js';
 import { SandboxManager } from '../agent/SandboxManager.js';
 import { stateTracker } from '../agent/StateTracker.js';
 import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
@@ -359,9 +360,7 @@ async function handleChatMessage(
 
     let accumulatedContent = '';
     let inJsonBlock = false;
-    // REPL process reuse: check if agent already has a running process.
-    // If so, sendPrompt() instead of spawning a new ClaudeCodeProcess.
-    // Full implementation in Phase 3.5 Task 1 (InboxManager integration).
+    // REPL process reuse: check if agent already has a running provider.
     const agentNameForProc = mention.agentId
       ? (await prisma.agent.findUnique({ where: { id: mention.agentId }, select: { name: true } }))?.name
       : null;
@@ -370,14 +369,14 @@ async function handleChatMessage(
       : null;
     if (existingProc && existingProc.provider.isAlive()) {
       console.log(`[ws] Reusing REPL process for agent=${agentNameForProc}`);
-      existingProc.provider.sendPrompt(agentPrompt);
+      // Problem 4 fix: only send user message, REPL already has system prompt + history in context
+      existingProc.provider.sendPrompt(mention.subPrompt);
       clearTimeout(existingProc.timer);
       const agentName = agentNameForProc!;
       existingProc.timer = setTimeout(() => {
         existingProc.provider.stop();
         agentProcesses.get(sessionId)?.delete(agentName);
       }, config.agent.timeoutMs);
-      // Streaming handled by existing provider.onEvent handler.
       // Create placeholder in agentStates so stop_agent can find it.
       if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
       const procRef = new ClaudeCodeProcess();
@@ -387,6 +386,126 @@ async function handleChatMessage(
       return; // Reused existing process, no need to spawn a new one
     }
 
+    // Problem 3 fix: wire up REPL provider for named agents.
+    // Fall back to one-shot ClaudeCodeProcess only when no agent name is available.
+    if (agentNameForProc) {
+      const agentName = agentNameForProc;
+      const provider = ProviderFactory.create('claude-code') as ClaudeCodeProvider;
+
+      // Build safe env for provider
+      const safeEnv = buildSafeEnv();
+
+      provider.onEvent((ev) => {
+        switch (ev.type) {
+          case 'thinking': {
+            accumulatedContent += (ev.content || '');
+            broadcast(sessionId, { type: 'stream_chunk', content: ev.content || '', agentMessageId: mention.messageId });
+            broadcast(sessionId, { type: 'agent_status', status: 'thinking',
+              details: { content: (ev.content || '').slice(0, 120) },
+              agentMessageId: mention.messageId, timestamp: Date.now() });
+            break;
+          }
+          case 'tool_use': {
+            const inputStr = JSON.stringify(ev.toolInput ?? {});
+            stateTracker.updateTool(mention.messageId, ev.toolName || 'unknown', ev.toolInput || {});
+            broadcast(sessionId, { type: 'agent_status', status: 'tool_use',
+              details: { toolName: ev.toolName, input: ev.toolInput, inputPreview: inputStr.slice(0, 80) },
+              agentMessageId: mention.messageId, timestamp: Date.now() });
+            break;
+          }
+          case 'tool_result': {
+            const resultStr = typeof ev.content === 'string' ? ev.content : '';
+            broadcast(sessionId, { type: 'agent_status', status: 'tool_result',
+              details: { content: resultStr.slice(0, 200), resultPreview: resultStr.slice(0, 80) },
+              agentMessageId: mention.messageId, timestamp: Date.now() });
+            break;
+          }
+          case 'subagent_start':
+            stateTracker.addSubagent(mention.messageId, ev.toolName || 'unknown', ev.content || '');
+            broadcast(sessionId, { type: 'agent_status', status: 'subagent_start',
+              details: { agentType: ev.toolName, description: ev.content },
+              agentMessageId: mention.messageId, timestamp: Date.now() });
+            break;
+          case 'subagent_result':
+            broadcast(sessionId, { type: 'agent_status', status: 'subagent_result',
+              details: { agentType: ev.toolName },
+              agentMessageId: mention.messageId, timestamp: Date.now() });
+            break;
+          case 'permission_request': {
+            const pid = `${mention.messageId}|::|${ev.toolName || 'unknown'}|::|${Date.now()}`;
+            broadcast(sessionId, {
+              type: 'permission_request', permissionId: pid,
+              tool: ev.toolName || '', path: ev.filePath,
+              agentMessageId: mention.messageId, timestamp: Date.now(),
+            });
+            broadcast(sessionId, { type: 'agent_status', status: 'permission_request',
+              details: { tool: ev.toolName, path: ev.filePath, permissionId: pid },
+              agentMessageId: mention.messageId, timestamp: Date.now() });
+            const timeout = setTimeout(() => {
+              console.log(`[ws] Permission timeout: ${pid}`);
+              permissionTimeouts.delete(pid);
+              const stMap = agentStates.get(sessionId);
+              if (stMap) {
+                const st = stMap.get(mention.messageId);
+                if (st) st.process.write('n\n');
+              }
+            }, PERMISSION_TIMEOUT_MS);
+            permissionTimeouts.set(pid, timeout);
+            break;
+          }
+          case 'done': {
+            console.log(`[ws] Agent done (REPL): session=${sessionId} agentMsg=${mention.messageId} exitCode=${ev.exitCode}`);
+            const finalContent = accumulatedContent || (ev.exitCode !== 0 ? '[Agent stopped]' : '[Agent finished]');
+            prisma.message.update({
+              where: { id: mention.messageId },
+              data: { content: finalContent, status: ev.exitCode === 0 ? 'done' : 'error' },
+            }).catch(() => {});
+            stateTracker.setDone(mention.messageId);
+            broadcast(sessionId, { type: 'stream_end', agentMessageId: mention.messageId,
+              fullContent: finalContent, exitCode: ev.exitCode ?? 0 });
+            const stateMap = agentStates.get(sessionId);
+            if (stateMap) {
+              const st = stateMap.get(mention.messageId);
+              if (st) { clearTimeout(st.timer); stateMap.delete(mention.messageId); runningAgentCount = Math.max(0, runningAgentCount - 1); }
+              if (stateMap.size === 0) agentStates.delete(sessionId);
+            }
+            break;
+          }
+          case 'error':
+            broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: ev.message || 'Unknown error' });
+            stateTracker.setError(mention.messageId);
+            break;
+        }
+      });
+
+      // Register provider for future reuse
+      if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
+      const timer = setTimeout(() => {
+        provider.stop();
+        agentProcesses.get(sessionId)?.delete(agentName);
+      }, config.agent.timeoutMs);
+      agentProcesses.get(sessionId)!.set(agentName, { provider, timer, agentId: mention.agentId });
+
+      // Register in agentStates for stop_agent support
+      if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
+      const procRef = new ClaudeCodeProcess();
+      agentStates.get(sessionId)!.set(mention.messageId, { process: procRef, timer, agentId: mention.agentId });
+      runningAgentCount++;
+
+      // Start REPL provider (fire and forget)
+      console.log(`[ws] Starting REPL provider: session=${sessionId} agent=${agentName} msg=${mention.messageId}`);
+      provider.start(sessionId, agentPrompt, sandbox.containerId, sandbox.workDir, {
+        agentName,
+        hostWorkDir: sandbox.hostWorkDir,
+        env: safeEnv,
+      }).catch((err) => {
+        console.error(`[ws] Provider start failed: session=${sessionId} agent=${agentName} error=${err.message}`);
+        broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed to start agent: ${err.message}` });
+      });
+      return; // REPL path complete, skip one-shot spawn below
+    }
+
+    // Fallback: one-shot ClaudeCodeProcess (no named agent, legacy path)
     const stSnap = stateTracker.getOrCreate(mention.messageId, mention.agentId || 'agent');
     const agent = new ClaudeCodeProcess();
 
