@@ -24,7 +24,7 @@ try {
   console.log('[startup] Cleaned orphaned containers');
 } catch { /* no orphaned containers */ }
 try {
-  execSync(`rm -rf ${config.sandbox.root}/*`, { encoding: 'utf8' });
+  execSync(`rm -rf ${config.sandbox.root}/* 2>/dev/null`, { encoding: 'utf8' });
   console.log('[startup] Cleaned orphaned sandbox directories');
 } catch { /* nothing to clean */ }
 

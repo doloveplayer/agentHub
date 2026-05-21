@@ -31,6 +31,11 @@ interface StreamJsonLine {
 }
 
 export class EventParser {
+  // Guard against text duplication when Claude Code --verbose emits both
+  // content_block_delta (streaming) and assistant (final) events.
+  private static receivedDeltaText = false;
+  static resetDeltaState(): void { EventParser.receivedDeltaText = false; }
+
   static parseLine(line: string): ParsedEvent | null {
     const trimmed = line.trim();
     if (!trimmed) return null;
@@ -50,6 +55,12 @@ export class EventParser {
     switch (data.type) {
       case 'assistant':
         return EventParser.parseAssistant(data);
+      case 'content_block_start':
+        return EventParser.parseContentBlockStart(data);
+      case 'content_block_delta':
+        return EventParser.parseContentBlockDelta(data);
+      case 'content_block_stop':
+        return null; // structural event, no content to emit
       case 'tool_use':
         return EventParser.parseToolUse(data);
       case 'tool_result':
@@ -74,20 +85,20 @@ export class EventParser {
     const content = msg?.content;
     if (!content || !Array.isArray(content)) return null;
 
-    // Extract text from all text-type content blocks
-    const chunks: string[] = [];
-    let hasAnyRelevant = false;
+    // When delta events already streamed text, skip text extraction from
+    // the final assistant event to avoid duplication. Still extract tool_use blocks.
+    const skipText = EventParser.receivedDeltaText;
 
-    for (const block of content) {
-      if (block.type === 'text' && block.text) {
-        chunks.push(block.text);
-        hasAnyRelevant = true;
+    if (!skipText) {
+      const chunks: string[] = [];
+      for (const block of content) {
+        if (block.type === 'text' && block.text) {
+          chunks.push(block.text);
+        }
       }
-      // tool_use blocks inside assistant messages are handled separately
-    }
-
-    if (hasAnyRelevant) {
-      return { type: 'text', content: chunks.join('') };
+      if (chunks.length > 0) {
+        return { type: 'text', content: chunks.join('') };
+      }
     }
 
     // Check for tool_use blocks embedded in assistant message content
@@ -104,6 +115,23 @@ export class EventParser {
       }
     }
 
+    return null;
+  }
+
+  private static parseContentBlockStart(data: StreamJsonLine): ParsedEvent | null {
+    const cb = (data as any).content_block;
+    if (cb && cb.type === 'tool_use' && cb.name) {
+      return { type: 'tool_use', toolName: cb.name, input: cb.input || {} };
+    }
+    return null;
+  }
+
+  private static parseContentBlockDelta(data: StreamJsonLine): ParsedEvent | null {
+    const delta = (data as any).delta;
+    if (delta && delta.type === 'text_delta' && typeof delta.text === 'string') {
+      EventParser.receivedDeltaText = true;
+      return { type: 'text', content: delta.text };
+    }
     return null;
   }
 

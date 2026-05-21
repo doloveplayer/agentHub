@@ -67,10 +67,20 @@ export function useChat(sessionId: string) {
                 incrementUnread(sessionId);
               }
               break;
-            case 'stream_end':
+            case 'stream_end': {
+              // Fallback: populate content from fullContent if no stream_chunks arrived.
+              // The backend sends fullContent as accumulated text or a fallback placeholder.
+              if (data.fullContent) {
+                const state = useAppStore.getState();
+                const msg = state.messages[sessionId]?.find(m => m.id === data.agentMessageId);
+                if (msg && !msg.content) {
+                  appendToMessage(sessionId, data.agentMessageId, data.fullContent);
+                }
+              }
               setMessageStatus(sessionId, data.agentMessageId, data.exitCode === 0 ? 'done' : 'error');
               removeStreamingMessage(sessionId, data.agentMessageId);
               break;
+            }
             case 'stream_error':
               console.error('[WS] Agent error:', data.error || data.message);
               if (data.agentMessageId) {

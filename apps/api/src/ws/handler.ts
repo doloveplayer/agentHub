@@ -341,7 +341,20 @@ async function handleChatMessage(
         }
       }
     } else {
-      agentPrompt = history ? `${history}\n\n---\nUser: ${mention.subPrompt}` : mention.subPrompt;
+      // No agent @mentioned: route to Planner as group admin / default responder
+      const planner = await prisma.agent.findUnique({ where: { name: 'planner' } });
+      if (planner) {
+        agentPrompt = `${planner.systemPrompt}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
+        isPlannerAgent = true;
+        mention.agentId = planner.id; // link message to Planner for AgentCard association
+        // Update DB so the message shows Planner as sender
+        prisma.message.update({ where: { id: mention.messageId }, data: { agentId: planner.id } }).catch(() => {});
+        if (sandbox) {
+          AgentDirectoryManager.initialize(sandbox.hostWorkDir, planner.name, planner.systemPrompt);
+        }
+      } else {
+        agentPrompt = history ? `${history}\n\n---\nUser: ${mention.subPrompt}` : mention.subPrompt;
+      }
     }
 
     let accumulatedContent = '';

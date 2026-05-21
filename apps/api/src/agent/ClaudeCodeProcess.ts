@@ -1,4 +1,4 @@
-import { writeFileSync } from 'fs';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import { EventParser, ParsedEvent } from './EventParser.js';
@@ -80,6 +80,7 @@ export class ClaudeCodeProcess {
   ): Promise<void> {
     this.doneEmitted = false;
     this.killed = false;
+    EventParser.resetDeltaState();
 
     const safeEnv = buildSafeEnv();
     const agentTag = promptFileId || 'agent';
@@ -117,9 +118,13 @@ export class ClaudeCodeProcess {
     // Per-agent CLAUDE_CONFIG_DIR for independent memory/skills (only when hostWorkDir is set)
     if (hostWorkDir) {
       const agentConfigDir = resolve(hostWorkDir, `_agent_${agentTag}`, '.claude');
+      // Pre-create directory so it's owned by the host user, not root (Docker would create it as root)
+      if (!existsSync(agentConfigDir)) {
+        mkdirSync(agentConfigDir, { recursive: true });
+      }
       const agentHomeInside = '/home/node/.claude';
-      // Insert CLAUDE_CONFIG_DIR mount + env after workspace mount
-      args.splice(6, 0, '-v', `${agentConfigDir}:${agentHomeInside}`, '-e', `CLAUDE_CONFIG_DIR=${agentHomeInside}`);
+      // Insert CLAUDE_CONFIG_DIR mount + env after the workspace -v pair
+      args.splice(7, 0, '-v', `${agentConfigDir}:${agentHomeInside}`, '-e', `CLAUDE_CONFIG_DIR=${agentHomeInside}`);
     }
 
     console.log(`[agent:spawn] docker ${args.slice(0, 6).join(' ')} ... container=${containerName}`);
@@ -127,6 +132,11 @@ export class ClaudeCodeProcess {
 
     const proc = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
     this.childProc = proc;
+
+    // Temporary: log unrecognized event types to diagnose output format issues.
+    let unknownEventCount = 0;
+    const MAX_UNKNOWN_LOG = 20;
+    const structuralTypes = new Set(['content_block_stop']);
 
     proc.stdout.on('data', (chunk: Buffer) => {
       if (this.killed) return;
@@ -139,6 +149,14 @@ export class ClaudeCodeProcess {
         if (event) {
           if (event.type === 'done') this.emitDone(event.exitCode);
           else this.emit(event);
+        } else if (unknownEventCount < MAX_UNKNOWN_LOG) {
+          // Skip known structural events that we intentionally ignore
+          try {
+            const raw = JSON.parse(line);
+            if (structuralTypes.has(raw.type)) continue;
+          } catch { /* non-JSON line, log it */ }
+          unknownEventCount++;
+          console.log(`[agent:stdout:unknown] ${line.slice(0, 300)}`);
         }
       }
     });
