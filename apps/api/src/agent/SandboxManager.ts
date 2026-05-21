@@ -86,49 +86,57 @@ export class SandboxManager {
 
     const stream = await exec.start({ Detach: false, Tty: false, stdin: attachStdin });
 
-    // Write stdin and conditionally keep open for interactive permission responses
-    const streamAny = stream as any;
-    if (opts.stdin && streamAny.stdin) {
-      streamAny.stdin.write(opts.stdin);
-    }
-    if (opts.keepStdinOpen && streamAny.stdin) {
-      // Prime the stdin stream. Docker's multiplexed stdin channel needs at least
-      // one write to properly initialize. A single newline is harmless:
-      // in `cat file - | claude` mode, the newline passes through as a blank input
-      // separator and Claude Code REPL ignores it.
-      streamAny.stdin.write('\n');
-      if (opts.onStdin) opts.onStdin(streamAny.stdin);
-    } else if (opts.stdin && streamAny.stdin) {
-      streamAny.stdin.end();
+    // Docker multiplex protocol: stdin frames need an 8-byte header.
+    // [stream_type:1byte][0:3bytes][size:4bytes-BE]
+    function muxWrite(data: string): void {
+      const buf = Buffer.from(data);
+      const header = Buffer.alloc(8);
+      header.writeUInt8(0, 0);  // stream 0 = stdin
+      header.writeUInt32BE(buf.length, 4);
+      (stream as any).write(Buffer.concat([header, buf]));
     }
 
     let stdoutBuf = '';
     let stderrBuf = '';
 
-    await new Promise<void>((resolve, reject) => {
-      docker.modem.demuxStream(
-        stream as Duplex,
-        {
-          write: (chunk: unknown) => {
-            const s = typeof chunk === 'string' ? chunk : (chunk as Buffer).toString();
-            stdoutBuf += s;
-            opts.onStdout(s);
-            return true;
-          },
-        } as any,
-        {
-          write: (chunk: unknown) => {
-            const s = typeof chunk === 'string' ? chunk : (chunk as Buffer).toString();
-            stderrBuf += s;
-            opts.onStderr(s);
-            return true;
-          },
-        } as any,
-      );
-
+    // CRITICAL: Start the demux loop BEFORE writing stdin data.
+    // If stdin is written before the `data` handler is attached, Docker's
+    // stdout response frames (e.g., cat echoing stdin) will be lost.
+    const demuxReady = new Promise<void>((resolve, reject) => {
+      let buf = Buffer.alloc(0);
+      const onData = (chunk: Buffer) => {
+        buf = Buffer.concat([buf, chunk]);
+        while (buf.length >= 8) {
+          const streamType = buf.readUInt8(0);
+          const payloadLen = buf.readUInt32BE(4);
+          if (buf.length < 8 + payloadLen) break;
+          const payload = buf.slice(8, 8 + payloadLen);
+          buf = buf.slice(8 + payloadLen);
+          const s = payload.toString('utf-8');
+          if (streamType === 1) { stdoutBuf += s; opts.onStdout(s); }
+          else if (streamType === 2) { stderrBuf += s; opts.onStderr(s); }
+        }
+      };
+      (stream as any).on('data', onData);
       stream.on('end', resolve);
       stream.on('error', reject);
     });
+
+    // Now write stdin data AFTER the demux is listening
+    if (opts.stdin) muxWrite(opts.stdin);
+    if (opts.keepStdinOpen) {
+      muxWrite('\n'); // prime the channel
+      if (opts.onStdin) {
+        opts.onStdin({
+          write: (data: string) => muxWrite(data),
+          end: () => {},
+        } as NodeJS.WritableStream);
+      }
+    } else if (opts.stdin) {
+      muxWrite('');
+    }
+
+    await demuxReady;
 
     const inspect = await exec.inspect();
     return { exitCode: inspect.ExitCode ?? 0 };

@@ -420,6 +420,33 @@ async function handleChatMessage(
           broadcast(sessionId, { type: 'agent_status', status: 'tool_use',
             details: { toolName: event.toolName, input: event.input, inputPreview: inputStr.slice(0, 80) },
             agentMessageId: mention.messageId, timestamp: Date.now() });
+          // REPL mode (trustMode=false): intercept Write/Edit/Bash as permission requests.
+          // Claude Code REPL waits for y/n stdin response after these tool_use events.
+          const needsPermission = ['Write', 'Edit', 'Bash'].includes(event.toolName);
+          if (!data.trustMode && needsPermission) {
+            const pid = `${mention.messageId}|::|${event.toolName}|::|${Date.now()}`;
+            broadcast(sessionId, {
+              type: 'permission_request',
+              permissionId: pid,
+              tool: event.toolName,
+              path: (event.input as any)?.file_path || (event.input as any)?.command?.slice(0, 80),
+              agentMessageId: mention.messageId,
+              timestamp: Date.now(),
+            });
+            broadcast(sessionId, { type: 'agent_status', status: 'permission_request',
+              details: { tool: event.toolName, path: (event.input as any)?.file_path, permissionId: pid },
+              agentMessageId: mention.messageId, timestamp: Date.now() });
+            const timeout = setTimeout(() => {
+              console.log(`[ws] Permission auto-deny timeout: ${pid}`);
+              permissionTimeouts.delete(pid);
+              const stMap = agentStates.get(sessionId);
+              if (stMap) {
+                const st = stMap.get(mention.messageId);
+                if (st) st.process.write('n\n');
+              }
+            }, PERMISSION_TIMEOUT_MS);
+            permissionTimeouts.set(pid, timeout);
+          }
           break;
         }
         case 'tool_result': {

@@ -104,15 +104,14 @@ export class ClaudeCodeProcess {
     this.killed = false;
     this.containerId = containerId;
 
-    const args = [
-      '--print',
-      '--output-format', 'stream-json',
-      '--verbose',
-    ];
-
-    if (trustMode) {
-      args.push('--dangerously-skip-permissions');
-    }
+    // REPL mode (trustMode=false): no --print, no --dangerously-skip-permissions.
+    // Claude Code stays alive in interactive mode and emits tool_use events
+    // that we intercept as permission requests (Write/Edit/Bash).
+    // Pipe: cat file - | claude — keeps stdin open for y/n responses.
+    const isReplMode = trustMode === false;
+    const args = isReplMode
+      ? ['--output-format', 'stream-json', '--verbose']  // REPL: no --print
+      : ['--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
 
     // Build safe env (includes ANTHROPIC_API_KEY copied from ANTHROPIC_AUTH_TOKEN)
     const safeEnv = buildSafeEnv();
@@ -134,13 +133,21 @@ export class ClaudeCodeProcess {
       writeFileSync(resolve(hostWorkDir, '_env.sh'), envLines.join('\n'), 'utf-8');
     }
 
-    console.log(`[agent] Starting Docker exec: container=${containerId.slice(0, 12)} workDir=${workDir} promptFile=${promptFile} trustMode=${trustMode !== false}`);
+    console.log(`[agent] Starting Docker exec: container=${containerId.slice(0, 12)} workDir=${workDir} promptFile=${promptFile} trustMode=${trustMode !== false} replMode=${isReplMode}`);
     console.log(`[agent] Auth: API_KEY=${safeEnv['ANTHROPIC_API_KEY'] ? 'yes' : 'no'} BASE_URL=${safeEnv['ANTHROPIC_BASE_URL'] ? 'yes' : 'no'}`);
 
-    const shellCmd = `. /workspace/_env.sh && cat /workspace/${promptFile} | claude ${args.join(' ')}`;
+    // REPL mode: deliver prompt + keep stdin open via `cat -`.
+    // The prompt is written to the stdin mux channel, not from a file.
+    // This avoids the `cat file -` buffering issue.
+    const shellCmd = isReplMode
+      ? `. /workspace/_env.sh && cat - | claude ${args.join(' ')}`
+      : `. /workspace/_env.sh && cat /workspace/${promptFile} | claude ${args.join(' ')}`;
 
     SandboxManager.execStream(containerId, ['sh', '-c', shellCmd], {
       workDir,
+      stdin: isReplMode ? (prompt + '\n') : undefined,
+      keepStdinOpen: isReplMode,
+      onStdin: isReplMode ? (stdin) => { this.stdinStream = stdin; } : undefined,
       onStdout: (chunk) => {
         if (this.killed) return;
         // Accumulate partial lines across Docker multiplex frames
@@ -180,12 +187,17 @@ export class ClaudeCodeProcess {
   }
 
   write(input: string): void {
-    if (!this.containerId || this.killed) return;
-    // Deliver permission response directly to Claude Code's stdin fd via /proc.
-    // The pipe-based stdin is closed after prompt delivery, so we target the process fd.
+    if (this.killed) return;
+    // REPL mode: write directly to the persistent stdin stream
+    if (this.stdinStream) {
+      try { this.stdinStream.write(input); } catch { /* process exited */ }
+      return;
+    }
+    // Fallback for old --print mode: /proc/pid/fd/0
+    if (!this.containerId) return;
     const escaped = input.replace(/'/g, "'\\''");
     SandboxManager.execShell(this.containerId,
-      `echo '${escaped}' > /proc/$(pgrep -f 'claude.*--print' 2>/dev/null | head -1)/fd/0 2>/dev/null || true`);
+      `echo '${escaped}' > /proc/$(pgrep -f 'claude.*--(print|verbose)' 2>/dev/null | head -1)/fd/0 2>/dev/null || true`);
   }
 
   kill(): void {
