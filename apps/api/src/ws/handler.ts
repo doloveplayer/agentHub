@@ -678,8 +678,18 @@ function handleConfirmPlan(
     broadcast(sessionId, { type: 'stream_error', error: 'No active sandbox' });
     return;
   }
+  // Normalize frontend TaskState (taskId) → TaskNode (id) for TaskQueue
+  const tasks = data.tasks.map((t: any) => ({
+    id: t.taskId || t.id,
+    title: t.title,
+    description: t.description || '',
+    agentType: t.agentType || 'CodeAgent',
+    dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn : [],
+    expectedOutput: t.expectedOutput || '',
+    priority: t.priority || 'medium',
+  }));
   taskQueueManager.submitPlan(
-    data.planId, sessionId, { planTitle: '', summary: '', tasks: data.tasks },
+    data.planId, sessionId, { planTitle: '', summary: '', tasks },
     sandbox.containerId, sandbox.workDir, sandbox.hostWorkDir,
   ).then(() => {
     broadcast(sessionId, { type: 'plan_executing', planId: data.planId });

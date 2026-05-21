@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ReactFlow, type Node, type Edge } from '@xyflow/react';
+import { ReactFlow, Handle, Position, type Node, type Edge } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { TaskState } from '../store/appStore';
 
@@ -21,8 +21,9 @@ function CustomTaskNode({ data }: { data: Record<string, unknown> }) {
     <div style={{
       padding: '12px 16px', borderRadius: '8px', border: `2px solid ${style.border}`,
       backgroundColor: style.bg, color: style.text, minWidth: 180, fontSize: 12,
-      cursor: 'pointer',
+      cursor: 'pointer', position: 'relative',
     }}>
+      <Handle type="target" position={Position.Top} style={{ background: style.border }} />
       <div style={{ fontWeight: 600, marginBottom: 4 }}>{t.title}</div>
       <div style={{ fontSize: 10, opacity: 0.7 }}>{t.agentType}</div>
       {t.status === 'running' && pct !== null && (
@@ -33,6 +34,7 @@ function CustomTaskNode({ data }: { data: Record<string, unknown> }) {
           }} />
         </div>
       )}
+      <Handle type="source" position={Position.Bottom} style={{ background: style.border }} />
     </div>
   );
 }
