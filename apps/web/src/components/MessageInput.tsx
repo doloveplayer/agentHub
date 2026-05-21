@@ -2,6 +2,7 @@ import { useState, useRef, KeyboardEvent } from 'react';
 import { Send } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { AgentMentionPopup } from './AgentMentionPopup';
+import { SlashCommandPopup } from './SlashCommandPopup';
 import { matchAgents } from '../lib/mentionParser';
 import type { AgentConfig } from '@agenthub/shared';
 
@@ -27,6 +28,9 @@ export function MessageInput({ onSend, disabled }: Props) {
   const [cursorPos, setCursorPos] = useState(0);
   const [tags, setTags] = useState<MentionTag[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [showSlash, setShowSlash] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0);
 
   const matchedAgents = matchAgents(mentionQuery, agents);
 
@@ -37,14 +41,27 @@ export function MessageInput({ onSend, disabled }: Props) {
     setCursorPos(pos);
 
     const textBefore = newValue.slice(0, pos);
+    // Check for @mention first
     const atMatch = textBefore.match(/@(\S*)$/);
     if (atMatch) {
       setMentionQuery(atMatch[1]);
       setShowPopup(true);
+      setShowSlash(false);
       setFocusedIndex(0);
+      return;
+    }
+    setShowPopup(false);
+    setMentionQuery('');
+
+    // Check for / command at start of input
+    const slashMatch = textBefore.match(/^\/(\S*)$/);
+    if (slashMatch) {
+      setSlashQuery(slashMatch[1]);
+      setShowSlash(true);
+      setSlashIndex(0);
     } else {
-      setShowPopup(false);
-      setMentionQuery('');
+      setShowSlash(false);
+      setSlashQuery('');
     }
   };
 
@@ -64,7 +81,29 @@ export function MessageInput({ onSend, disabled }: Props) {
     ref.current?.focus();
   };
 
+  const handleSelectCommand = (command: string) => {
+    setValue(command + ' ');
+    setShowSlash(false);
+    setSlashQuery('');
+    ref.current?.focus();
+  };
+
   const handleKeyDown = (e: KeyboardEvent) => {
+    // Slash command keyboard nav
+    if (showSlash) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => (i + 1) % 8); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex(i => (i - 1 + 8) % 8); return; }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        const filtered = slashQuery
+          ? ['/plan','/review','/fix','/deploy','/init','/test','/audit','/compact'].filter(c => c.startsWith(slashQuery))
+          : ['/plan','/review','/fix','/deploy','/init','/test','/audit','/compact'];
+        if (filtered[slashIndex]) handleSelectCommand(filtered[slashIndex]);
+        return;
+      }
+      if (e.key === 'Escape') { setShowSlash(false); return; }
+    }
+
     if (showPopup && matchedAgents.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();
@@ -140,6 +179,16 @@ export function MessageInput({ onSend, disabled }: Props) {
             focusedIndex={focusedIndex}
             onSelect={handleSelectAgent}
             onClose={() => setShowPopup(false)}
+            position={{ top: 0, left: 8 }}
+          />
+        )}
+
+        {showSlash && (
+          <SlashCommandPopup
+            query={slashQuery}
+            focusedIndex={slashIndex}
+            onSelect={handleSelectCommand}
+            onClose={() => setShowSlash(false)}
             position={{ top: 0, left: 8 }}
           />
         )}

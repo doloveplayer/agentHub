@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { AgentCard } from './AgentCard';
+import { TaskCard } from './TaskCard';
 import type { AgentConfig } from '@agenthub/shared';
 import type { AgentEvent } from '../store/appStore';
 
@@ -84,9 +85,26 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
           <p className="text-xs text-gray-500 text-center py-4">File tree coming in Phase 3</p>
         )}
         {activeTab === 'Tasks' && (
-          <p className="text-xs text-gray-500 text-center py-4">Task cards coming in Phase 3</p>
+          <ActivePlanView />
         )}
       </div>
+    </div>
+  );
+}
+
+/** Shows the active task plan from the store in the Tasks tab */
+function ActivePlanView() {
+  const taskPlans = useAppStore((s) => s.taskPlans);
+  const plans = Object.entries(taskPlans);
+  if (plans.length === 0) {
+    return <p className="text-xs text-gray-500 text-center py-4">No active task plans</p>;
+  }
+  return (
+    <div className="space-y-2">
+      {plans.map(([planId, tasks]) => (
+        <TaskCard key={planId} planId={planId}
+          planTitle="Active Plan" summary={`${tasks.length} tasks`} tasks={tasks} />
+      ))}
     </div>
   );
 }

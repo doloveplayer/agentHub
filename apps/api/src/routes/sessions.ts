@@ -60,13 +60,24 @@ sessions.post('/', async (c) => {
 
   let { type, agentIds, title } = parsed.data;
 
-  // Auto-assign all active agents if creating a group session without explicit agentIds
-  if (type === 'group' && (!agentIds || agentIds.length === 0)) {
-    const allAgents = await prisma.agent.findMany({
-      where: { isActive: true },
-      select: { id: true },
-    });
-    agentIds = allAgents.map((a) => a.id);
+  // Auto-assign agents:
+  // - Group without explicit agentIds → assign ALL active agents
+  // - Solo without explicit agentIds → assign default CodeAgent
+  if ((!agentIds || agentIds.length === 0)) {
+    if (type === 'group') {
+      const allAgents = await prisma.agent.findMany({
+        where: { isActive: true },
+        select: { id: true },
+      });
+      agentIds = allAgents.map((a) => a.id);
+    } else {
+      // Solo: assign the default code-agent for 1-on-1 chat
+      const defaultAgent = await prisma.agent.findFirst({
+        where: { name: 'code-agent', isActive: true },
+        select: { id: true },
+      });
+      if (defaultAgent) agentIds = [defaultAgent.id];
+    }
   }
 
   const session = await prisma.session.create({
@@ -74,7 +85,7 @@ sessions.post('/', async (c) => {
       title: title || (type === 'group' ? 'Group Session' : 'New Session'),
       type,
       userId,
-      agents: type === 'group' && agentIds
+      agents: agentIds && agentIds.length > 0
         ? { create: agentIds.map((agentId) => ({ agentId })) }
         : undefined,
     },

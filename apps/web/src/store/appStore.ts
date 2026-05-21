@@ -30,6 +30,7 @@ interface AppState {
   agents: AgentConfig[];
   streamingMessages: Record<string, string[]>;
   trustMode: boolean;
+  taskPlans: Record<string, TaskState[]>;
 
   setToken: (token: string | null) => void;
   setUser: (user: any) => void;
@@ -44,6 +45,21 @@ interface AppState {
   setTrustMode: (mode: boolean) => void;
   removeStreamingMessage: (sessionId: string, msgId: string) => void;
   isSessionStreaming: (sessionId: string) => boolean;
+  setTaskPlan: (planId: string, tasks: TaskState[]) => void;
+  updateTaskStatus: (planId: string, taskId: string, status: TaskState['status']) => void;
+  unreadCounts: Record<string, number>;
+  incrementUnread: (sessionId: string) => void;
+  clearUnread: (sessionId: string) => void;
+}
+
+export interface TaskState {
+  taskId: string;
+  planId: string;
+  title: string;
+  agentType: string;
+  status: 'waiting' | 'running' | 'done' | 'failed';
+  dependsOn: string[];
+  progress?: { completed: number; total: number };
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -56,6 +72,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   agents: [],
   streamingMessages: {},
   trustMode: true,
+  taskPlans: {},
+  unreadCounts: {},
 
   setToken: (token) => {
     if (token) localStorage.setItem('agenthub_token', token);
@@ -129,5 +147,35 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...state.agentEvents,
         [messageId]: [...(state.agentEvents[messageId] ?? []), event],
       },
+    })),
+
+  setTaskPlan: (planId, tasks) =>
+    set((state) => ({
+      taskPlans: { ...state.taskPlans, [planId]: tasks },
+    })),
+
+  updateTaskStatus: (planId, taskId, status) =>
+    set((state) => {
+      const tasks = state.taskPlans[planId];
+      if (!tasks) return state;
+      return {
+        taskPlans: {
+          ...state.taskPlans,
+          [planId]: tasks.map((t) => t.taskId === taskId ? { ...t, status } : t),
+        },
+      };
+    }),
+
+  incrementUnread: (sessionId) =>
+    set((state) => ({
+      unreadCounts: {
+        ...state.unreadCounts,
+        [sessionId]: (state.unreadCounts[sessionId] || 0) + 1,
+      },
+    })),
+
+  clearUnread: (sessionId) =>
+    set((state) => ({
+      unreadCounts: { ...state.unreadCounts, [sessionId]: 0 },
     })),
 }));

@@ -69,3 +69,38 @@ export function matchAgents(query: string, agents: AgentConfig[]): AgentConfig[]
     (a) => a.name.toLowerCase().startsWith(lower) || a.displayName.toLowerCase().startsWith(lower),
   );
 }
+
+/** Keyword → agent type scoring map for context-based recommendation */
+const KEYWORD_SCORES: Record<string, Record<string, number>> = {
+  'code-agent': { bug: 10, fix: 10, error: 10, crash: 10, broken: 8, code: 8, implement: 8, write: 7, refactor: 7, feature: 6, build: 5, create: 5, generate: 5 },
+  'review-agent': { review: 10, check: 8, audit: 8, inspect: 8, security: 7, lint: 7, quality: 6, style: 5 },
+  'devops-agent': { deploy: 10, docker: 10, build: 8, release: 8, ci: 7, pipeline: 7, infra: 7, production: 8, scale: 6 },
+  'planner': { plan: 10, design: 8, architect: 8, structure: 7, roadmap: 7, schema: 6 },
+};
+
+/**
+ * Reorder matched agents by context relevance based on recent messages.
+ * Agents matching keywords in the chat context get boosted in the sort order.
+ */
+export function recommendAgents(
+  query: string,
+  agents: AgentConfig[],
+  recentMessages: string[],
+): AgentConfig[] {
+  const matched = matchAgents(query, agents);
+  if (matched.length <= 1 || recentMessages.length === 0) return matched;
+
+  const context = recentMessages.join(' ').toLowerCase();
+
+  const scored = matched.map(agent => {
+    const name = agent.name;
+    const scores = KEYWORD_SCORES[name] || {};
+    let score = 0;
+    for (const [keyword, weight] of Object.entries(scores)) {
+      if (context.includes(keyword)) score += weight;
+    }
+    return { agent, score };
+  });
+
+  return scored.sort((a, b) => b.score - a.score).map(s => s.agent);
+}

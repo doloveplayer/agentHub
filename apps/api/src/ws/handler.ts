@@ -2,6 +2,10 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
 import { ClaudeCodeProcess } from '../agent/ClaudeCodeProcess.js';
 import { SandboxManager } from '../agent/SandboxManager.js';
+import { stateTracker } from '../agent/StateTracker.js';
+import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
+import { ProviderFactory } from '../agent/providers/factory.js';
+import type { AbstractProvider } from '../agent/providers/base.js';
 import { prisma } from '../db/prisma.js';
 import { verifyToken } from '../lib/jwt.js';
 import { config } from '../config.js';
@@ -14,11 +18,18 @@ const sessions = new Map<string, Set<WebSocket>>();
 /** sessionId → active agent info (process + timer) */
 const agentStates = new Map<string, Map<string, { process: ClaudeCodeProcess; timer: NodeJS.Timeout; agentId: string }>>();
 
+/** sessionId → Map<agentName → REPL process info> for persistent sessions */
+const agentProcesses = new Map<string, Map<string, { provider: AbstractProvider; timer: NodeJS.Timeout; agentId: string }>>();
+
 /** sessionId → sandbox info (lazy-created per session) */
 const sandboxes = new Map<string, { containerId: string; workDir: string; hostWorkDir: string }>();
 
 /** Count of currently executing agents across all sessions */
 let runningAgentCount = 0;
+
+/** Reference to TaskQueueManager (set by index.ts on startup) */
+let taskQueueManager: any = null;
+export function setTaskQueueManager(tqm: any): void { taskQueueManager = tqm; }
 
 /** permissionId → timeout timer for auto-deny on user inaction */
 const permissionTimeouts = new Map<string, NodeJS.Timeout>();
@@ -39,7 +50,7 @@ async function getOrCreateSandbox(sessionId: string) {
   return sandbox;
 }
 
-function broadcast(sessionId: string, data: unknown): void {
+export function broadcast(sessionId: string, data: unknown): void {
   const conns = sessions.get(sessionId);
   if (!conns) return;
   const payload = JSON.stringify(data);
@@ -57,6 +68,13 @@ function sendTo(ws: WebSocket, data: unknown): void {
 }
 
 function cleanupSessionResources(sessionId: string): void {
+  // Kill all REPL processes for this session
+  const procMap = agentProcesses.get(sessionId);
+  if (procMap) {
+    for (const [, info] of procMap) { clearTimeout(info.timer); info.provider.stop(); }
+    agentProcesses.delete(sessionId);
+  }
+
   // Kill all agents for this session
   const stateMap = agentStates.get(sessionId);
   if (stateMap) {
@@ -221,6 +239,15 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'stop_agent':
       handleStopAgent(sessionId, data);
       break;
+    case 'confirm_plan':
+      handleConfirmPlan(sessionId, data);
+      break;
+    case 'modify_task':
+      handleModifyTask(sessionId, data);
+      break;
+    case 'retry_task':
+      handleRetryTask(sessionId, data);
+      break;
     default:
       sendTo(ws, { type: 'error', message: `Unknown message type: ${data.type}` });
   }
@@ -298,6 +325,7 @@ async function handleChatMessage(
 
     // Build agent-specific prompt
     let agentPrompt = mention.subPrompt;
+    let isPlannerAgent = false;
     const history = await buildHistory(sessionId);
     if (isSlashCommand) {
       // / 指令透明透传：不注入 system prompt，原样转发
@@ -306,26 +334,89 @@ async function handleChatMessage(
       const agent = await prisma.agent.findUnique({ where: { id: mention.agentId } });
       if (agent) {
         agentPrompt = `${agent.systemPrompt}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
+        isPlannerAgent = agent.name === 'planner';
+        // Lazy-init agent directory on first use (not at session creation)
+        if (sandbox) {
+          AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt);
+        }
       }
     } else {
       agentPrompt = history ? `${history}\n\n---\nUser: ${mention.subPrompt}` : mention.subPrompt;
     }
 
     let accumulatedContent = '';
+    let inJsonBlock = false;
+    // REPL process reuse: check if agent already has a running process.
+    // If so, sendPrompt() instead of spawning a new ClaudeCodeProcess.
+    // Full implementation in Phase 3.5 Task 1 (InboxManager integration).
+    const agentNameForProc = mention.agentId
+      ? (await prisma.agent.findUnique({ where: { id: mention.agentId }, select: { name: true } }))?.name
+      : null;
+    const existingProc = agentNameForProc
+      ? agentProcesses.get(sessionId)?.get(agentNameForProc)
+      : null;
+    if (existingProc && existingProc.provider.isAlive()) {
+      console.log(`[ws] Reusing REPL process for agent=${agentNameForProc}`);
+      existingProc.provider.sendPrompt(agentPrompt);
+      clearTimeout(existingProc.timer);
+      const agentName = agentNameForProc!;
+      existingProc.timer = setTimeout(() => {
+        existingProc.provider.stop();
+        agentProcesses.get(sessionId)?.delete(agentName);
+      }, config.agent.timeoutMs);
+      // Streaming handled by existing provider.onEvent handler.
+      // Create placeholder in agentStates so stop_agent can find it.
+      if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
+      const procRef = new ClaudeCodeProcess();
+      agentStates.get(sessionId)!.set(mention.messageId, {
+        process: procRef, timer: existingProc.timer, agentId: mention.agentId,
+      });
+      return; // Reused existing process, no need to spawn a new one
+    }
+
+    const stSnap = stateTracker.getOrCreate(mention.messageId, mention.agentId || 'agent');
     const agent = new ClaudeCodeProcess();
 
     agent.onEvent((event) => {
       switch (event.type) {
-        case 'text':
+        case 'text': {
           accumulatedContent += event.content;
-          broadcast(sessionId, { type: 'stream_chunk', content: event.content, agentMessageId: mention.messageId });
+          // For Planner agent, strip JSON code blocks from chat output
+          // so users see conversational text only, not raw JSON
+          let chatContent = event.content;
+          if (isPlannerAgent) {
+            if (inJsonBlock) {
+              // Inside JSON block — check for closing fence
+              const endIdx = chatContent.indexOf('```');
+              if (endIdx !== -1) {
+                inJsonBlock = false;
+                // Send only content after the closing ```
+                chatContent = chatContent.slice(endIdx + 3);
+              } else {
+                break; // still inside JSON block, skip entirely
+              }
+            } else {
+              // Outside JSON block — check for opening ```json fence
+              const jsonStart = chatContent.indexOf('```json');
+              if (jsonStart !== -1) {
+                inJsonBlock = true;
+                // Send only content before the opening fence
+                chatContent = chatContent.slice(0, jsonStart);
+              }
+            }
+          }
+          if (chatContent) {
+            broadcast(sessionId, { type: 'stream_chunk', content: chatContent, agentMessageId: mention.messageId });
+          }
           // Also send as agent_status(thinking) for Agent Card activity feed
           broadcast(sessionId, { type: 'agent_status', status: 'thinking',
             details: { content: event.content.slice(0, 120) },
             agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
+        }
         case 'tool_use': {
           const inputStr = JSON.stringify(event.input ?? {});
+          stateTracker.updateTool(mention.messageId, event.toolName, event.input || {});
           broadcast(sessionId, { type: 'agent_status', status: 'tool_use',
             details: { toolName: event.toolName, input: event.input, inputPreview: inputStr.slice(0, 80) },
             agentMessageId: mention.messageId, timestamp: Date.now() });
@@ -339,6 +430,7 @@ async function handleChatMessage(
           break;
         }
         case 'subagent_start':
+          stateTracker.addSubagent(mention.messageId, event.agentType, event.description);
           broadcast(sessionId, { type: 'agent_status', status: 'subagent_start',
             details: { agentType: event.agentType, description: event.description },
             agentMessageId: mention.messageId, timestamp: Date.now() });
@@ -375,7 +467,43 @@ async function handleChatMessage(
           break;
         }
         case 'done': {
+          stateTracker.setDone(mention.messageId);
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
+          // If Planner agent, try to extract TaskPlan JSON and broadcast plan_result
+          if (isPlannerAgent && event.exitCode === 0 && accumulatedContent) {
+            try {
+              const jsonMatch = accumulatedContent.match(/\{[\s\S]*"tasks"[\s\S]*\}/);
+              if (jsonMatch) {
+                const plan = JSON.parse(jsonMatch[0]);
+                if (plan.tasks && plan.tasks.length > 0) {
+                  const planId = `plan-${Date.now()}`;
+                  // Normalize task fields
+                  const tasks = plan.tasks.map((t: any, i: number) => ({
+                    taskId: t.id || `task-${i + 1}`,
+                    planId,
+                    title: t.title || `Task ${i + 1}`,
+                    agentType: t.agentType || 'CodeAgent',
+                    status: 'waiting' as const,
+                    dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn : [],
+                    expectedOutput: t.expectedOutput || '',
+                    priority: t.priority || 'medium',
+                    description: t.description || '',
+                  }));
+                  broadcast(sessionId, {
+                    type: 'plan_result',
+                    planId,
+                    planTitle: plan.planTitle || 'Task Plan',
+                    summary: plan.summary || '',
+                    tasks,
+                    agentMessageId: mention.messageId,
+                  });
+                  console.log(`[ws] Planner plan_result broadcast: planId=${planId} tasks=${tasks.length}`);
+                }
+              }
+            } catch (err: any) {
+              console.error(`[ws] Failed to parse Planner JSON: ${err.message}`);
+            }
+          }
           // Replace empty content with a placeholder so message bubble isn't blank
           const finalContent = accumulatedContent || (event.exitCode !== 0 ? '[Agent stopped]' : '[Agent finished]');
           prisma.message.update({
@@ -398,6 +526,7 @@ async function handleChatMessage(
           break;
         }
         case 'error':
+          stateTracker.setError(mention.messageId);
           broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: event.message });
           break;
       }
@@ -494,6 +623,73 @@ function handlePermissionResponse(
   }
 
   st.process.write(data.allowed ? 'y\n' : 'n\n');
+}
+
+function handleConfirmPlan(
+  sessionId: string,
+  data: { planId: string; tasks: any[] },
+): void {
+  if (!taskQueueManager) {
+    broadcast(sessionId, { type: 'stream_error', error: 'Task queue not initialized' });
+    return;
+  }
+  const sandbox = sandboxes.get(sessionId);
+  if (!sandbox) {
+    broadcast(sessionId, { type: 'stream_error', error: 'No active sandbox' });
+    return;
+  }
+  taskQueueManager.submitPlan(
+    data.planId, sessionId, { planTitle: '', summary: '', tasks: data.tasks },
+    sandbox.containerId, sandbox.workDir, sandbox.hostWorkDir,
+  ).then(() => {
+    broadcast(sessionId, { type: 'plan_executing', planId: data.planId });
+  }).catch((err: any) => {
+    broadcast(sessionId, { type: 'stream_error', error: `Failed to submit plan: ${err.message}` });
+  });
+}
+
+function handleModifyTask(
+  sessionId: string,
+  data: { planId: string; taskId: string; newDescription: string },
+): void {
+  // Modify task description in the plan before execution
+  // Frontend updates local state; backend re-validates
+  broadcast(sessionId, {
+    type: 'task_modified',
+    planId: data.planId,
+    taskId: data.taskId,
+    newDescription: data.newDescription,
+  });
+}
+
+function handleRetryTask(
+  sessionId: string,
+  data: { planId: string; taskId: string; task?: any },
+): void {
+  if (!taskQueueManager) {
+    broadcast(sessionId, { type: 'stream_error', error: 'Task queue not initialized' });
+    return;
+  }
+  const sandbox = sandboxes.get(sessionId);
+  if (!sandbox) return;
+
+  // Build minimal TaskNode from request data or create a stub for re-enqueue
+  const taskNode: any = data.task || {
+    id: data.taskId,
+    title: data.taskId,
+    description: 'Retry failed task',
+    agentType: 'CodeAgent',
+    dependsOn: [],
+    expectedOutput: '',
+    priority: 'medium',
+  };
+
+  taskQueueManager.retryTask(
+    data.planId, sessionId, taskNode,
+    sandbox.containerId, sandbox.workDir, sandbox.hostWorkDir,
+  ).catch((err: any) => {
+    broadcast(sessionId, { type: 'stream_error', error: `Retry failed: ${err.message}` });
+  });
 }
 
 // ---- Attach to HTTP server ----

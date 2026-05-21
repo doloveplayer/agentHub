@@ -1,3 +1,5 @@
+import type { UnifiedAgentEvent } from './providers/base.js';
+
 export type ParsedEvent =
   | { type: 'text'; content: string }
   | { type: 'tool_use'; toolName: string; input: Record<string, unknown> }
@@ -155,5 +157,22 @@ export class EventParser {
       return { type: 'done', exitCode: data.is_error ? 1 : 0 };
     }
     return null;
+  }
+
+  /** Convert a parsed event to a unified provider-agnostic event */
+  static toUnified(event: ParsedEvent): UnifiedAgentEvent | null {
+    const base = { providerRaw: event, timestamp: Date.now() };
+    switch (event.type) {
+      case 'text':                return { ...base, type: 'thinking' as const, content: event.content };
+      case 'tool_use':            return { ...base, type: 'tool_use' as const, toolName: event.toolName, toolInput: event.input };
+      case 'tool_result':         return { ...base, type: 'tool_result' as const, content: event.content };
+      case 'subagent_start':      return { ...base, type: 'subagent_start' as const, content: event.agentType };
+      case 'subagent_result':     return { ...base, type: 'subagent_result' as const, content: event.agentType };
+      case 'permission_request':  return { ...base, type: 'permission_request' as const, toolName: event.tool, filePath: event.path };
+      case 'done':                return { ...base, type: 'done' as const, exitCode: event.exitCode };
+      case 'error':               return { ...base, type: 'error' as const, message: event.message };
+      case 'system':              return null; // system events handled by StateTracker
+      default:                    return null;
+    }
   }
 }

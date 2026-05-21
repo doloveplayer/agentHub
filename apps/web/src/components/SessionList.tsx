@@ -4,7 +4,7 @@ import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
 
 export function SessionList() {
-  const { sessions, activeSessionId, setSessions, setActiveSession, user } = useAppStore();
+  const { sessions, activeSessionId, setSessions, setActiveSession, user, unreadCounts, clearUnread } = useAppStore();
   const [showCreate, setShowCreate] = useState(false);
 
   useEffect(() => {
@@ -20,6 +20,7 @@ export function SessionList() {
 
   const handleSelect = async (id: string) => {
     setActiveSession(id);
+    clearUnread(id);
     const session = await api.getSession(id);
     useAppStore.setState((s) => ({
       messages: { ...s.messages, [id]: session.messages },
@@ -68,11 +69,16 @@ export function SessionList() {
               <MessageSquare className="w-4 h-4 mt-0.5 text-gray-500 shrink-0" />
             )}
             <div className="min-w-0 flex-1">
-              <div className="text-sm text-gray-300 truncate">
-                {s.title}
+              <div className="text-sm text-gray-300 truncate flex items-center gap-1.5">
+                <span className="truncate">{s.title}</span>
                 {s.type === 'group' && s.agents && (
-                  <span className="text-[10px] text-gray-500 ml-1">
-                    ({s.agents.length} agents)
+                  <span className="text-[10px] text-gray-500 shrink-0">
+                    ({s.agents.length})
+                  </span>
+                )}
+                {(unreadCounts[s.id] || 0) > 0 && activeSessionId !== s.id && (
+                  <span className="ml-auto bg-purple-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0">
+                    {unreadCounts[s.id] > 99 ? '99+' : unreadCounts[s.id]}
                   </span>
                 )}
               </div>

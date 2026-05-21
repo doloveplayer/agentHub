@@ -17,7 +17,7 @@ export function useChat(sessionId: string) {
   const token = useAppStore((s) => s.token);
   const agents = useAppStore((s) => s.agents);
   const trustMode = useAppStore((s) => s.trustMode);
-  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage } = useAppStore();
+  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread } = useAppStore();
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {
     if (!token || !sessionId) return Promise.reject(new Error('No token or sessionId'));
@@ -62,6 +62,10 @@ export function useChat(sessionId: string) {
           switch (data.type) {
             case 'stream_chunk':
               appendToMessage(sessionId, data.agentMessageId, data.content);
+              // Increment unread for inactive sessions (different tab)
+              if (useAppStore.getState().activeSessionId !== sessionId) {
+                incrementUnread(sessionId);
+              }
               break;
             case 'stream_end':
               setMessageStatus(sessionId, data.agentMessageId, data.exitCode === 0 ? 'done' : 'error');
@@ -99,6 +103,31 @@ export function useChat(sessionId: string) {
               }
               break;
             }
+            case 'plan_result':
+              if (data.planId && data.tasks) {
+                setTaskPlan(data.planId, data.tasks);
+              }
+              break;
+            case 'plan_executing':
+              if (data.planId) {
+                const tasks = useAppStore.getState().taskPlans[data.planId];
+                if (tasks) {
+                  setTaskPlan(data.planId, tasks.map((t: any) => ({ ...t, status: 'running' as const })));
+                }
+              }
+              break;
+            case 'task_completed':
+              if (data.planId && data.taskId) {
+                const store = useAppStore.getState();
+                store.updateTaskStatus(data.planId, data.taskId, 'done');
+              }
+              break;
+            case 'task_failed':
+              if (data.planId && data.taskId) {
+                const store = useAppStore.getState();
+                store.updateTaskStatus(data.planId, data.taskId, 'failed');
+              }
+              break;
           }
         } catch { /* ignore parse errors */ }
       };
@@ -186,6 +215,19 @@ export function useChat(sessionId: string) {
     }
   }, [ensureConnection]);
 
+  const confirmPlan = useCallback(async (planId: string, tasks: any[]) => {
+    try {
+      const ws = await ensureConnection();
+      ws.send(JSON.stringify({
+        type: 'confirm_plan',
+        planId,
+        tasks,
+      }));
+    } catch (err) {
+      console.error('[WS] Failed to confirm plan:', err);
+    }
+  }, [ensureConnection]);
+
   const stopAgent = useCallback(async (agentMessageId: string) => {
     try {
       const ws = await ensureConnection();
@@ -204,5 +246,5 @@ export function useChat(sessionId: string) {
     if (sessionId) connect();
   }, [sessionId, connect]);
 
-  return { send, connect, stopAgent, respondToPermission };
+  return { send, connect, stopAgent, respondToPermission, confirmPlan };
 }

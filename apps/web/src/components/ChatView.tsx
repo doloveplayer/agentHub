@@ -7,9 +7,57 @@ import { MessageInput } from './MessageInput';
 import { AgentStatusPanel } from './AgentStatusPanel';
 import { agentColor } from './AgentMentionPopup';
 import { Wrench, FileText, GitBranch, CheckCircle, Shield, ChevronDown, ChevronUp } from 'lucide-react';
+import { ConfirmationPanel } from './ConfirmationPanel';
 import type { Message, AgentConfig } from '@agenthub/shared';
 
 const EMPTY_MESSAGES: Message[] = [];
+
+/** Renders ConfirmationPanel below a Planner agent's message (DAG lives in sidebar Tasks tab) */
+function PlanRenderer({
+  planFromMessage, taskPlans, confirmedPlans, setConfirmedPlans, setTaskPlan, confirmPlan,
+}: {
+  planFromMessage: any;
+  taskPlans: Record<string, any[]>;
+  confirmedPlans: Set<string>;
+  setConfirmedPlans: React.Dispatch<React.SetStateAction<Set<string>>>;
+  setTaskPlan: (planId: string, tasks: any[]) => void;
+  confirmPlan: (planId: string, tasks: any[]) => void;
+}) {
+  const unconfirmedPlans = Object.entries(taskPlans).filter(([pid]) =>
+    pid.startsWith('plan-') && !confirmedPlans.has(pid)
+  );
+
+  return (
+    <>
+      {unconfirmedPlans.map(([planId, tasks]) => (
+        <ConfirmationPanel key={planId}
+          tasks={tasks.map((t: any) => ({
+            id: t.taskId,
+            title: t.title,
+            description: t.description || '',
+            agentType: t.agentType as any,
+            dependsOn: t.dependsOn || [],
+            expectedOutput: t.expectedOutput || '',
+            priority: t.priority || 'medium',
+          }))}
+          onConfirm={() => {
+            setConfirmedPlans(prev => new Set(prev).add(planId));
+            confirmPlan(planId, tasks);
+          }}
+          onUpdateTask={(taskId, newDescription) => {
+            setTaskPlan(planId, tasks.map((t: any) =>
+              t.taskId === taskId ? { ...t, description: newDescription } : t));
+          }}
+          onCancel={() => {
+            const newPlans = { ...taskPlans };
+            delete newPlans[planId];
+            useAppStore.setState({ taskPlans: newPlans });
+          }}
+        />
+      ))}
+    </>
+  );
+}
 
 export function ChatView() {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -24,9 +72,12 @@ export function ChatView() {
   const agentEvents = useAppStore((s) => s.agentEvents);
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const { send, stopAgent, respondToPermission } = useChat(activeSessionId ?? '');
+  const taskPlans = useAppStore((s) => s.taskPlans);
+  const setTaskPlan = useAppStore((s) => s.setTaskPlan);
+  const { send, stopAgent, respondToPermission, confirmPlan } = useChat(activeSessionId ?? '');
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [resolvedPermissions] = useState<Set<string>>(() => new Set());
+  const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
 
   // Agents lookup by id
   const agentMap = new Map<string, AgentConfig>();
@@ -202,6 +253,11 @@ export function ChatView() {
                 agentName={msg.agentId ? agentMap.get(msg.agentId)?.name : undefined}
               />
               {msg.senderType === 'agent' && renderAgentEvents(msg.id)}
+              {/* Planner task plan: render after the Planner agent's message */}
+              {msg.senderType === 'agent' && msg.agentId && agentMap.get(msg.agentId)?.name === 'planner' && msg.status === 'done' && (
+                <PlanRenderer planFromMessage={msg} taskPlans={taskPlans} confirmedPlans={confirmedPlans}
+                  setConfirmedPlans={setConfirmedPlans} setTaskPlan={setTaskPlan} confirmPlan={confirmPlan} />
+              )}
             </React.Fragment>
           ))}
           <div ref={bottomRef} />

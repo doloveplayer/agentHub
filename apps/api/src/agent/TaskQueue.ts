@@ -168,7 +168,36 @@ Execute this task now. Output the results to the specified files.`;
     });
 
     this.worker.on('failed', (job, err) => {
-      console.error(`[queue] Task ${job?.data?.task?.id} failed: ${err?.message || err}`);
+      const taskId = job?.data?.task?.id || 'unknown';
+      console.error(`[queue] Task ${taskId} failed (attempt ${job?.attemptsMade}/${job?.opts?.attempts}): ${err?.message || err}`);
+      // When all retries exhausted, block downstream dependents
+      if (job && job.opts && job.attemptsMade >= (job.opts.attempts as number || 1)) {
+        const planId = job.data?.planId;
+        if (planId) {
+          this.blockDependents(planId, job.data.task.id).catch(e =>
+            console.error(`[queue] blockDependents error: ${e.message}`));
+        }
+      }
+    });
+  }
+
+  /** Re-enqueue a single failed task for retry */
+  async retryTask(
+    planId: string, sessionId: string,
+    task: TaskNode, containerId: string, workDir: string, hostWorkDir: string,
+  ): Promise<void> {
+    const contextPrompt = `Task: ${task.title}
+Description: ${task.description}
+Expected Output: ${task.expectedOutput}
+
+Retry this failed task. Review the current state of the workspace and attempt again.`;
+
+    await this.queue.add(task.id, {
+      planId, sessionId, task, contextPrompt, containerId, workDir, hostWorkDir,
+    }, {
+      attempts: config.taskQueue.maxRetries + 1,
+      backoff: { type: 'fixed' as const, delay: config.taskQueue.retryDelayMs },
+      priority: task.priority === 'high' ? 1 : task.priority === 'medium' ? 2 : 3,
     });
   }
 

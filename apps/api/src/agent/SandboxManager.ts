@@ -92,8 +92,10 @@ export class SandboxManager {
       streamAny.stdin.write(opts.stdin);
     }
     if (opts.keepStdinOpen && streamAny.stdin) {
-      // Prime the stdin stream so Docker properly initializes the multiplexed channel.
-      // Without this, the stdout demux can stall when stdin is attached but idle.
+      // Prime the stdin stream. Docker's multiplexed stdin channel needs at least
+      // one write to properly initialize. A single newline is harmless:
+      // in `cat file - | claude` mode, the newline passes through as a blank input
+      // separator and Claude Code REPL ignores it.
       streamAny.stdin.write('\n');
       if (opts.onStdin) opts.onStdin(streamAny.stdin);
     } else if (opts.stdin && streamAny.stdin) {

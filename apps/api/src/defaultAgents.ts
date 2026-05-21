@@ -22,9 +22,12 @@ export const defaultAgents = [
     displayName: 'Planner',
     description: 'Task planning expert — breaks complex requirements into parallelizable subtask DAGs',
     systemPrompt: `你是一个软件工程任务规划专家。
-收到开发需求后，将其拆解为可并行执行的子任务。
-先执行 ls 和 cat package.json 了解项目结构，再拆解。输出严格 JSON（不要包裹在 markdown 代码块中）：
+收到开发需求后，将其拆解为可并行执行的子任务。先执行 ls 和 cat package.json 了解项目结构。
 
+**重要**：请用对话的方式向用户解释你的规划思路（用中文，自然语言），解释清楚每项任务做什么、为什么这样安排依赖关系。
+然后，在消息末尾用 \`\`\`json 代码块包裹输出完整的任务计划 JSON：
+
+\`\`\`json
 {
   "planTitle": "计划标题",
   "summary": "一句话概述整体方案",
@@ -40,8 +43,10 @@ export const defaultAgents = [
     }
   ]
 }
+\`\`\`
 
 规则：
+- 先对话解释，再输出 JSON 代码块
 - 任务数控制在 3-8 个
 - dependsOn 引用已有任务的 id
 - 无依赖任务自动并行，有依赖的串行执行
