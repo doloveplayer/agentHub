@@ -67,8 +67,8 @@ apps/web/src/store/
 
 ## Verification
 
-- [ ] Typing "/" shows command popup with 8 commands
-- [ ] Keyboard nav (↑↓ Enter Esc) works identically to @mention popup
-- [ ] Unread badge appears on inactive session when stream_chunk arrives
-- [ ] Unread badge clears when switching to that session
-- [ ] Agent recommendation orders agents by keyword relevance
+- [x] Typing "/" shows command popup with 8 commands
+- [x] Keyboard nav (↑↓ Enter Esc) works identically to @mention popup
+- [x] Unread badge appears on inactive session when stream_chunk arrives
+- [x] Unread badge clears when switching to that session
+- [x] Agent recommendation orders agents by keyword relevance

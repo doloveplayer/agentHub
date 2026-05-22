@@ -64,8 +64,8 @@ SummaryReport {
 
 ## Verification
 
-- [ ] Result summary card shows correct file change count
-- [ ] StateTracker updates reflect in AgentCard within 500ms
-- [ ] Token usage bar renders (████░░ format) when system events received
-- [ ] PTY mode Claude Code emits permission_request events
-- [ ] Allow/Deny response reaches Claude Code via /proc/pid/fd/0
+- [ ] Result summary card shows correct file change count (deferred to Phase 3 Tier 2)
+- [ ] StateTracker updates reflect in AgentCard within 500ms (backend ready, frontend pending)
+- [ ] Token usage bar renders when system events received (StateTracker.updateTokenUsage never called)
+- [ ] PTY mode Claude Code emits permission_request events (blocked by Claude Code CLI #10)
+- [ ] Allow/Deny response reaches Claude Code via stdin (blocked by Claude Code CLI #10)

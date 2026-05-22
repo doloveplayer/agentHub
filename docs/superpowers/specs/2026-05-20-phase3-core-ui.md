@@ -66,8 +66,8 @@ TaskState { taskId, planId, title, agentType, status: 'waiting'|'running'|'done'
 
 ## Verification
 
-- [ ] TaskCard renders in chat stream after Planner returns
-- [ ] DAG nodes positioned correctly with edge arrows
-- [ ] Status colors update reactively on WS events
-- [ ] Confirmation buttons trigger correct WS messages
-- [ ] Retry button re-enqueues failed task
+- [x] TaskCard renders in chat stream after Planner returns
+- [x] DAG nodes positioned correctly with edge arrows
+- [x] Status colors update reactively on WS events
+- [x] Confirmation buttons trigger correct WS messages
+- [x] Retry button re-enqueues failed task

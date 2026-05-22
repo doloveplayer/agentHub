@@ -3,7 +3,7 @@ import { Send } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { AgentMentionPopup } from './AgentMentionPopup';
 import { SlashCommandPopup } from './SlashCommandPopup';
-import { matchAgents } from '../lib/mentionParser';
+import { recommendAgents } from '../lib/mentionParser';
 import type { AgentConfig } from '@agenthub/shared';
 
 interface MentionTag {
@@ -21,6 +21,9 @@ export function MessageInput({ onSend, disabled }: Props) {
   const agents = useAppStore((s) => s.agents);
   const trustMode = useAppStore((s) => s.trustMode);
   const setTrustMode = useAppStore((s) => s.setTrustMode);
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const messages = useAppStore((s) => s.messages);
+  const recentMessages = (messages[activeSessionId ?? ''] ?? []).slice(-20).map(m => m.content).filter(Boolean);
   const [value, setValue] = useState('');
   const [showPopup, setShowPopup] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -32,7 +35,7 @@ export function MessageInput({ onSend, disabled }: Props) {
   const [showSlash, setShowSlash] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
 
-  const matchedAgents = matchAgents(mentionQuery, agents);
+  const matchedAgents = recommendAgents(mentionQuery, agents, recentMessages);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
