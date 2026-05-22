@@ -349,7 +349,7 @@ async function handleChatMessage(
         isPlannerAgent = true;
         mention.agentId = planner.id; // link message to Planner for AgentCard association
         // Update DB so the message shows Planner as sender
-        prisma.message.update({ where: { id: mention.messageId }, data: { agentId: planner.id } }).catch(() => {});
+        prisma.message.update({ where: { id: mention.messageId }, data: { agentId: planner.id } }).catch((err: any) => { console.error(`[ws] Failed to set Planner agentId on message: ${err.message}`); });
         if (sandbox) {
           AgentDirectoryManager.initialize(sandbox.hostWorkDir, planner.name, planner.systemPrompt);
         }
@@ -798,7 +798,9 @@ function handleConfirmPlan(
     return;
   }
   // Normalize frontend TaskState (taskId) → TaskNode (id) for TaskQueue
-  const tasks = data.tasks.map((t: any) => ({
+  // Apply any user modifications to task descriptions before submission
+  const normalized = applyTaskModifications(data.tasks.map((t: any) => ({ ...t, planId: data.planId })));
+  const tasks = normalized.map((t: any) => ({
     id: t.taskId || t.id,
     title: t.title,
     description: t.description || '',
@@ -817,17 +819,29 @@ function handleConfirmPlan(
   });
 }
 
+/** planId:taskId → modified description (survives page refresh until plan confirmed) */
+const taskModifications = new Map<string, string>();
+
 function handleModifyTask(
   sessionId: string,
   data: { planId: string; taskId: string; newDescription: string },
 ): void {
-  // Modify task description in the plan before execution
-  // Frontend updates local state; backend re-validates
+  taskModifications.set(`${data.planId}:${data.taskId}`, data.newDescription);
   broadcast(sessionId, {
     type: 'task_modified',
     planId: data.planId,
     taskId: data.taskId,
     newDescription: data.newDescription,
+  });
+}
+
+/** Apply stored modifications to tasks before submitting to queue */
+function applyTaskModifications(tasks: any[]): any[] {
+  return tasks.map(t => {
+    const key = `${t.planId}:${t.taskId || t.id}`;
+    const modified = taskModifications.get(key);
+    if (modified) { taskModifications.delete(key); }
+    return modified ? { ...t, description: modified } : t;
   });
 }
 
@@ -842,16 +856,15 @@ function handleRetryTask(
   const sandbox = sandboxes.get(sessionId);
   if (!sandbox) return;
 
-  // Build minimal TaskNode from request data or create a stub for re-enqueue
-  const taskNode: any = data.task || {
-    id: data.taskId,
-    title: data.taskId,
-    description: 'Retry failed task',
-    agentType: 'CodeAgent',
-    dependsOn: [],
-    expectedOutput: '',
-    priority: 'medium',
-  };
+  // Build TaskNode from request data (frontend should always send full task object)
+  const taskNode: any = data.task;
+  if (!taskNode) {
+    console.warn(`[ws] Retry task without full task data: planId=${data.planId} taskId=${data.taskId}`);
+    broadcast(sessionId, { type: 'stream_error', error: 'Retry requires full task data. Please re-run the Planner.' });
+    return;
+  }
+  // Ensure id field is set (frontend uses taskId, backend needs id)
+  taskNode.id = taskNode.taskId || taskNode.id || data.taskId;
 
   taskQueueManager.retryTask(
     data.planId, sessionId, taskNode,
