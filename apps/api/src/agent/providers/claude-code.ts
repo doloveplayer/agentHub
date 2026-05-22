@@ -130,14 +130,8 @@ export class ClaudeCodeProvider implements AbstractProvider {
         if (!line.trim()) continue;
         const event = EventParser.parseLine(line);
         if (event) {
-          if (event.type === 'done') {
-            // In REPL mode, Claude emits 'done' after EACH response, not just on exit.
-            // The process stays alive — only emit done if process has actually exited.
-            // For per-response completion, handler.ts uses stream_end from accumulatedContent.
-          } else {
-            const unified = EventParser.toUnified(event);
-            if (unified) this.emit(unified);
-          }
+          const unified = EventParser.toUnified(event);
+          if (unified) this.emit(unified);
         } else if (unknownEventCount < MAX_UNKNOWN_LOG) {
           try {
             const raw = JSON.parse(line);

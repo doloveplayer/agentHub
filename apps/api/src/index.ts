@@ -5,7 +5,6 @@ import type { Server } from 'http';
 import { execSync } from 'child_process';
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
-import { PrismaClient } from '@prisma/client';
 import { config } from './config.js';
 import { attachWebSocket, setTaskQueueManager, broadcast } from './ws/handler.js';
 import { ProviderFactory } from './agent/providers/factory.js';
@@ -40,10 +39,9 @@ try {
   }
 } catch { /* DB might not be ready or prisma not connected yet */ }
 
-// Auto-seed default agents
+// Auto-seed default agents (uses shared prisma client)
 async function seedDefaultAgents() {
   const { defaultAgents } = await import('./defaultAgents.js');
-  const prisma = new PrismaClient();
   try {
     for (const a of defaultAgents) {
       await prisma.agent.upsert({ where: { name: a.name }, update: a, create: a });
@@ -51,8 +49,6 @@ async function seedDefaultAgents() {
     console.log('[seed] Default agents seeded');
   } catch (err: any) {
     console.log('[seed] Agent seed skipped:', err.message);
-  } finally {
-    await prisma.$disconnect();
   }
 }
 
