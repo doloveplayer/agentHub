@@ -17,6 +17,7 @@ export function useChat(sessionId: string) {
   const token = useAppStore((s) => s.token);
   const agents = useAppStore((s) => s.agents);
   const trustMode = useAppStore((s) => s.trustMode);
+  const orchestrationMode = useAppStore((s) => s.orchestrationMode);
   const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread } = useAppStore();
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {
@@ -138,6 +139,17 @@ export function useChat(sessionId: string) {
                 store.updateTaskStatus(data.planId, data.taskId, 'failed');
               }
               break;
+            case 'plan_summary': {
+              const store = useAppStore.getState();
+              store.setPlanSummary(data.planId, {
+                total: data.total ?? 0,
+                completed: data.completed ?? 0,
+                failed: data.failed ?? 0,
+                fileChanges: data.fileChanges ?? [],
+                timestamp: Date.now(),
+              });
+              break;
+            }
           }
         } catch { /* ignore parse errors */ }
       };
@@ -155,7 +167,7 @@ export function useChat(sessionId: string) {
     });
   }, [sessionId, token, appendToMessage, setMessageStatus, addAgentEvent, removeStreamingMessage]);
 
-  const send = useCallback(async (content: string, mentionedAgents: MentionTag[] = []) => {
+  const send = useCallback(async (content: string, mentionedAgents: MentionTag[] = [], mode?: 'parallel' | 'sequential') => {
     const userMsg: Message = {
       id: 'temp-' + Date.now(),
       sessionId,
@@ -206,6 +218,7 @@ export function useChat(sessionId: string) {
           subPrompt: mentions.find((m) => m.agentId === am.agentId)?.subPrompt ?? content,
         })),
         trustMode,
+        orchestrationMode: mode || orchestrationMode,
       }));
     } catch (err: any) {
       console.error('[WS] Failed to send message:', err);

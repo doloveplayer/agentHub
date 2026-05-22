@@ -38,6 +38,9 @@ let runningAgentCount = 0;
 /** Sessions that have milestone broadcasting enabled */
 const sessionsWithMilestones = new Set<string>();
 
+/** Sequential orchestration queues: sessionId → pending mentions */
+const sequentialQueues = new Map<string, { agentId: string; subPrompt: string; messageId: string }[]>();
+
 /** Reference to TaskQueueManager (set by index.ts on startup) */
 let taskQueueManager: any = null;
 export function setTaskQueueManager(tqm: any): void { taskQueueManager = tqm; }
@@ -132,6 +135,22 @@ async function buildHistory(sessionId: string): Promise<string | null> {
       `${m.senderType === 'human' ? 'User' : 'Agent'}: ${m.content}`
     ).join('\n');
   } catch { return null; }
+}
+
+/** Dequeue and start the next agent in sequential orchestration mode */
+async function startNextSequential(sessionId: string): Promise<void> {
+  const queue = sequentialQueues.get(sessionId);
+  if (!queue || queue.length === 0) {
+    sequentialQueues.delete(sessionId);
+    return;
+  }
+  const next = queue.shift()!;
+  console.log(`[ws] Sequential: starting next agent msg=${next.messageId}`);
+  // Re-invoke handleChatMessage with the single queued mention
+  await handleChatMessage(sessionId, {
+    mentions: [next],
+    orchestrationMode: 'sequential',
+  });
 }
 
 function cleanupSessionClient(sessionId: string, ws: WebSocket): void {
@@ -279,7 +298,7 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
 
 async function handleChatMessage(
   sessionId: string,
-  data: { messageId?: string; content?: string; prompt?: string; agentId?: string; trustMode?: boolean; mentions?: { agentId: string; subPrompt: string; messageId: string }[] },
+  data: { messageId?: string; content?: string; prompt?: string; agentId?: string; trustMode?: boolean; orchestrationMode?: 'parallel' | 'sequential' | 'auto'; mentions?: { agentId: string; subPrompt: string; messageId: string }[] },
 ): Promise<void> {
   const prompt = data.content || data.prompt;
   if (!prompt) {
@@ -305,6 +324,14 @@ async function handleChatMessage(
         : [{ agentId: '', subPrompt: prompt, messageId: data.messageId || generateId() }];
 
   const PER_SESSION_MAX = 3;
+  const orchestrationMode = data.orchestrationMode || 'parallel';
+
+  // Sequential mode: queue all but first mention, start next on done
+  if (orchestrationMode === 'sequential' && mentions.length > 1) {
+    sequentialQueues.set(sessionId, mentions.slice(1));
+    mentions.splice(1); // keep only the first
+    console.log(`[ws] Sequential mode: queued ${sequentialQueues.get(sessionId)!.length} agents after first`);
+  }
 
   for (const mention of mentions) {
     // Global concurrency check
@@ -491,6 +518,8 @@ async function handleChatMessage(
               if (st) { clearTimeout(st.timer); stateMap.delete(mention.messageId); runningAgentCount = Math.max(0, runningAgentCount - 1); }
               if (stateMap.size === 0) agentStates.delete(sessionId);
             }
+            // Sequential mode: start the next queued agent
+            startNextSequential(sessionId);
             break;
           }
           case 'error':
@@ -646,6 +675,17 @@ async function handleChatMessage(
           permissionTimeouts.set(pid, timeout);
           break;
         }
+        case 'system':
+          stateTracker.updateTokenUsage(mention.messageId, {
+            input: (event as any).inputTokens || 0,
+            output: (event as any).outputTokens || 0,
+            cacheRead: 0,
+            cacheCreate: 0,
+          });
+          broadcast(sessionId, { type: 'agent_status', status: 'token_update',
+            details: { tokenUsage: { input: (event as any).inputTokens || 0, output: (event as any).outputTokens || 0 } },
+            agentMessageId: mention.messageId, timestamp: Date.now() });
+          break;
         case 'done': {
           stateTracker.setDone(mention.messageId);
           if (agentNameForProc) {
@@ -706,6 +746,8 @@ async function handleChatMessage(
             }
             if (stateMap.size === 0) agentStates.delete(sessionId);
           }
+          // Sequential mode: start the next queued agent
+          startNextSequential(sessionId);
           break;
         }
         case 'error':

@@ -45,27 +45,27 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
   const tabs: PanelTab[] = ['Files', 'Agents', 'Tasks'];
 
   return (
-    <div className="w-72 bg-slate-900/80 border-l border-slate-800 flex flex-col h-full backdrop-blur-sm">
-      <div className="flex border-b border-slate-800/60">
+    <div className="w-72 apple-panel border-l border-white/[0.06] flex flex-col h-full">
+      <div className="flex border-b border-white/[0.06]">
         {tabs.map((tab) => (
           <div
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`flex-1 text-center py-2.5 text-xs cursor-pointer border-b-2 font-medium select-none ${
+            className={`flex-1 text-center py-2.5 text-footnote cursor-pointer border-b-2 font-medium select-none ${
               activeTab === tab
-                ? 'text-slate-100 border-purple-500'
-                : 'text-slate-500 border-transparent hover:text-slate-300 hover:bg-slate-800/40'
+                ? 'text-white/85 border-accent'
+                : 'text-white/25 border-transparent hover:text-white/50 hover:bg-white/[0.04]'
             }`}
           >
             {tab}
           </div>
         ))}
       </div>
-      <div className="flex-1 overflow-y-auto panel-scroll p-2.5">
+      <div className="flex-1 overflow-y-auto panel-scroll p-3">
         {activeTab === 'Agents' && (
           <>
             {agentStates.length === 0 && (
-              <p className="text-xs text-gray-500 text-center py-4">No agents in this session</p>
+              <p className="text-footnote text-white/25 text-center py-4">No agents in this session</p>
             )}
             {agentStates.map(({ agent, status, events }) => {
               // Find the running message for this agent to pass its ID to onStop
@@ -97,15 +97,33 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
 /** Shows the active task plan from the store in the Tasks tab */
 function ActivePlanView() {
   const taskPlans = useAppStore((s) => s.taskPlans);
+  const planSummaries = useAppStore((s) => s.planSummaries);
   const plans = Object.entries(taskPlans);
-  if (plans.length === 0) {
-    return <p className="text-xs text-gray-500 text-center py-4">No active task plans</p>;
+  if (plans.length === 0 && Object.keys(planSummaries).length === 0) {
+    return <p className="text-footnote text-white/25 text-center py-4">No active task plans</p>;
   }
   return (
     <div className="space-y-2">
       {plans.map(([planId, tasks]) => (
-        <TaskCard key={planId} planId={planId}
-          planTitle="Active Plan" summary={`${tasks.length} tasks`} tasks={tasks} />
+        <div key={planId}>
+          <TaskCard planId={planId}
+            planTitle="Active Plan" summary={`${tasks.length} tasks`} tasks={tasks} />
+          {planSummaries[planId] && (
+            <div className="mt-1 px-3 py-2 rounded-md bg-white/[0.04] text-caption">
+              <div className="text-white/60 font-medium mb-1">Plan Summary</div>
+              <div className="flex gap-3 text-white/40">
+                <span className="text-[#30D158]">{planSummaries[planId].completed} done</span>
+                {planSummaries[planId].failed > 0 && <span className="text-[#FF453A]">{planSummaries[planId].failed} failed</span>}
+                <span>{planSummaries[planId].total - planSummaries[planId].completed - planSummaries[planId].failed} remaining</span>
+              </div>
+              {planSummaries[planId].fileChanges.length > 0 && (
+                <div className="mt-1 text-white/25 truncate">
+                  Files: {planSummaries[planId].fileChanges.join(', ')}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       ))}
     </div>
   );

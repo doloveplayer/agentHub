@@ -18,85 +18,91 @@ const EVENT_ICONS: Record<string, string> = {
   subagent_start: '🔀',
   subagent_result: '✅',
   permission_request: '🔐',
+  token_update: '📊',
 };
 
 export function AgentCard({ agentId, displayName, status, events, onStop }: Props) {
   const feedRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll activity feed to bottom while running
   useEffect(() => {
     if (status === 'running' && feedRef.current) {
       feedRef.current.scrollTop = feedRef.current.scrollHeight;
     }
   }, [events.length, status]);
 
-  // Show last 20 events in reverse (newest at bottom)
   const recentEvents = events.slice(-20);
   const toolCount = events.filter((e) => e.type === 'tool_use').length;
+  const tokenEvents = events.filter((e) => e.type === 'token_update');
+  const lastToken = tokenEvents.length > 0 ? tokenEvents[tokenEvents.length - 1].details.tokenUsage : null;
 
   return (
-    <div className="bg-slate-800/90 border border-slate-700/60 rounded-xl mb-2.5 overflow-hidden shadow-sm">
+    <div className="apple-card mb-2.5 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-slate-700/40">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-white/[0.06]">
         <span
           className={`w-2.5 h-2.5 rounded-full ${
-            status === 'running' ? 'bg-green-400 agent-pulse' :
-            status === 'done' ? 'bg-green-500' : 'bg-slate-500'
+            status === 'running' ? 'bg-[#30D158] agent-pulse' :
+            status === 'done' ? 'bg-[#30D158]' : 'bg-white/[0.15]'
           }`}
         />
-        <span className="text-sm font-semibold text-slate-100 truncate">{displayName}</span>
+        <span className="text-body font-semibold text-white/85 truncate">{displayName}</span>
+        {lastToken && (
+          <span className="text-caption px-1.5 py-0.5 rounded-sm bg-white/[0.06] text-white/30 font-medium" title={`Input: ${lastToken.input} Output: ${lastToken.output}`}>
+            {lastToken.input > 1000 ? `${(lastToken.input / 1000).toFixed(1)}K` : lastToken.input}↑ {lastToken.output > 1000 ? `${(lastToken.output / 1000).toFixed(1)}K` : lastToken.output}↓
+          </span>
+        )}
         {toolCount > 0 && (
-          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400 font-medium">{toolCount} tools</span>
+          <span className="text-caption px-1.5 py-0.5 rounded-sm bg-white/[0.06] text-white/35 font-medium">{toolCount} tools</span>
         )}
         {status === 'running' && onStop && (
           <button
             onClick={(e) => { e.stopPropagation(); onStop(); }}
-            className="ml-auto p-1.5 rounded-lg hover:bg-red-900/40 text-red-400 hover:text-red-300 flex-shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center"
+            className="ml-auto p-1.5 rounded-md hover:bg-[#FF453A]/15 text-[#FF453A]/80 hover:text-[#FF453A] flex-shrink-0 min-w-[28px] min-h-[28px] flex items-center justify-center transition active:scale-[0.97]"
             title="Stop agent"
           >
             <Square className="w-3.5 h-3.5" fill="currentColor" />
           </button>
         )}
         {status !== 'running' && (
-          <span className="ml-auto text-[10px] text-slate-500 flex-shrink-0 font-medium">{status}</span>
+          <span className="ml-auto text-caption text-white/25 flex-shrink-0 font-medium">{status}</span>
         )}
       </div>
 
       {/* Activity feed */}
-      <div ref={feedRef} className="max-h-52 overflow-y-auto panel-scroll px-2.5 py-1.5 space-y-1 text-[11px] leading-relaxed">
+      <div ref={feedRef} className="max-h-52 overflow-y-auto panel-scroll px-2.5 py-1.5 space-y-1 text-caption leading-relaxed">
         {recentEvents.length === 0 && status === 'idle' && (
-          <p className="text-slate-600 text-center py-2 italic">Waiting for task...</p>
+          <p className="text-white/15 text-center py-2 italic">Waiting for task...</p>
         )}
         {recentEvents.map((ev, i) => (
-          <div key={ev.id || i} className={`flex gap-1.5 px-1.5 py-0.5 rounded-md ${
-            ev.type === 'thinking' ? 'text-slate-400 italic bg-slate-800/40' :
-            ev.type === 'tool_use' ? 'text-purple-300 bg-purple-950/20' :
-            ev.type === 'tool_result' ? 'text-emerald-400 bg-emerald-950/20' :
-            ev.type === 'subagent_start' ? 'text-blue-300 bg-blue-950/20' :
-            ev.type === 'subagent_result' ? 'text-emerald-300 bg-emerald-950/10' :
-            ev.type === 'permission_request' ? 'text-amber-300 bg-amber-950/20' :
-            'text-slate-400'
+          <div key={ev.id || i} className={`flex gap-1.5 px-1.5 py-0.5 rounded-sm ${
+            ev.type === 'thinking' ? 'text-white/35 italic bg-white/[0.02]' :
+            ev.type === 'tool_use' ? 'text-[#5E5CE6] bg-[#5E5CE6]/8' :
+            ev.type === 'tool_result' ? 'text-[#30D158] bg-[#30D158]/8' :
+            ev.type === 'subagent_start' ? 'text-[#64D2FF] bg-[#64D2FF]/8' :
+            ev.type === 'subagent_result' ? 'text-[#30D158]/80 bg-[#30D158]/6' :
+            ev.type === 'permission_request' ? 'text-[#FF9F0A] bg-[#FF9F0A]/8' :
+            'text-white/35'
           }`}>
             <span className="flex-shrink-0 w-4 text-center">{EVENT_ICONS[ev.type] ?? '·'}</span>
             <span className="min-w-0 break-words">
               {ev.type === 'thinking' && (ev.details.content || 'Thinking...')}
               {ev.type === 'tool_use' && (
                 <><span className="font-semibold">{ev.details.toolName}</span>{' '}
-                <span className="text-slate-500">{ev.details.inputPreview || ''}</span></>
+                <span className="text-white/25">{ev.details.inputPreview || ''}</span></>
               )}
               {ev.type === 'tool_result' && (
-                <span className="text-slate-400">{ev.details.resultPreview || ev.details.content || ''}</span>
+                <span className="text-white/35">{ev.details.resultPreview || ev.details.content || ''}</span>
               )}
               {ev.type === 'subagent_start' && (
                 <><span className="font-semibold">{ev.details.agentType}</span>{' '}
-                <span className="text-slate-500">{ev.details.description || ''}</span></>
+                <span className="text-white/25">{ev.details.description || ''}</span></>
               )}
               {ev.type === 'subagent_result' && (
                 <span>{ev.details.agentType} done</span>
               )}
               {ev.type === 'permission_request' && (
                 <><span className="font-semibold">{ev.details.tool}</span>
-                {ev.details.path && <span className="text-slate-500"> on {ev.details.path}</span>}</>
+                {ev.details.path && <span className="text-white/25"> on {ev.details.path}</span>}</>
               )}
             </span>
           </div>

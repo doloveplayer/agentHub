@@ -13,7 +13,7 @@ interface MentionTag {
 }
 
 interface Props {
-  onSend: (content: string, mentionedAgents: MentionTag[]) => void;
+  onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential') => void;
   disabled?: boolean;
 }
 
@@ -21,6 +21,8 @@ export function MessageInput({ onSend, disabled }: Props) {
   const agents = useAppStore((s) => s.agents);
   const trustMode = useAppStore((s) => s.trustMode);
   const setTrustMode = useAppStore((s) => s.setTrustMode);
+  const orchestrationMode = useAppStore((s) => s.orchestrationMode);
+  const setOrchestrationMode = useAppStore((s) => s.setOrchestrationMode);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const messages = useAppStore((s) => s.messages);
   const recentMessages = (messages[activeSessionId ?? ''] ?? []).slice(-20).map(m => m.content).filter(Boolean);
@@ -44,7 +46,6 @@ export function MessageInput({ onSend, disabled }: Props) {
     setCursorPos(pos);
 
     const textBefore = newValue.slice(0, pos);
-    // Check for @mention first
     const atMatch = textBefore.match(/@(\S*)$/);
     if (atMatch) {
       setMentionQuery(atMatch[1]);
@@ -56,7 +57,6 @@ export function MessageInput({ onSend, disabled }: Props) {
     setShowPopup(false);
     setMentionQuery('');
 
-    // Check for / command at start of input
     const slashMatch = textBefore.match(/^\/(\S*)$/);
     if (slashMatch) {
       setSlashQuery(slashMatch[1]);
@@ -92,7 +92,6 @@ export function MessageInput({ onSend, disabled }: Props) {
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    // Slash command keyboard nav
     if (showSlash) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => (i + 1) % 8); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex(i => (i - 1 + 8) % 8); return; }
@@ -142,22 +141,22 @@ export function MessageInput({ onSend, disabled }: Props) {
   const handleSend = () => {
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
-    onSend(trimmed, tags);
+    onSend(trimmed, tags, orchestrationMode);
     setValue('');
     setTags([]);
     ref.current?.focus();
   };
 
   return (
-    <div className="border-t border-gray-800 p-4">
+    <div className="border-t border-white/[0.06] p-4">
       {tags.length > 0 && (
         <div className="flex gap-1.5 mb-2 flex-wrap">
           {tags.map((tag) => (
             <span key={tag.agentId}
-              className="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-900/50 border border-purple-700 rounded-full text-xs text-purple-300"
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-accent/15 border border-accent/30 rounded-sm text-footnote text-accent/90"
             >
               @{tag.displayName}
-              <button onClick={() => removeTag(tag.agentId)} className="ml-0.5 hover:text-white">&times;</button>
+              <button onClick={() => removeTag(tag.agentId)} className="ml-0.5 hover:text-white transition">&times;</button>
             </span>
           ))}
         </div>
@@ -171,7 +170,7 @@ export function MessageInput({ onSend, disabled }: Props) {
           onKeyDown={handleKeyDown}
           placeholder="Type a message... @ to mention an agent"
           rows={1}
-          className="flex-1 bg-gray-800 text-gray-200 rounded-lg px-4 py-3 resize-none focus:outline-none focus:ring-1 focus:ring-purple-500 text-sm"
+          className="flex-1 bg-white/[0.06] text-white/85 rounded-md px-4 py-3 resize-none focus:outline-none focus:ring-1 focus:ring-accent text-body placeholder:text-white/20"
           disabled={disabled}
         />
 
@@ -196,12 +195,22 @@ export function MessageInput({ onSend, disabled }: Props) {
           />
         )}
 
-        <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer select-none shrink-0" title="When off, permission requests are sent to you for approval">
+        <select
+          value={orchestrationMode}
+          onChange={(e) => setOrchestrationMode(e.target.value as 'parallel' | 'sequential')}
+          className="text-footnote bg-white/[0.06] text-white/50 rounded-sm px-1.5 py-1 border border-white/[0.08] focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer shrink-0"
+          title="Orchestration mode: parallel runs all @mentioned agents at once, sequential runs them one after another"
+        >
+          <option value="parallel">∥</option>
+          <option value="sequential">→</option>
+        </select>
+
+        <label className="flex items-center gap-1.5 text-footnote text-white/30 cursor-pointer select-none shrink-0" title="When off, permission requests are sent to you for approval">
           <input
             type="checkbox"
             checked={trustMode}
             onChange={(e) => setTrustMode(e.target.checked)}
-            className="rounded border-gray-600 bg-gray-700 text-purple-600 focus:ring-purple-500"
+            className="rounded-sm border-white/[0.12] bg-white/[0.06] text-accent focus:ring-accent"
           />
           Trust
         </label>
@@ -209,7 +218,7 @@ export function MessageInput({ onSend, disabled }: Props) {
         <button
           onClick={handleSend}
           disabled={disabled || !value.trim()}
-          className="p-3 bg-purple-600 text-white rounded-lg hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed transition"
+          className="p-3 bg-accent text-white rounded-md hover:bg-accent-hover active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed transition"
         >
           <Send className="w-4 h-4" />
         </button>

@@ -3,7 +3,7 @@ import type { Session, Message, AgentConfig } from '@agenthub/shared';
 
 export interface AgentEvent {
   id: string;
-  type: 'thinking' | 'tool_use' | 'tool_result' | 'subagent_start' | 'subagent_result' | 'permission_request';
+  type: 'thinking' | 'tool_use' | 'tool_result' | 'subagent_start' | 'subagent_result' | 'permission_request' | 'token_update';
   timestamp: number;
   agentId?: string;
   details: {
@@ -17,6 +17,7 @@ export interface AgentEvent {
     tool?: string;
     path?: string;
     permissionId?: string;
+    tokenUsage?: { input: number; output: number };
   };
 }
 
@@ -30,7 +31,11 @@ interface AppState {
   agents: AgentConfig[];
   streamingMessages: Record<string, string[]>;
   trustMode: boolean;
+  orchestrationMode: 'parallel' | 'sequential';
+  setOrchestrationMode: (mode: 'parallel' | 'sequential') => void;
   taskPlans: Record<string, TaskState[]>;
+  planSummaries: Record<string, { total: number; completed: number; failed: number; fileChanges: string[]; timestamp: number }>;
+  setPlanSummary: (planId: string, summary: { total: number; completed: number; failed: number; fileChanges: string[]; timestamp: number }) => void;
 
   setToken: (token: string | null) => void;
   setUser: (user: any) => void;
@@ -72,7 +77,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   agents: [],
   streamingMessages: {},
   trustMode: true,
+  orchestrationMode: 'parallel' as const,
   taskPlans: {},
+  planSummaries: {},
   unreadCounts: {},
 
   setToken: (token) => {
@@ -90,6 +97,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setAgents: (agents) => set({ agents }),
 
   setTrustMode: (trustMode) => set({ trustMode }),
+  setOrchestrationMode: (orchestrationMode) => set({ orchestrationMode }),
 
   addStreamingMessage: (sessionId, msgId) => set((state) => {
     const existing = state.streamingMessages[sessionId] ?? [];
@@ -152,6 +160,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setTaskPlan: (planId, tasks) =>
     set((state) => ({
       taskPlans: { ...state.taskPlans, [planId]: tasks },
+    })),
+
+  setPlanSummary: (planId, summary) =>
+    set((state) => ({
+      planSummaries: { ...state.planSummaries, [planId]: summary },
     })),
 
   updateTaskStatus: (planId, taskId, status) =>
