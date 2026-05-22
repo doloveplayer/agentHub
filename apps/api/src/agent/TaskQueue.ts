@@ -48,6 +48,16 @@ export class TaskQueueManager {
     });
   }
 
+  /** Remove all stale jobs from previous runs (sandboxes are cleaned on startup) */
+  async drain(): Promise<void> {
+    try {
+      await this.queue.obliterate({ force: true });
+      console.log('[queue] Drained all stale jobs');
+    } catch (err: any) {
+      console.log(`[queue] Drain skipped: ${err.message}`);
+    }
+  }
+
   /** Submit an entire Plan to the queue, handling dependency ordering */
   async submitPlan(
     planId: string,

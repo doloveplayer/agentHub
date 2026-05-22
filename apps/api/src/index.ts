@@ -204,6 +204,7 @@ try {
     } catch { /* progress check failed */ }
   });
   setTaskQueueManager(taskQueueManager);
+  await taskQueueManager.drain();
   console.log('[startup] Task queue initialized');
 } catch (err: any) {
   console.log(`[startup] Task queue skipped (Redis not available): ${err.message}`);

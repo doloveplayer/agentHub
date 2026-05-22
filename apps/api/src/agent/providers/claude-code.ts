@@ -49,10 +49,11 @@ export class ClaudeCodeProvider implements AbstractProvider {
     this.containerId = containerId;
     this.agentHome = `/workspace/_agent_${config.agentName || 'agent'}`;
 
-    // REPL mode: no --print. Process stays alive after responding.
-    const args = ['--output-format', 'stream-json', '--verbose'];
-    // No --dangerously-skip-permissions in REPL mode — Claude Code will emit
-    // permission_request events which we route to frontend for interactive approval.
+    // Use --print mode for now (same as ClaudeCodeProcess).
+    // True REPL (no --print with persistent stdin) blocked by Docker exec stdin
+    // semantics: cat file - never gets EOF when keepStdinOpen is true.
+    // REPL process reuse deferred to spawn-based execution model.
+    const args = ['--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
 
     const safeEnv = buildSafeEnv();
     if (config.apiKey) safeEnv['ANTHROPIC_API_KEY'] = config.apiKey;
@@ -82,10 +83,9 @@ export class ClaudeCodeProvider implements AbstractProvider {
       writeFileSync(resolve(config.hostWorkDir, promptFile), prompt + '\n', 'utf-8');
     }
 
-    // REPL: `cat file - | claude`
-    // First cat outputs the prompt file, then `-` reads from Docker exec stdin.
-    // stdin stays open via keepStdinOpen for sendPrompt() and write().
-    const shellCmd = `. /workspace/${envFile} && cd ${workDir} && cat /workspace/${promptFile} - | claude ${args.join(' ')}`;
+    // One-shot: pipe prompt file into claude --print. Container stdin stays open
+    // (keepStdinOpen) but cat exits after reading the file, so claude gets EOF.
+    const shellCmd = `. /workspace/${envFile} && cd ${workDir} && cat /workspace/${promptFile} | claude ${args.join(' ')}`;
 
     console.log(`[agent:repl] Starting REPL: container=${containerId.slice(0, 12)} agent=${config.agentName || 'unknown'}`);
 
