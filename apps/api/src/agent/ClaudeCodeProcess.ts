@@ -2,6 +2,7 @@ import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import { EventParser, ParsedEvent } from './EventParser.js';
+import { buildClaudePrintArgs } from './turns.js';
 
 export type EventHandler = (event: ParsedEvent) => void;
 
@@ -105,6 +106,7 @@ export class ClaudeCodeProcess {
     // Container PID 1 = claude, dies when claude exits.
     // --rm auto-removes container on exit.
     const hwDir = hostWorkDir || workDir;
+    const claudeArgs = buildClaudePrintArgs(trustMode ?? true).join(' ');
     const args: string[] = [
       'run', '--rm', '-i',
       '--name', containerName,
@@ -112,7 +114,7 @@ export class ClaudeCodeProcess {
       '-w', '/workspace',
       'agenthub-sandbox:latest',
       'sh', '-c',
-      `. /workspace/_env.sh && cat /workspace/${promptFile} | claude --print --output-format stream-json --verbose --dangerously-skip-permissions`,
+      `. /workspace/_env.sh && cat /workspace/${promptFile} | claude ${claudeArgs}`,
     ];
 
     // Per-agent CLAUDE_CONFIG_DIR for independent memory/skills (only when hostWorkDir is set)

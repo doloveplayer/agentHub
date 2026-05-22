@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
+import { selectDefaultAgent } from '../agent/turns.js';
 
 const chat = new Hono();
 chat.use('*', authMiddleware);
@@ -30,7 +31,18 @@ chat.post('/send', async (c) => {
 
   const { sessionId, content, mentions } = parsed.data;
 
-  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    include: {
+      agents: {
+        include: {
+          agent: {
+            select: { id: true, name: true, displayName: true, description: true, systemPrompt: true },
+          },
+        },
+      },
+    },
+  });
   if (!session) return c.json({ error: 'Session not found' }, 404);
   if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
 
@@ -45,9 +57,18 @@ chat.post('/send', async (c) => {
   });
 
   // Create agent placeholder messages — one per mention, or one generic if no mentions
+  const defaultAgent = selectDefaultAgent(
+    session.type,
+    session.agents.map((sa) => ({
+      agentId: sa.agent.id,
+      name: sa.agent.name,
+      displayName: sa.agent.displayName,
+    })),
+    session.agents.map((sa) => sa.agent),
+  );
   const targetMentions = (mentions && mentions.length > 0)
     ? mentions
-    : [{ agentId: '', agentName: '', subPrompt: content }];
+    : [{ agentId: defaultAgent?.id || '', agentName: defaultAgent?.name || '', subPrompt: content }];
 
   const agentMessages: { agentMessageId: string; agentId: string }[] = [];
   for (const m of targetMentions) {

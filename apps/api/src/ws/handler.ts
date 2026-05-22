@@ -9,6 +9,7 @@ import { InboxManager } from '../agent/InboxManager.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import { ProviderFactory } from '../agent/providers/factory.js';
 import type { AbstractProvider } from '../agent/providers/base.js';
+import { extractPlannerPlan, selectDefaultAgent, toTaskStates } from '../agent/turns.js';
 import { prisma } from '../db/prisma.js';
 import { verifyToken } from '../lib/jwt.js';
 import { config } from '../config.js';
@@ -48,6 +49,7 @@ export function setTaskQueueManager(tqm: any): void { taskQueueManager = tqm; }
 /** permissionId → timeout timer for auto-deny on user inaction */
 const permissionTimeouts = new Map<string, NodeJS.Timeout>();
 const PERMISSION_TIMEOUT_MS = 120_000;
+const ENABLE_PERSISTENT_REPL = false;
 
 // ---- Helpers ----
 
@@ -137,6 +139,32 @@ async function buildHistory(sessionId: string): Promise<string | null> {
   } catch { return null; }
 }
 
+async function resolveDefaultAgentForSession(sessionId: string) {
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: {
+      type: true,
+      agents: {
+        include: {
+          agent: {
+            select: { id: true, name: true, displayName: true, description: true, systemPrompt: true },
+          },
+        },
+      },
+    },
+  });
+  if (!session) return null;
+
+  const allAgents = session.agents.map((sa) => sa.agent);
+  const sessionAgents = session.agents.map((sa) => ({
+    agentId: sa.agent.id,
+    name: sa.agent.name,
+    displayName: sa.agent.displayName,
+  }));
+
+  return selectDefaultAgent(session.type, sessionAgents, allAgents);
+}
+
 /** Dequeue and start the next agent in sequential orchestration mode */
 async function startNextSequential(sessionId: string): Promise<void> {
   const queue = sequentialQueues.get(sessionId);
@@ -161,6 +189,18 @@ function cleanupSessionClient(sessionId: string, ws: WebSocket): void {
 
   console.log(`[ws] Last client left session=${sessionId}, cleaning up...`);
   cleanupSessionResources(sessionId);
+}
+
+function clearRunningAgent(sessionId: string, agentMessageId: string): void {
+  const stateMap = agentStates.get(sessionId);
+  if (!stateMap) return;
+  const st = stateMap.get(agentMessageId);
+  if (st) {
+    clearTimeout(st.timer);
+    stateMap.delete(agentMessageId);
+    runningAgentCount = Math.max(0, runningAgentCount - 1);
+  }
+  if (stateMap.size === 0) agentStates.delete(sessionId);
 }
 
 // ---- Connection handler ----
@@ -376,6 +416,16 @@ async function handleChatMessage(
     let agentPrompt = mention.subPrompt;
     let isPlannerAgent = false;
     const history = await buildHistory(sessionId);
+    if (!isSlashCommand && !mention.agentId) {
+      const defaultAgent = await resolveDefaultAgentForSession(sessionId);
+      if (defaultAgent) {
+        mention.agentId = defaultAgent.id;
+        prisma.message.update({ where: { id: mention.messageId }, data: { agentId: defaultAgent.id } }).catch((err: any) => {
+          console.error(`[ws] Failed to set default agentId on message: ${err.message}`);
+        });
+      }
+    }
+
     if (isSlashCommand) {
       // / 指令透明透传：不注入 system prompt，原样转发
       // Claude Code 自行识别和执行 /commands
@@ -390,20 +440,7 @@ async function handleChatMessage(
         }
       }
     } else {
-      // No agent @mentioned: route to Planner as group admin / default responder
-      const planner = await prisma.agent.findUnique({ where: { name: 'planner' } });
-      if (planner) {
-        agentPrompt = `${planner.systemPrompt}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
-        isPlannerAgent = true;
-        mention.agentId = planner.id; // link message to Planner for AgentCard association
-        // Update DB so the message shows Planner as sender
-        prisma.message.update({ where: { id: mention.messageId }, data: { agentId: planner.id } }).catch((err: any) => { console.error(`[ws] Failed to set Planner agentId on message: ${err.message}`); });
-        if (sandbox) {
-          AgentDirectoryManager.initialize(sandbox.hostWorkDir, planner.name, planner.systemPrompt);
-        }
-      } else {
-        agentPrompt = history ? `${history}\n\n---\nUser: ${mention.subPrompt}` : mention.subPrompt;
-      }
+      agentPrompt = history ? `${history}\n\n---\nUser: ${mention.subPrompt}` : mention.subPrompt;
     }
 
     let accumulatedContent = '';
@@ -415,7 +452,7 @@ async function handleChatMessage(
     const existingProc = agentNameForProc
       ? agentProcesses.get(sessionId)?.get(agentNameForProc)
       : null;
-    if (existingProc && existingProc.provider.isAlive()) {
+    if (ENABLE_PERSISTENT_REPL && existingProc && existingProc.provider.isAlive()) {
       console.log(`[ws] Reusing REPL process for agent=${agentNameForProc}`);
       existingProc.provider.sendPrompt(mention.subPrompt);
       clearTimeout(existingProc.timer);
@@ -434,7 +471,7 @@ async function handleChatMessage(
 
     // Problem 3 fix: wire up REPL provider for named agents.
     // Fall back to one-shot ClaudeCodeProcess only when no agent name is available.
-    if (agentNameForProc) {
+    if (ENABLE_PERSISTENT_REPL && agentNameForProc) {
       const agentName = agentNameForProc;
       const provider = ProviderFactory.create('claude-code') as ClaudeCodeProvider;
 
@@ -602,33 +639,6 @@ async function handleChatMessage(
           broadcast(sessionId, { type: 'agent_status', status: 'tool_use',
             details: { toolName: event.toolName, input: event.input, inputPreview: inputStr.slice(0, 80) },
             agentMessageId: mention.messageId, timestamp: Date.now() });
-          // REPL mode (trustMode=false): intercept Write/Edit/Bash as permission requests.
-          // Claude Code REPL waits for y/n stdin response after these tool_use events.
-          const needsPermission = ['Write', 'Edit', 'Bash'].includes(event.toolName);
-          if (!data.trustMode && needsPermission) {
-            const pid = `${mention.messageId}|::|${event.toolName}|::|${Date.now()}`;
-            broadcast(sessionId, {
-              type: 'permission_request',
-              permissionId: pid,
-              tool: event.toolName,
-              path: (event.input as any)?.file_path || (event.input as any)?.command?.slice(0, 80),
-              agentMessageId: mention.messageId,
-              timestamp: Date.now(),
-            });
-            broadcast(sessionId, { type: 'agent_status', status: 'permission_request',
-              details: { tool: event.toolName, path: (event.input as any)?.file_path, permissionId: pid },
-              agentMessageId: mention.messageId, timestamp: Date.now() });
-            const timeout = setTimeout(() => {
-              console.log(`[ws] Permission auto-deny timeout: ${pid}`);
-              permissionTimeouts.delete(pid);
-              const stMap = agentStates.get(sessionId);
-              if (stMap) {
-                const st = stMap.get(mention.messageId);
-                if (st) st.process.write('n\n');
-              }
-            }, PERMISSION_TIMEOUT_MS);
-            permissionTimeouts.set(pid, timeout);
-          }
           break;
         }
         case 'tool_result': {
@@ -694,37 +704,19 @@ async function handleChatMessage(
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
           // If Planner agent, try to extract TaskPlan JSON and broadcast plan_result
           if (isPlannerAgent && event.exitCode === 0 && accumulatedContent) {
-            try {
-              const jsonMatch = accumulatedContent.match(/\{[\s\S]*"tasks"[\s\S]*\}/);
-              if (jsonMatch) {
-                const plan = JSON.parse(jsonMatch[0]);
-                if (plan.tasks && plan.tasks.length > 0) {
-                  const planId = `plan-${Date.now()}`;
-                  // Normalize task fields
-                  const tasks = plan.tasks.map((t: any, i: number) => ({
-                    taskId: t.id || `task-${i + 1}`,
-                    planId,
-                    title: t.title || `Task ${i + 1}`,
-                    agentType: t.agentType || 'CodeAgent',
-                    status: 'waiting' as const,
-                    dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn : [],
-                    expectedOutput: t.expectedOutput || '',
-                    priority: t.priority || 'medium',
-                    description: t.description || '',
-                  }));
-                  broadcast(sessionId, {
-                    type: 'plan_result',
-                    planId,
-                    planTitle: plan.planTitle || 'Task Plan',
-                    summary: plan.summary || '',
-                    tasks,
-                    agentMessageId: mention.messageId,
-                  });
-                  console.log(`[ws] Planner plan_result broadcast: planId=${planId} tasks=${tasks.length}`);
-                }
-              }
-            } catch (err: any) {
-              console.error(`[ws] Failed to parse Planner JSON: ${err.message}`);
+            const plan = extractPlannerPlan(accumulatedContent);
+            if (plan) {
+              const planId = `plan-${Date.now()}`;
+              const tasks = toTaskStates(plan, planId);
+              broadcast(sessionId, {
+                type: 'plan_result',
+                planId,
+                planTitle: plan.planTitle,
+                summary: plan.summary,
+                tasks,
+                agentMessageId: mention.messageId,
+              });
+              console.log(`[ws] Planner plan_result broadcast: planId=${planId} tasks=${tasks.length}`);
             }
           }
           // Replace empty content with a placeholder so message bubble isn't blank
@@ -752,7 +744,12 @@ async function handleChatMessage(
         }
         case 'error':
           stateTracker.setError(mention.messageId);
+          prisma.message.update({
+            where: { id: mention.messageId },
+            data: { status: 'error' },
+          }).catch(() => {});
           broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: event.message });
+          clearRunningAgent(sessionId, mention.messageId);
           break;
       }
     });
@@ -781,9 +778,15 @@ async function handleChatMessage(
       agent.start(sessionId, agentPrompt, sandbox.containerId, sandbox.workDir, data.trustMode ?? true, sandbox.hostWorkDir, mention.messageId).catch((err) => {
         console.error(`[ws] Agent start failed: session=${sessionId} agentMsg=${mention.messageId} error=${err.message}`);
         broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed to start agent: ${err.message}` });
+        prisma.message.update({
+          where: { id: mention.messageId },
+          data: { status: 'error' },
+        }).catch(() => {});
+        clearRunningAgent(sessionId, mention.messageId);
       });
     } catch (err: any) {
       console.error(`[ws] Agent spawn error: ${err.message}`);
+      clearRunningAgent(sessionId, mention.messageId);
     }
   }
 }

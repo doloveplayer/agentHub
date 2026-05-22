@@ -30,7 +30,7 @@ export function parseMentions(text: string, agents: AgentConfig[]): {
     const endIndex = i + 1 < matches.length ? matches[i + 1].index : text.length;
     const subPrompt = text.slice(startIndex, endIndex).trim();
 
-    // Find matching agent (case-insensitive prefix match)
+    // Find matching agent (case-insensitive alias/prefix match)
     const agent = findAgent(matches[i].name, agents);
     if (agent) {
       const fullPrompt = broadcastContext
@@ -48,14 +48,30 @@ export function parseMentions(text: string, agents: AgentConfig[]): {
 }
 
 function findAgent(name: string, agents: AgentConfig[]): AgentConfig | undefined {
-  const lower = name.toLowerCase();
+  const normalized = normalizeAgentHandle(name);
+  if (!normalized) return undefined;
+
   // Exact match first
-  const exact = agents.find((a) => a.name === lower);
+  const exact = agents.find((a) =>
+    normalizeAgentHandle(a.name) === normalized ||
+    normalizeAgentHandle(a.displayName) === normalized
+  );
   if (exact) return exact;
+
   // Prefix match
-  const prefix = agents.find((a) => a.name.startsWith(lower));
+  const prefix = agents.find((a) =>
+    normalizeAgentHandle(a.name).startsWith(normalized) ||
+    normalizeAgentHandle(a.displayName).startsWith(normalized)
+  );
   if (prefix) return prefix;
   return undefined;
+}
+
+function normalizeAgentHandle(handle: string): string {
+  return handle
+    .replace(/^@+/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
 }
 
 /**

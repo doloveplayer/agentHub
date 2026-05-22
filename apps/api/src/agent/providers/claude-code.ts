@@ -8,7 +8,7 @@ import { buildSafeEnv } from '../ClaudeCodeProcess.js';
 export class ClaudeCodeProvider implements AbstractProvider {
   readonly name = 'claude-code';
   readonly capabilities = {
-    persistentSession: true,
+    persistentSession: false,
     permissionProxy: true,
     streamingOutput: true,
     independentMemory: true,

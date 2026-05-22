@@ -21,6 +21,7 @@ import workspaceRoutes from './routes/workspace.js';
 try {
   execSync("docker rm -f $(docker ps -aq --filter name=agenthub-sandbox) 2>/dev/null", { encoding: 'utf8' });
   execSync("docker rm -f $(docker ps -aq --filter name=agenthub-agent-) 2>/dev/null", { encoding: 'utf8' });
+  execSync("docker rm -f $(docker ps -aq --filter name=agenthub-repl-) 2>/dev/null", { encoding: 'utf8' });
   console.log('[startup] Cleaned orphaned containers');
 } catch { /* no orphaned containers */ }
 try {
