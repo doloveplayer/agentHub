@@ -5,6 +5,8 @@ import { ClaudeCodeProvider } from '../agent/providers/claude-code.js';
 import { SandboxManager } from '../agent/SandboxManager.js';
 import { stateTracker } from '../agent/StateTracker.js';
 import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
+import { InboxManager } from '../agent/InboxManager.js';
+import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import { ProviderFactory } from '../agent/providers/factory.js';
 import type { AbstractProvider } from '../agent/providers/base.js';
 import { prisma } from '../db/prisma.js';
@@ -27,6 +29,9 @@ const sandboxes = new Map<string, { containerId: string; workDir: string; hostWo
 
 /** Count of currently executing agents across all sessions */
 let runningAgentCount = 0;
+
+/** Sessions that have milestone broadcasting enabled */
+const sessionsWithMilestones = new Set<string>();
 
 /** Reference to TaskQueueManager (set by index.ts on startup) */
 let taskQueueManager: any = null;
@@ -75,6 +80,10 @@ function cleanupSessionResources(sessionId: string): void {
     for (const [, info] of procMap) { clearTimeout(info.timer); info.provider.stop(); }
     agentProcesses.delete(sessionId);
   }
+
+  // Clean up milestone broadcaster
+  MilestoneBroadcaster.clear(sessionId);
+  sessionsWithMilestones.delete(sessionId);
 
   // Kill all agents for this session
   const stateMap = agentStates.get(sessionId);
@@ -206,6 +215,13 @@ async function handleConnection(ws: WebSocket, request: any) {
       data: { sandboxContainerId: sb.containerId },
     }).catch(() => {});
     console.log(`[ws] Sandbox ready: session=${sessionId} container=${sb.containerId.slice(0, 12)} hostDir=${sb.hostWorkDir}`);
+    // Wire milestone broadcasts to this session (once)
+    if (!sessionsWithMilestones.has(sessionId)) {
+      sessionsWithMilestones.add(sessionId);
+      MilestoneBroadcaster.on(sessionId, (event) => {
+        broadcast(sessionId, event);
+      });
+    }
   } catch (err: any) {
     console.error(`[ws] Sandbox creation failed: session=${sessionId} error=${err.message}`);
     sendTo(ws, { type: 'error', message: `Sandbox creation failed: ${err.message}` });
@@ -334,7 +350,7 @@ async function handleChatMessage(
     } else if (mention.agentId) {
       const agent = await prisma.agent.findUnique({ where: { id: mention.agentId } });
       if (agent) {
-        agentPrompt = `${agent.systemPrompt}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
+        agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
         isPlannerAgent = agent.name === 'planner';
         // Lazy-init agent directory on first use (not at session creation)
         if (sandbox) {
@@ -461,6 +477,9 @@ async function handleChatMessage(
               data: { content: finalContent, status: ev.exitCode === 0 ? 'done' : 'error' },
             }).catch(() => {});
             stateTracker.setDone(mention.messageId);
+            if (agentNameForProc) {
+              MilestoneBroadcaster.classify({ sessionId, agentName: agentNameForProc, agentMessageId: mention.messageId, eventType: 'done' });
+            }
             broadcast(sessionId, { type: 'stream_end', agentMessageId: mention.messageId,
               fullContent: finalContent, exitCode: ev.exitCode ?? 0 });
             const stateMap = agentStates.get(sessionId);
@@ -627,6 +646,9 @@ async function handleChatMessage(
         }
         case 'done': {
           stateTracker.setDone(mention.messageId);
+          if (agentNameForProc) {
+            MilestoneBroadcaster.classify({ sessionId, agentName: agentNameForProc, agentMessageId: mention.messageId, eventType: 'done' });
+          }
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
           // If Planner agent, try to extract TaskPlan JSON and broadcast plan_result
           if (isPlannerAgent && event.exitCode === 0 && accumulatedContent) {
