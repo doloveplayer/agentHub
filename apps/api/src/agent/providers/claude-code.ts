@@ -1,9 +1,9 @@
+import { spawn, execSync, type ChildProcess } from 'child_process';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { resolve } from 'path';
 import { AbstractProvider, EventHandler, ProviderConfig, UnifiedAgentEvent } from './base.js';
-import { SandboxManager } from '../SandboxManager.js';
 import { EventParser } from '../EventParser.js';
 import { buildSafeEnv } from '../ClaudeCodeProcess.js';
-import { writeFileSync } from 'fs';
-import { resolve } from 'path';
 
 export class ClaudeCodeProvider implements AbstractProvider {
   readonly name = 'claude-code';
@@ -15,16 +15,15 @@ export class ClaudeCodeProvider implements AbstractProvider {
     independentConfig: true,
   };
 
-  private containerId: string | null = null;
+  private containerName: string | null = null;
   private handlers: EventHandler[] = [];
+  private doneEmitted = false;
   private killed = false;
   private partialLine = '';
-  private stdinStream: NodeJS.WritableStream | null = null;
+  private childProc: ChildProcess | null = null;
   private agentHome = '/workspace';
 
-  onEvent(handler: EventHandler): void {
-    this.handlers.push(handler);
-  }
+  onEvent(handler: EventHandler): void { this.handlers.push(handler); }
 
   private emit(event: UnifiedAgentEvent): void {
     for (const h of this.handlers) {
@@ -32,43 +31,54 @@ export class ClaudeCodeProvider implements AbstractProvider {
     }
   }
 
+  private emitDone(exitCode: number): void {
+    if (this.doneEmitted) return;
+    this.doneEmitted = true;
+    this.emit({ type: 'done', exitCode, timestamp: Date.now() });
+  }
+
   getAgentHome(): string { return this.agentHome; }
 
   isAlive(): boolean {
-    return !this.killed && this.stdinStream !== null;
+    return !this.killed && this.childProc !== null && !this.childProc.killed;
   }
 
   async start(
     sessionId: string,
     prompt: string,
-    containerId: string,
+    _containerId: string,
     workDir: string,
     config: ProviderConfig,
   ): Promise<void> {
+    this.doneEmitted = false;
     this.killed = false;
-    this.containerId = containerId;
-    this.agentHome = `/workspace/_agent_${config.agentName || 'agent'}`;
-
-    // Use --print mode for now (same as ClaudeCodeProcess).
-    // True REPL (no --print with persistent stdin) blocked by Docker exec stdin
-    // semantics: cat file - never gets EOF when keepStdinOpen is true.
-    // REPL process reuse deferred to spawn-based execution model.
-    const args = ['--print', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
+    EventParser.resetDeltaState();
 
     const safeEnv = buildSafeEnv();
     if (config.apiKey) safeEnv['ANTHROPIC_API_KEY'] = config.apiKey;
     if (config.baseUrl) safeEnv['ANTHROPIC_BASE_URL'] = config.baseUrl;
 
-    const agentConfigDir = `${this.agentHome}/.claude`;
-
-    // Write per-agent env file to avoid race condition with concurrent agents
-    // Each agent gets its own CLAUDE_CONFIG_DIR for independent memory
     const agentTag = config.agentName || 'agent';
-    const envFile = `_env_${agentTag}.sh`;
+    this.containerName = `agenthub-repl-${sessionId.slice(0, 8)}-${agentTag.slice(0, 12)}`;
+    this.agentHome = `/workspace/_agent_${agentTag}`;
+    const promptFile = `_repl_prompt_${agentTag}.txt`;
+
+    // Write prompt + per-agent env file to bind-mounted hostWorkDir
+    const hwDir = config.hostWorkDir || workDir;
     if (config.hostWorkDir) {
+      writeFileSync(resolve(config.hostWorkDir, promptFile), prompt + '\n', 'utf-8');
+
+      // Per-agent env file with CLAUDE_CONFIG_DIR for independent memory/skills
+      const agentConfigDir = resolve(config.hostWorkDir, `_agent_${agentTag}`, '.claude');
+      const agentHomeInside = '/home/node/.claude';
+      if (!existsSync(agentConfigDir)) {
+        mkdirSync(agentConfigDir, { recursive: true });
+      }
+
+      const envFile = `_env_${agentTag}.sh`;
       const authKeys = ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'];
       const envLines: string[] = [];
-      envLines.push(`export CLAUDE_CONFIG_DIR='${agentConfigDir}'`);
+      envLines.push(`export CLAUDE_CONFIG_DIR='${agentHomeInside}'`);
       for (const k of authKeys) {
         if (safeEnv[k]) {
           envLines.push(`export ${k}='${String(safeEnv[k]).replace(/'/g, "'\\''")}'`);
@@ -77,71 +87,120 @@ export class ClaudeCodeProvider implements AbstractProvider {
       writeFileSync(resolve(config.hostWorkDir, envFile), envLines.join('\n'), 'utf-8');
     }
 
-    // Write prompt to file for `cat file -` delivery
-    const promptFile = `_repl_prompt_${agentTag}.txt`;
+    // docker run -i: native stdin/stdout pipes, no Docker multiplex.
+    // Container PID 1 = claude REPL, dies when claude exits.
+    // --rm auto-removes container on exit.
+    // NO --print (REPL mode: process stays alive for sendPrompt reuse).
+    // NO --dangerously-skip-permissions (permission_request events are emitted and intercepted).
+    const args: string[] = [
+      'run', '--rm', '-i',
+      '--name', this.containerName,
+      '-v', `${hwDir}:/workspace`,
+      '-w', '/workspace',
+      'agenthub-sandbox:latest',
+      'sh', '-c',
+      `. /workspace/${config.hostWorkDir ? `_env_${agentTag}.sh` : '_env.sh'} && cd ${workDir} && cat /workspace/${promptFile} - | claude --output-format stream-json --verbose`,
+    ];
+
+    // Per-agent CLAUDE_CONFIG_DIR bind-mount (independent memory/skills for each agent)
     if (config.hostWorkDir) {
-      writeFileSync(resolve(config.hostWorkDir, promptFile), prompt + '\n', 'utf-8');
+      const agentConfigDir = resolve(config.hostWorkDir, `_agent_${agentTag}`, '.claude');
+      const agentHomeInside = '/home/node/.claude';
+      // Insert after the workspace -v pair (index 6) → splice at 7
+      args.splice(7, 0, '-v', `${agentConfigDir}:${agentHomeInside}`, '-e', `CLAUDE_CONFIG_DIR=${agentHomeInside}`);
     }
 
-    // One-shot: pipe prompt file into claude --print. Container stdin stays open
-    // (keepStdinOpen) but cat exits after reading the file, so claude gets EOF.
-    const shellCmd = `. /workspace/${envFile} && cd ${workDir} && cat /workspace/${promptFile} | claude ${args.join(' ')}`;
+    console.log(`[agent:repl] Starting REPL: container=${this.containerName.slice(0, 24)} agent=${agentTag}`);
+    console.log(`[agent:repl] Auth: API_KEY=${safeEnv['ANTHROPIC_API_KEY'] ? 'yes' : 'no'} BASE_URL=${safeEnv['ANTHROPIC_BASE_URL'] ? 'yes' : 'no'}`);
 
-    console.log(`[agent:repl] Starting REPL: container=${containerId.slice(0, 12)} agent=${config.agentName || 'unknown'}`);
+    const proc = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    this.childProc = proc;
 
-    SandboxManager.execStream(containerId, ['sh', '-c', shellCmd], {
-      workDir,
-      keepStdinOpen: true,
-      onStdin: (stdin) => { this.stdinStream = stdin; },
-      onStdout: (chunk) => {
-        if (this.killed) return;
-        this.partialLine += chunk;
-        const lines = this.partialLine.split('\n');
-        this.partialLine = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const event = EventParser.parseLine(line);
-          if (event) {
+    // Temporary: log unrecognized event types
+    let unknownEventCount = 0;
+    const MAX_UNKNOWN_LOG = 20;
+    const structuralTypes = new Set(['content_block_stop']);
+
+    proc.stdout.on('data', (chunk: Buffer) => {
+      if (this.killed) return;
+      this.partialLine += chunk.toString();
+      const lines = this.partialLine.split('\n');
+      this.partialLine = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = EventParser.parseLine(line);
+        if (event) {
+          if (event.type === 'done') {
+            // In REPL mode, Claude emits 'done' after EACH response, not just on exit.
+            // The process stays alive — only emit done if process has actually exited.
+            // For per-response completion, handler.ts uses stream_end from accumulatedContent.
+          } else {
             const unified = EventParser.toUnified(event);
             if (unified) this.emit(unified);
           }
+        } else if (unknownEventCount < MAX_UNKNOWN_LOG) {
+          try {
+            const raw = JSON.parse(line);
+            if (structuralTypes.has(raw.type)) continue;
+          } catch { /* non-JSON */ }
+          unknownEventCount++;
+          console.log(`[agent:repl:unknown] ${line.slice(0, 200)}`);
         }
-      },
-      onStderr: (chunk) => {
-        if (this.killed) return;
-        const msg = chunk.trim();
-        if (msg) this.emit({ type: 'error', message: msg, timestamp: Date.now() });
-      },
-    }).catch((err) => {
+      }
+    });
+
+    proc.stderr.on('data', (chunk: Buffer) => {
+      if (this.killed) return;
+      const message = chunk.toString().trim();
+      if (!message) return;
+      const isDockerNoise = /^(Unable to find|Pulling from|Digest:|Status:|Downloaded|Extracting|Pull complete)/.test(message);
+      if (!isDockerNoise) this.emit({ type: 'error', message, timestamp: Date.now() });
+    });
+
+    proc.on('close', (code) => {
       if (!this.killed) {
-        this.emit({ type: 'error', message: `Docker exec error: ${err.message}`, timestamp: Date.now() });
+        // Flush remaining partial line
+        if (this.partialLine.trim()) {
+          const event = EventParser.parseLine(this.partialLine);
+          if (event) {
+            const unified = EventParser.toUnified(event);
+            if (unified && unified.type !== 'done') this.emit(unified);
+          }
+        }
+        this.emitDone(code ?? 1);
+      }
+    });
+
+    proc.on('error', (err) => {
+      if (!this.killed) {
+        this.emit({ type: 'error', message: `docker run error: ${err.message}`, timestamp: Date.now() });
+        this.emitDone(1);
       }
     });
   }
 
   sendPrompt(prompt: string): void {
-    if (!this.stdinStream || this.killed) return;
+    if (this.killed || !this.childProc?.stdin) return;
     try {
-      // Claude Code REPL reads until newline. Truncate safely at char boundary.
-      const truncated = prompt.length > 2000 ? prompt.slice(0, 2000) + '...' : prompt;
-      const singleLine = truncated.replace(/\n/g, '\\n');
-      this.stdinStream.write(singleLine + '\n');
+      // Native pipe: write prompt directly. No truncation, no newline escaping.
+      // cat - reads from stdin and pipes to claude REPL.
+      this.childProc.stdin.write(prompt + '\n');
     } catch { /* process already exited */ }
   }
 
   write(input: string): void {
-    if (!this.stdinStream || this.killed) return;
-    try { this.stdinStream.write(input); } catch { /* ignore */ }
+    if (this.killed || !this.childProc?.stdin) return;
+    try { this.childProc.stdin.write(input); } catch { /* process exited */ }
   }
 
   stop(): void {
     this.killed = true;
-    if (this.stdinStream) {
-      try { this.stdinStream.end(); } catch { /* ignore */ }
-      this.stdinStream = null;
+    if (this.childProc) {
+      try { this.childProc.stdin?.end(); } catch { /* ignore */ }
+      try { this.childProc.kill('SIGTERM'); } catch { /* ignore */ }
     }
-    if (this.containerId) {
-      SandboxManager.execShell(this.containerId, 'pkill -f "claude.*--verbose" 2>/dev/null || true');
+    if (this.containerName) {
+      try { execSync(`docker rm -f ${this.containerName} 2>/dev/null`, { timeout: 5000 }); } catch { /* ignore */ }
     }
   }
 }

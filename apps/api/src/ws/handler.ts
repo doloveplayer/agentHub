@@ -19,7 +19,12 @@ import { config } from '../config.js';
 const sessions = new Map<string, Set<WebSocket>>();
 
 /** sessionId → active agent info (process + timer) */
-const agentStates = new Map<string, Map<string, { process: ClaudeCodeProcess; timer: NodeJS.Timeout; agentId: string }>>();
+interface AgentProcess {
+  process: { write(input: string): void; kill?(): void; stop?(): void };
+  timer: NodeJS.Timeout;
+  agentId: string;
+}
+const agentStates = new Map<string, Map<string, AgentProcess>>();
 
 /** sessionId → Map<agentName → REPL process info> for persistent sessions */
 const agentProcesses = new Map<string, Map<string, { provider: AbstractProvider; timer: NodeJS.Timeout; agentId: string }>>();
@@ -95,7 +100,7 @@ function cleanupSessionResources(sessionId: string): void {
     }
     for (const [msgId, state] of stateMap) {
       clearTimeout(state.timer);
-      state.process.kill();
+      if (state.process.kill) state.process.kill(); else if (state.process.stop) state.process.stop();
       runningAgentCount = Math.max(0, runningAgentCount - 1);
     }
     agentStates.delete(sessionId);
@@ -385,7 +390,6 @@ async function handleChatMessage(
       : null;
     if (existingProc && existingProc.provider.isAlive()) {
       console.log(`[ws] Reusing REPL process for agent=${agentNameForProc}`);
-      // Problem 4 fix: only send user message, REPL already has system prompt + history in context
       existingProc.provider.sendPrompt(mention.subPrompt);
       clearTimeout(existingProc.timer);
       const agentName = agentNameForProc!;
@@ -393,11 +397,10 @@ async function handleChatMessage(
         existingProc.provider.stop();
         agentProcesses.get(sessionId)?.delete(agentName);
       }, config.agent.timeoutMs);
-      // Create placeholder in agentStates so stop_agent can find it.
+      // Register provider in agentStates so stop_agent can find it.
       if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
-      const procRef = new ClaudeCodeProcess();
       agentStates.get(sessionId)!.set(mention.messageId, {
-        process: procRef, timer: existingProc.timer, agentId: mention.agentId,
+        process: existingProc.provider, timer: existingProc.timer, agentId: mention.agentId,
       });
       return; // Reused existing process, no need to spawn a new one
     }
@@ -505,10 +508,9 @@ async function handleChatMessage(
       }, config.agent.timeoutMs);
       agentProcesses.get(sessionId)!.set(agentName, { provider, timer, agentId: mention.agentId });
 
-      // Register in agentStates for stop_agent support
+      // Register provider in agentStates for stop_agent + permission_response support
       if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
-      const procRef = new ClaudeCodeProcess();
-      agentStates.get(sessionId)!.set(mention.messageId, { process: procRef, timer, agentId: mention.agentId });
+      agentStates.get(sessionId)!.set(mention.messageId, { process: provider, timer, agentId: mention.agentId });
       runningAgentCount++;
 
       // Start REPL provider (fire and forget)
@@ -760,7 +762,7 @@ function handleStopAgent(
   }
   console.log(`[ws] Stopping agent: session=${sessionId} agentMsg=${data.agentMessageId}`);
   clearTimeout(st.timer);
-  st.process.kill();
+  if (st.process.kill) st.process.kill(); else if (st.process.stop) st.process.stop();
   stateMap.delete(data.agentMessageId);
   runningAgentCount = Math.max(0, runningAgentCount - 1);
   if (stateMap.size === 0) agentStates.delete(sessionId);
