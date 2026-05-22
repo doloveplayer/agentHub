@@ -48,4 +48,10 @@ export const api = {
     }),
 
   getAgents: () => request<any[]>('/agents'),
+
+  getWorkspaceTree: (sessionId: string) => request<{ tree: any[] }>(`/workspace/${sessionId}/tree`),
+
+  getWorkspaceFile: (sessionId: string, path: string) => request<any>(`/workspace/${sessionId}/file?path=${encodeURIComponent(path)}`),
+
+  getWorkspaceChanges: (sessionId: string) => request<{ changes: string[] }>(`/workspace/${sessionId}/changes`),
 };

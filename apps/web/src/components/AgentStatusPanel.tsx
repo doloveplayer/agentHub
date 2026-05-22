@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { AgentCard } from './AgentCard';
 import { TaskCard } from './TaskCard';
+import { FileTree } from './FileTree';
 import type { AgentConfig } from '@agenthub/shared';
 import type { AgentEvent } from '../store/appStore';
 
@@ -16,6 +17,7 @@ type PanelTab = 'Files' | 'Agents' | 'Tasks';
 
 export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>('Agents');
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
   const agentEvents = useAppStore((s) => s.agentEvents);
   const messages = useAppStore((s) => {
     const sessionId = s.activeSessionId;
@@ -81,8 +83,8 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
             })}
           </>
         )}
-        {activeTab === 'Files' && (
-          <p className="text-xs text-gray-500 text-center py-4">File tree coming in Phase 3</p>
+        {activeTab === 'Files' && activeSessionId && (
+          <FileTree sessionId={activeSessionId} />
         )}
         {activeTab === 'Tasks' && (
           <ActivePlanView />
