@@ -266,3 +266,25 @@ Phase 3+ 开发启用多 Agent 协作模型。Agent 定义在 `.claude/agents/` 
 - 审查基于当前未提交的改动（或最近一次 commit）对比计划/需求文档
 - 修复 Critical 和 Important 问题
 - 不要跳过审查认为"改动简单没必要"
+
+## Visual Testing
+
+项目配置了可截图和图片理解的 MCP 服务，功能测试和 UI 审查时应主动使用：
+
+**浏览器自动化**（`document-skills:webapp-testing`）：
+- 启动后端 `cd apps/api && npx tsx src/index.ts` + 前端 `cd apps/web && npx vite`
+- 编写 Python Playwright 脚本截图、检查 DOM、验证交互
+- 模板见 `/tmp/agentHub_e2e_test.py` 等历史脚本
+
+**图片分析 MCP**：
+| 工具 | 用途 |
+|------|------|
+| `mcp__zai-mcp-server__analyze_image` | 通用图片理解：UI 布局评估、元素识别、异常检测 |
+| `mcp__zai-mcp-server__ui_to_artifact` | UI 截图 → 代码/设计稿（`output_type: 'code'\|'spec'\|'description'`） |
+| `mcp__zai-mcp-server__ui_diff_check` | 两张截图对比，找出视觉差异 |
+
+**典型测试流程**：
+1. `python3 script.py` 截取 3 个视口（390/768/1440）截图
+2. `mcp__zai-mcp-server__analyze_image` 分析截图中的布局问题
+3. 对照 plan 文件验证功能完整性
+4. TypeScript 编译检查 `npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json`
