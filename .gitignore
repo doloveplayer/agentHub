@@ -40,3 +40,5 @@ temp/
 # Dev utility scripts (contain dev secrets)
 apps/api/scripts/gen_token.ts
 docs/superpowers/plans/.archived
+apps/api/test_ws_direct.ts
+apps/api/test_claude_direct.ts

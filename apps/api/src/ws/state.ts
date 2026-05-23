@@ -77,6 +77,9 @@ export function setTaskQueueManager(tqm: any): void { taskQueueManager = tqm; }
 /** Plan confirmation: planId:taskId → modified description */
 export const taskModifications = new Map<string, string>();
 
+/** agentName → Claude Code session ID (for --resume across one-shot turns) */
+export const agentClaudeSessions = new Map<string, string>();
+
 // ---- Conflict detection ----
 
 const perSessionFileMods = new Map<string, Map<string, Set<string>>>();
@@ -144,6 +147,9 @@ export function cleanupSessionResources(sessionId: string): void {
   MilestoneBroadcaster.clear(sessionId);
   sessionsWithMilestones.delete(sessionId);
   clearFileMods(sessionId);
+
+  // Clean up Claude session IDs for agents in this session
+  if (procMap) { for (const [agentName] of procMap) agentClaudeSessions.delete(agentName); }
 
   const stateMap = agentStates.get(sessionId);
   if (stateMap) {

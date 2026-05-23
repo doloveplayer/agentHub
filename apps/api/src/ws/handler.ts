@@ -18,7 +18,7 @@ import {
   sessionsWithMilestones, sequentialQueues,
   agentTaskQueues, agentCurrentTask, agentCurrentMessage,
   permissionTimeouts, PERMISSION_TIMEOUT_MS, ENABLE_PERSISTENT_REPL,
-  taskQueueManager, taskModifications,
+  taskQueueManager, taskModifications, agentClaudeSessions,
   trackFileMod, detectConflicts, clearFileMods,
   generateId, getOrCreateSandbox, broadcast, sendTo,
   cleanupSessionResources, cleanupSessionClient, clearRunningAgent,
@@ -391,8 +391,11 @@ async function handleChatMessage(
       return;
     }
 
-    // Fallback: one-shot ClaudeCodeProcess
+    // Fallback: one-shot ClaudeCodeProcess with --resume for persistent memory
     const agent = new ClaudeCodeProcess();
+    if (agentNameForProc) {
+      agent.onClaudeSession = (sid: string) => { agentClaudeSessions.set(agentNameForProc, sid); };
+    }
     agent.onEvent((event) => {
       switch (event.type) {
         case 'text': {
@@ -493,7 +496,7 @@ async function handleChatMessage(
 
     try {
       console.log(`[ws] Starting agent: session=${sessionId} agentMsg=${mention.messageId} prompt="${agentPrompt.slice(0, 80)}..."`);
-      agent.start(sessionId, agentPrompt, sandbox.containerId, sandbox.workDir, data.trustMode ?? true, sandbox.hostWorkDir, mention.messageId)
+      agent.start(sessionId, agentPrompt, sandbox.containerId, sandbox.workDir, data.trustMode ?? true, sandbox.hostWorkDir, mention.messageId, agentNameForProc ? agentClaudeSessions.get(agentNameForProc) : undefined)
         .catch((err) => {
           console.error(`[ws] Agent start failed: session=${sessionId} agentMsg=${mention.messageId} error=${err.message}`);
           broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed to start agent: ${err.message}` });

@@ -3,17 +3,18 @@
 
 import { ClaudeCodeProvider } from '../agent/providers/claude-code.js';
 import { ProviderFactory } from '../agent/providers/factory.js';
-import { buildSafeEnv } from '../agent/ClaudeCodeProcess.js';
 import { stateTracker } from '../agent/StateTracker.js';
 import { findClosestAgent } from '../agent/turns.js';
 import { topologicalSort } from '../agent/TaskQueue.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
 
+import { ClaudeCodeProcess, buildSafeEnv } from '../agent/ClaudeCodeProcess.js';
 import {
   broadcast, agentProcesses, agentStates, agentTaskQueues,
-  agentCurrentTask, agentCurrentMessage,
+  agentCurrentTask, agentCurrentMessage, sandboxes,
   incRunningAgentCount, decRunningAgentCount,
+  ENABLE_PERSISTENT_REPL,
   type AgentTaskQueue, type TaskDispatchNode,
 } from './state.js';
 
@@ -58,6 +59,45 @@ export async function processNextInQueue(
     }
     broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: procInfo.agentId });
     procInfo.provider.sendPrompt(taskPrompt);
+  } else if (!ENABLE_PERSISTENT_REPL) {
+    // One-shot fallback: start a ClaudeCodeProcess directly for the task
+    const sandbox = sandboxes.get(sessionId);
+    if (!sandbox) { console.log(`[ws] Task dispatch: no sandbox for session ${sessionId}`); return; }
+    const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, systemPrompt: true } });
+    if (!agent) { console.log(`[ws] Task dispatch: agent ${agentName} not found in DB`); return; }
+    const fullPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}`;
+    const proc = new ClaudeCodeProcess();
+    const taskMsgId = `task-${task.id}`;
+    let output = '';
+
+    proc.onEvent((event) => {
+      switch (event.type) {
+        case 'text':
+          output += event.content;
+          broadcast(sessionId, { type: 'stream_chunk', content: event.content, agentMessageId: taskMsgId });
+          break;
+        case 'done':
+          broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent: output || '[Task completed]', exitCode: event.exitCode });
+          broadcast(sessionId, { type: event.exitCode === 0 ? 'task_completed' : 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: output.slice(0, 200) });
+          stateTracker.setDone(taskMsgId);
+          agentCurrentTask.delete(agentName);
+          queue.current = null;
+          processNextInQueue(sessionId, agentName, queue);
+          break;
+        case 'error':
+          broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: event.message });
+          stateTracker.setError(taskMsgId);
+          break;
+      }
+    });
+
+    broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id });
+    console.log(`[ws] Task dispatch (one-shot): agent=${agentName} task=${task.id}`);
+    proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, true, sandbox.hostWorkDir, taskMsgId)
+      .catch((err: any) => {
+        console.error(`[ws] Task one-shot failed: ${err.message}`);
+        broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: `Task failed: ${err.message}` });
+      });
   } else {
     queue.tasks.unshift(task);
     queue.current = null;

@@ -55,6 +55,7 @@ export class ClaudeCodeProcess {
   private killed = false;
   private partialLine = '';
   private childProc: ChildProcess | null = null;
+  onClaudeSession?: (sessionId: string) => void;
 
   onEvent(handler: EventHandler): void { this.handlers.push(handler); }
 
@@ -78,6 +79,7 @@ export class ClaudeCodeProcess {
     trustMode?: boolean,
     hostWorkDir?: string,
     promptFileId?: string,
+    claudeSessionId?: string,    // for --resume: continue previous Claude session
   ): Promise<void> {
     this.doneEmitted = false;
     this.killed = false;
@@ -106,7 +108,9 @@ export class ClaudeCodeProcess {
     // Container PID 1 = claude, dies when claude exits.
     // --rm auto-removes container on exit.
     const hwDir = hostWorkDir || workDir;
-    const claudeArgs = buildClaudePrintArgs(trustMode ?? true).join(' ');
+    const claudeArgsParts = buildClaudePrintArgs(trustMode ?? true);
+    if (claudeSessionId) claudeArgsParts.push('--resume', claudeSessionId);
+    const claudeArgs = claudeArgsParts.join(' ');
     const args: string[] = [
       'run', '--rm', '-i',
       '--name', containerName,
@@ -148,6 +152,10 @@ export class ClaudeCodeProcess {
         if (!line.trim()) continue;
         const event = EventParser.parseLine(line);
         if (event) {
+          // Extract Claude session ID from system init event for --resume
+          if (event.type === 'system' && event.subtype === 'init' && event.sessionId && this.onClaudeSession) {
+            this.onClaudeSession(event.sessionId);
+          }
           if (event.type === 'done') this.emitDone(event.exitCode);
           else this.emit(event);
         } else if (unknownEventCount < MAX_UNKNOWN_LOG) {
