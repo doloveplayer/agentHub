@@ -73,7 +73,7 @@ agentHub/
 
 **Files:** Create root & workspace package.json files
 
-- [ ] **Step 0.1: Create root package.json**
+- [x] **Step 0.1: Create root package.json**
 
 ```json
 // agentHub/package.json
@@ -84,7 +84,7 @@ agentHub/
 }
 ```
 
-- [ ] **Step 0.2: Create packages/shared**
+- [x] **Step 0.2: Create packages/shared**
 
 ```json
 // agentHub/packages/shared/package.json
@@ -152,7 +152,7 @@ export interface AgentConfig {
 }
 ```
 
-- [ ] **Step 0.3: Create apps/api package.json**
+- [x] **Step 0.3: Create apps/api package.json**
 
 ```json
 // agentHub/apps/api/package.json
@@ -185,7 +185,7 @@ export interface AgentConfig {
 }
 ```
 
-- [ ] **Step 0.4: Create apps/web package.json**
+- [x] **Step 0.4: Create apps/web package.json**
 
 ```json
 // agentHub/apps/web/package.json
@@ -219,7 +219,7 @@ export interface AgentConfig {
 }
 ```
 
-- [ ] **Step 0.5: Create tsconfig files**
+- [x] **Step 0.5: Create tsconfig files**
 
 ```json
 // agentHub/apps/api/tsconfig.json
@@ -256,7 +256,7 @@ export interface AgentConfig {
 }
 ```
 
-- [ ] **Step 0.6: Install dependencies**
+- [x] **Step 0.6: Install dependencies**
 
 Run: `cd agentHub && bun install`
 
@@ -268,7 +268,7 @@ Run: `cd agentHub && bun install`
 
 **Files:** Create `apps/api/prisma/schema.prisma`, `apps/api/src/config.ts`, `apps/api/src/db/prisma.ts`, `apps/api/src/lib/jwt.ts`, `.env.example`
 
-- [ ] **Step 1.1: Create env example**
+- [x] **Step 1.1: Create env example**
 
 ```bash
 # agentHub/.env.example
@@ -283,7 +283,7 @@ HOST_DOCKER_SOCKET="/var/run/docker.sock"
 SANDBOX_IMAGE="agenthub-sandbox:latest"
 ```
 
-- [ ] **Step 1.2: Create Prisma schema**
+- [x] **Step 1.2: Create Prisma schema**
 
 ```prisma
 // agentHub/apps/api/prisma/schema.prisma
@@ -340,7 +340,7 @@ model Agent {
 }
 ```
 
-- [ ] **Step 1.3: Create config**
+- [x] **Step 1.3: Create config**
 
 ```typescript
 // agentHub/apps/api/src/config.ts
@@ -365,7 +365,7 @@ export const config = {
 };
 ```
 
-- [ ] **Step 1.4: Create Prisma client singleton**
+- [x] **Step 1.4: Create Prisma client singleton**
 
 ```typescript
 // agentHub/apps/api/src/db/prisma.ts
@@ -373,7 +373,7 @@ import { PrismaClient } from '@prisma/client';
 export const prisma = new PrismaClient();
 ```
 
-- [ ] **Step 1.5: Create JWT helpers**
+- [x] **Step 1.5: Create JWT helpers**
 
 ```typescript
 // agentHub/apps/api/src/lib/jwt.ts
@@ -394,7 +394,7 @@ export function verifyToken(token: string): JwtPayload {
 }
 ```
 
-- [ ] **Step 1.6: Run Prisma migrate**
+- [x] **Step 1.6: Run Prisma migrate**
 
 Run: `cd agentHub/apps/api && bunx prisma migrate dev --name init`
 
@@ -404,7 +404,7 @@ Run: `cd agentHub/apps/api && bunx prisma migrate dev --name init`
 
 **Files:** Create `apps/api/src/index.ts`, `apps/api/src/middleware/auth.ts`, `apps/api/src/middleware/whitelist.ts`, `apps/api/src/routes/auth.ts`
 
-- [ ] **Step 2.1: Create auth middleware**
+- [x] **Step 2.1: Create auth middleware**
 
 ```typescript
 // agentHub/apps/api/src/middleware/auth.ts
@@ -426,7 +426,7 @@ export async function authMiddleware(c: Context, next: Next) {
 }
 ```
 
-- [ ] **Step 2.2: Create whitelist middleware**
+- [x] **Step 2.2: Create whitelist middleware**
 
 ```typescript
 // agentHub/apps/api/src/middleware/whitelist.ts
@@ -437,7 +437,7 @@ export function isUserAllowed(githubLogin: string): boolean {
 }
 ```
 
-- [ ] **Step 2.3: Create auth routes**
+- [x] **Step 2.3: Create auth routes**
 
 ```typescript
 // agentHub/apps/api/src/routes/auth.ts
@@ -521,7 +521,7 @@ auth.get('/me', async (c) => {
 export { auth };
 ```
 
-- [ ] **Step 2.4: Create main entry point**
+- [x] **Step 2.4: Create main entry point**
 
 ```typescript
 // agentHub/apps/api/src/index.ts
@@ -564,7 +564,7 @@ Note: We'll use Bun.serve with WebSocket support. The actual server entry will b
 
 **Files:** Create `apps/api/src/routes/sessions.ts`, `apps/api/src/routes/chat.ts`
 
-- [ ] **Step 3.1: Create session routes**
+- [x] **Step 3.1: Create session routes**
 
 ```typescript
 // agentHub/apps/api/src/routes/sessions.ts
@@ -621,7 +621,7 @@ sessions.delete('/:id', async (c) => {
 export { sessions };
 ```
 
-- [ ] **Step 3.2: Create chat route (message send, triggers agent)**
+- [x] **Step 3.2: Create chat route (message send, triggers agent)**
 
 ```typescript
 // agentHub/apps/api/src/routes/chat.ts
@@ -685,7 +685,7 @@ This route creates the DB records and returns IDs. The actual Claude Code execut
 
 **Files:** Create `apps/api/src/agent/SandboxManager.ts`
 
-- [ ] **Step 4.1: Write SandboxManager**
+- [x] **Step 4.1: Write SandboxManager**
 
 ```typescript
 // agentHub/apps/api/src/agent/SandboxManager.ts
@@ -793,7 +793,7 @@ export class SandboxManager {
 
 **Files:** Create `apps/api/src/agent/ClaudeCodeProcess.ts`, `apps/api/src/agent/EventParser.ts`
 
-- [ ] **Step 5.1: Create EventParser**
+- [x] **Step 5.1: Create EventParser**
 
 ```typescript
 // agentHub/apps/api/src/agent/EventParser.ts
@@ -876,7 +876,7 @@ export class EventParser {
 }
 ```
 
-- [ ] **Step 5.2: Create ClaudeCodeProcess**
+- [x] **Step 5.2: Create ClaudeCodeProcess**
 
 ```typescript
 // agentHub/apps/api/src/agent/ClaudeCodeProcess.ts
@@ -952,7 +952,7 @@ export class ClaudeCodeProcess {
 
 **Files:** Modify `apps/api/src/index.ts`, Create `apps/api/src/ws/handler.ts`
 
-- [ ] **Step 6.1: Create WebSocket handler**
+- [x] **Step 6.1: Create WebSocket handler**
 
 ```typescript
 // agentHub/apps/api/src/ws/handler.ts
@@ -1120,7 +1120,7 @@ export const upgradeWebSocket = {
 };
 ```
 
-- [ ] **Step 6.2: Update main entry to use Bun.serve with WebSocket**
+- [x] **Step 6.2: Update main entry to use Bun.serve with WebSocket**
 
 ```typescript
 // agentHub/apps/api/src/index.ts (updated version)
@@ -1169,7 +1169,7 @@ console.log(`AgentHub API running on http://localhost:${server.port}`);
 
 **Files:** Create `apps/web/vite.config.ts`, `apps/web/tailwind.config.js`, `apps/web/postcss.config.js`, `apps/web/index.html`, `apps/web/src/main.tsx`, `apps/web/src/index.css`
 
-- [ ] **Step 7.1: Create Vite config**
+- [x] **Step 7.1: Create Vite config**
 
 ```typescript
 // agentHub/apps/web/vite.config.ts
@@ -1189,7 +1189,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 7.2: Create Tailwind config**
+- [x] **Step 7.2: Create Tailwind config**
 
 ```javascript
 // agentHub/apps/web/tailwind.config.js
@@ -1212,7 +1212,7 @@ export default {
 };
 ```
 
-- [ ] **Step 7.3: Create index.html and main.tsx**
+- [x] **Step 7.3: Create index.html and main.tsx**
 
 ```html
 <!-- agentHub/apps/web/index.html -->
@@ -1242,7 +1242,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 ```
 
-- [ ] **Step 7.4: Create base CSS with Tailwind directives**
+- [x] **Step 7.4: Create base CSS with Tailwind directives**
 
 ```css
 /* agentHub/apps/web/src/index.css */
@@ -1258,7 +1258,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 .chat-scroll::-webkit-scrollbar-track { background: transparent; }
 ```
 
-- [ ] **Step 7.5: Verify Vite dev server starts**
+- [x] **Step 7.5: Verify Vite dev server starts**
 
 Run: `cd agentHub/apps/web && bun run dev`
 Expected: Vite starts on port 5173, blank page loads.
@@ -1269,7 +1269,7 @@ Expected: Vite starts on port 5173, blank page loads.
 
 **Files:** Create `apps/web/src/store/appStore.ts`, `apps/web/src/lib/api.ts`, `apps/web/src/hooks/useAuth.ts`, `apps/web/src/App.tsx`
 
-- [ ] **Step 8.1: Create API client**
+- [x] **Step 8.1: Create API client**
 
 ```typescript
 // agentHub/apps/web/src/lib/api.ts
@@ -1315,7 +1315,7 @@ export const api = {
 };
 ```
 
-- [ ] **Step 8.2: Create Zustand store**
+- [x] **Step 8.2: Create Zustand store**
 
 ```typescript
 // agentHub/apps/web/src/store/appStore.ts
@@ -1393,7 +1393,7 @@ export const useAppStore = create<AppState>((set) => ({
 }));
 ```
 
-- [ ] **Step 8.3: Create auth hook**
+- [x] **Step 8.3: Create auth hook**
 
 ```typescript
 // agentHub/apps/web/src/hooks/useAuth.ts
@@ -1437,7 +1437,7 @@ export function useAuth() {
 }
 ```
 
-- [ ] **Step 8.4: Create App with routing**
+- [x] **Step 8.4: Create App with routing**
 
 ```tsx
 // agentHub/apps/web/src/App.tsx
@@ -1466,7 +1466,7 @@ export function App() {
 
 **Files:** Create `apps/web/src/components/LoginPage.tsx`, `apps/web/src/components/AuthCallback.tsx`, `apps/web/src/components/SessionList.tsx`, `apps/web/src/components/ChatView.tsx`, `apps/web/src/components/MessageBubble.tsx`, `apps/web/src/components/MessageInput.tsx`, `apps/web/src/pages/ChatPage.tsx`
 
-- [ ] **Step 9.1: LoginPage**
+- [x] **Step 9.1: LoginPage**
 
 ```tsx
 // agentHub/apps/web/src/components/LoginPage.tsx
@@ -1495,7 +1495,7 @@ export function LoginPage() {
 }
 ```
 
-- [ ] **Step 9.2: AuthCallback**
+- [x] **Step 9.2: AuthCallback**
 
 ```tsx
 // agentHub/apps/web/src/components/AuthCallback.tsx
@@ -1518,7 +1518,7 @@ export function AuthCallback() {
 }
 ```
 
-- [ ] **Step 9.3: SessionList**
+- [x] **Step 9.3: SessionList**
 
 ```tsx
 // agentHub/apps/web/src/components/SessionList.tsx
@@ -1604,7 +1604,7 @@ export function SessionList() {
 }
 ```
 
-- [ ] **Step 9.4: MessageBubble**
+- [x] **Step 9.4: MessageBubble**
 
 ```tsx
 // agentHub/apps/web/src/components/MessageBubble.tsx
@@ -1641,7 +1641,7 @@ export function MessageBubble({ message, isStreaming }: Props) {
 }
 ```
 
-- [ ] **Step 9.5: MessageInput**
+- [x] **Step 9.5: MessageInput**
 
 ```tsx
 // agentHub/apps/web/src/components/MessageInput.tsx
@@ -1698,7 +1698,7 @@ export function MessageInput({ onSend, disabled }: Props) {
 }
 ```
 
-- [ ] **Step 9.6: ChatView + useChat hook**
+- [x] **Step 9.6: ChatView + useChat hook**
 
 ```typescript
 // agentHub/apps/web/src/hooks/useChat.ts
@@ -1823,7 +1823,7 @@ export function ChatView() {
 }
 ```
 
-- [ ] **Step 9.7: ChatPage layout**
+- [x] **Step 9.7: ChatPage layout**
 
 ```tsx
 // agentHub/apps/web/src/pages/ChatPage.tsx
@@ -1848,7 +1848,7 @@ export function ChatPage() {
 
 **Files:** Create `docker/sandbox.Dockerfile`, `docker-compose.yml`, `docker/nginx.conf`
 
-- [ ] **Step 10.1: Create sandbox Dockerfile**
+- [x] **Step 10.1: Create sandbox Dockerfile**
 
 ```dockerfile
 # agentHub/docker/sandbox.Dockerfile
@@ -1864,7 +1864,7 @@ RUN npm install -g @anthropic-ai/claude-code
 WORKDIR /workspace
 ```
 
-- [ ] **Step 10.2: Create docker-compose.yml**
+- [x] **Step 10.2: Create docker-compose.yml**
 
 ```yaml
 # agentHub/docker-compose.yml
@@ -1927,7 +1927,7 @@ volumes:
   redisdata:
 ```
 
-- [ ] **Step 10.3: Create Nginx config for preview proxy**
+- [x] **Step 10.3: Create Nginx config for preview proxy**
 
 ```nginx
 # agentHub/docker/nginx.conf
@@ -1961,11 +1961,11 @@ server {
 }
 ```
 
-- [ ] **Step 10.4: Build sandbox image**
+- [x] **Step 10.4: Build sandbox image**
 
 Run: `cd agentHub && docker build -t agenthub-sandbox:latest -f docker/sandbox.Dockerfile .`
 
-- [ ] **Step 10.5: Create .env file**
+- [x] **Step 10.5: Create .env file**
 
 Copy `.env.example` to `.env` and fill in real values.
 

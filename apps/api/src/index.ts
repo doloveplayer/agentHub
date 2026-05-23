@@ -141,68 +141,15 @@ const server = serve(
   },
 );
 
-// Initialize Task Queue (BullMQ + Redis) for Orchestrator
+// Initialize Task Queue (BullMQ + Redis) — retained for drain/shutdown only.
+// Task execution is now handled by REPL dispatch (handler.ts → dispatchTasksToAgents).
 let taskQueueManager: any = null;
 try {
   const { TaskQueueManager } = await import('./agent/TaskQueue.js');
   taskQueueManager = new TaskQueueManager();
-  taskQueueManager.startWorker((planId: string, taskId: string, result: any) => {
-    console.log(`[queue] Task completed: plan=${planId} task=${taskId} output=${String(result?.output || '').slice(0, 100)}`);
-    // Broadcast task status update to all connected clients in this session
-    // The sessionId is embedded in the job data; we need to look it up
-    // For now, broadcast to a known session via the plan lookup
-  });
-  // Wire Worker failed event to broadcast task_failed
-  taskQueueManager.worker?.on('failed', (job: any, err: Error) => {
-    if (job?.data?.sessionId) {
-      broadcast(job.data.sessionId, {
-        type: 'task_failed',
-        planId: job.data.planId,
-        taskId: job.data.task.id,
-        error: err.message,
-      });
-    }
-  });
-  // Wire Worker completed event to broadcast task_completed
-  taskQueueManager.worker?.on('completed', async (job: any, result: any) => {
-    const sid = job?.data?.sessionId;
-    const planId = job?.data?.planId;
-    if (!sid || !planId) return;
-
-    broadcast(sid, {
-      type: 'task_completed', planId,
-      taskId: job.data.task.id,
-      result: { output: String(result?.output || '').slice(0, 200) },
-    });
-
-    // Check if all tasks in this plan are done → broadcast plan_summary
-    try {
-      const progress = await taskQueueManager.getPlanProgress(planId);
-      if (progress.waiting === 0 && progress.running === 0) {
-        // All tasks finished (or failed) — generate summary
-        const sb = await import('./agent/SandboxManager.js');
-        let fileChanges = '';
-        try {
-          fileChanges = await sb.SandboxManager.execCapture(
-            job.data.containerId,
-            'git diff --name-only 2>/dev/null || find . -newer /workspace -type f 2>/dev/null | head -20',
-          );
-        } catch { /* no git */ }
-
-        broadcast(sid, {
-          type: 'plan_summary',
-          planId,
-          total: progress.total,
-          completed: progress.completed,
-          failed: progress.failed,
-          fileChanges: fileChanges.split('\n').filter(Boolean),
-        });
-      }
-    } catch { /* progress check failed */ }
-  });
   setTaskQueueManager(taskQueueManager);
   await taskQueueManager.drain();
-  console.log('[startup] Task queue initialized');
+  console.log('[startup] Task queue initialized (drain only, execution via REPL)');
 } catch (err: any) {
   console.log(`[startup] Task queue skipped (Redis not available): ${err.message}`);
 }

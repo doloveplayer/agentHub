@@ -1,6 +1,6 @@
 # Phase 2 — Multi-Agent Group Chat Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add multi-agent group chat with @mentions, agent registry, and agent status panel to the Phase 1 MVP.
 
@@ -41,7 +41,7 @@
 **Files:**
 - Modify: `apps/api/prisma/schema.prisma`
 
-- [ ] **Step 1: Add `type` field to Session and new `SessionAgent` model**
+- [x] **Step 1: Add `type` field to Session and new `SessionAgent` model**
 
 Edit `apps/api/prisma/schema.prisma`:
 
@@ -70,7 +70,7 @@ model SessionAgent {
 }
 ```
 
-- [ ] **Step 2: Run Prisma migrate**
+- [x] **Step 2: Run Prisma migrate**
 
 ```bash
 cd apps/api && source ../.env 2>/dev/null && npx prisma migrate dev --name add_session_type_and_session_agent
@@ -78,7 +78,7 @@ cd apps/api && source ../.env 2>/dev/null && npx prisma migrate dev --name add_s
 
 Expected: migration created and applied without errors.
 
-- [ ] **Step 3: Verify schema in DB**
+- [x] **Step 3: Verify schema in DB**
 
 ```bash
 cd apps/api && source ../.env 2>/dev/null && npx prisma db pull --print 2>&1 | head -40
@@ -86,7 +86,7 @@ cd apps/api && source ../.env 2>/dev/null && npx prisma db pull --print 2>&1 | h
 
 Expected: output shows Session with `type` field and new `SessionAgent` model.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/api/prisma/schema.prisma apps/api/prisma/migrations/
@@ -101,7 +101,7 @@ git commit -m "feat: add Session.type and SessionAgent join table"
 - Create: `apps/api/prisma/seed.ts`
 - Modify: `apps/api/src/index.ts` (1-line import for seed)
 
-- [ ] **Step 1: Write seed script**
+- [x] **Step 1: Write seed script**
 
 ```typescript
 // apps/api/prisma/seed.ts
@@ -148,7 +148,7 @@ main()
   .finally(() => prisma.$disconnect());
 ```
 
-- [ ] **Step 2: Run seed**
+- [x] **Step 2: Run seed**
 
 ```bash
 cd apps/api && source ../.env 2>/dev/null && npx tsx prisma/seed.ts
@@ -156,7 +156,7 @@ cd apps/api && source ../.env 2>/dev/null && npx tsx prisma/seed.ts
 
 Expected: `[seed] Upserted agent: code-agent` etc.
 
-- [ ] **Step 3: Verify agents in DB**
+- [x] **Step 3: Verify agents in DB**
 
 ```bash
 cd apps/api && source ../.env 2>/dev/null && npx prisma db execute --stdin <<< "SELECT name, display_name, is_active FROM \"Agent\";"
@@ -164,7 +164,7 @@ cd apps/api && source ../.env 2>/dev/null && npx prisma db execute --stdin <<< "
 
 Expected: 3 rows with the seeded agents.
 
-- [ ] **Step 4: Auto-seed on backend startup**
+- [x] **Step 4: Auto-seed on backend startup**
 
 Add import to `apps/api/src/index.ts` (after existing imports, before app creation):
 
@@ -206,7 +206,7 @@ Then add the call after the startup cleanup block (before `const app = new Hono(
 await seedDefaultAgents();
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/prisma/seed.ts apps/api/src/index.ts
@@ -221,7 +221,7 @@ git commit -m "feat: seed default agents on startup"
 - Create: `apps/api/src/routes/agents.ts`
 - Modify: `apps/api/src/index.ts`
 
-- [ ] **Step 1: Write agents route**
+- [x] **Step 1: Write agents route**
 
 ```typescript
 // apps/api/src/routes/agents.ts
@@ -305,7 +305,7 @@ agents.delete('/:id', async (c) => {
 export default agents;
 ```
 
-- [ ] **Step 2: Mount in index.ts**
+- [x] **Step 2: Mount in index.ts**
 
 Add import after line 13 (`import chatRoutes from './routes/chat.js';`):
 
@@ -319,7 +319,7 @@ Add route mount after line 43 (`app.route('/api/chat', chatRoutes);`):
 app.route('/api/agents', agentRoutes);
 ```
 
-- [ ] **Step 3: Test the endpoint**
+- [x] **Step 3: Test the endpoint**
 
 Start backend, then:
 
@@ -329,7 +329,7 @@ curl -s http://localhost:3000/api/agents -H "Authorization: Bearer <token>" | jq
 
 Expected: array of 3 agents with id, name, displayName, description, systemPrompt.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/api/src/routes/agents.ts apps/api/src/index.ts
@@ -343,7 +343,7 @@ git commit -m "feat: add Agent CRUD API endpoints"
 **Files:**
 - Modify: `packages/shared/src/types.ts`
 
-- [ ] **Step 1: Add new types**
+- [x] **Step 1: Add new types**
 
 ```typescript
 // packages/shared/src/types.ts
@@ -409,7 +409,7 @@ export interface SendResponse {      // NEW
 }
 ```
 
-- [ ] **Step 2: Verify no TypeScript errors**
+- [x] **Step 2: Verify no TypeScript errors**
 
 ```bash
 npx tsc --noEmit -p packages/shared/tsconfig.json
@@ -417,7 +417,7 @@ npx tsc --noEmit -p packages/shared/tsconfig.json
 
 Expected: no errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add packages/shared/src/types.ts
@@ -431,7 +431,7 @@ git commit -m "feat: add Mention, SendRequest, SendResponse shared types"
 **Files:**
 - Modify: `apps/api/src/routes/chat.ts`
 
-- [ ] **Step 1: Rewrite send handler to accept mentions**
+- [x] **Step 1: Rewrite send handler to accept mentions**
 
 ```typescript
 // apps/api/src/routes/chat.ts
@@ -505,7 +505,7 @@ chat.post('/send', async (c) => {
 export default chat;
 ```
 
-- [ ] **Step 2: TypeScript check**
+- [x] **Step 2: TypeScript check**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json
@@ -513,7 +513,7 @@ npx tsc --noEmit -p apps/api/tsconfig.json
 
 Expected: no errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/api/src/routes/chat.ts
@@ -527,7 +527,7 @@ git commit -m "feat: accept mentions array in chat/send, create N agent placehol
 **Files:**
 - Modify: `apps/api/src/routes/sessions.ts`
 
-- [ ] **Step 1: Rewrite sessions route**
+- [x] **Step 1: Rewrite sessions route**
 
 ```typescript
 // apps/api/src/routes/sessions.ts
@@ -668,7 +668,7 @@ sessions.delete('/:id', async (c) => {
 export default sessions;
 ```
 
-- [ ] **Step 2: TypeScript check**
+- [x] **Step 2: TypeScript check**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json
@@ -676,7 +676,7 @@ npx tsc --noEmit -p apps/api/tsconfig.json
 
 Expected: no errors.
 
-- [ ] **Step 3: Test create group session**
+- [x] **Step 3: Test create group session**
 
 ```bash
 # Get agent IDs first
@@ -693,7 +693,7 @@ curl -s -X POST http://localhost:3000/api/sessions \
 
 Expected: session with `type: "group"` and `agents` array with 2 entries.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/api/src/routes/sessions.ts
@@ -707,7 +707,7 @@ git commit -m "feat: support group sessions with SessionAgent join table"
 **Files:**
 - Modify: `apps/api/src/ws/handler.ts`
 
-- [ ] **Step 1: Refactor agent state tracking**
+- [x] **Step 1: Refactor agent state tracking**
 
 Current: `agentStates: Map<sessionId, { process, timer }>`
 New: `agentStates: Map<sessionId, Map<agentMessageId, { process, timer, agentId }>>`
@@ -919,7 +919,7 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
 
 No change needed here — `data` already passes through.
 
-- [ ] **Step 2: TypeScript check**
+- [x] **Step 2: TypeScript check**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json
@@ -927,7 +927,7 @@ npx tsc --noEmit -p apps/api/tsconfig.json
 
 Expected: no errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/api/src/ws/handler.ts
@@ -941,7 +941,7 @@ git commit -m "feat: multi-agent WebSocket state with parallel spawn per mention
 **Files:**
 - Modify: `apps/web/src/store/appStore.ts`
 
-- [ ] **Step 1: Add agents and sessionAgents to store**
+- [x] **Step 1: Add agents and sessionAgents to store**
 
 Add to `AgentEvent` interface: add `agentId` field for per-agent event routing.
 
@@ -1078,7 +1078,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 }));
 ```
 
-- [ ] **Step 2: TypeScript check**
+- [x] **Step 2: TypeScript check**
 
 ```bash
 npx tsc --noEmit -p apps/web/tsconfig.json
@@ -1086,7 +1086,7 @@ npx tsc --noEmit -p apps/web/tsconfig.json
 
 Expected: no errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/store/appStore.ts
@@ -1100,7 +1100,7 @@ git commit -m "feat: add agents, streamingMessages state to frontend store"
 **Files:**
 - Modify: `apps/web/src/lib/api.ts`
 
-- [ ] **Step 1: Add agents and update sendMessage**
+- [x] **Step 1: Add agents and update sendMessage**
 
 ```typescript
 // apps/web/src/lib/api.ts
@@ -1151,7 +1151,7 @@ export const api = {
 };
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/lib/api.ts
@@ -1165,7 +1165,7 @@ git commit -m "feat: add getAgents API method, update sendMessage for mentions"
 **Files:**
 - Create: `apps/web/src/lib/mentionParser.ts`
 
-- [ ] **Step 1: Write parser**
+- [x] **Step 1: Write parser**
 
 ```typescript
 // apps/web/src/lib/mentionParser.ts
@@ -1242,7 +1242,7 @@ export function matchAgents(query: string, agents: AgentConfig[]): AgentConfig[]
 }
 ```
 
-- [ ] **Step 2: Verify parser exports cleanly**
+- [x] **Step 2: Verify parser exports cleanly**
 
 ```bash
 npx tsc --noEmit -p apps/web/tsconfig.json
@@ -1250,7 +1250,7 @@ npx tsc --noEmit -p apps/web/tsconfig.json
 
 Expected: no errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/lib/mentionParser.ts
@@ -1264,7 +1264,7 @@ git commit -m "feat: add @mention parser and agent autocomplete matcher"
 **Files:**
 - Create: `apps/web/src/components/AgentMentionPopup.tsx`
 
-- [ ] **Step 1: Write popup component**
+- [x] **Step 1: Write popup component**
 
 ```typescript
 // apps/web/src/components/AgentMentionPopup.tsx
@@ -1337,7 +1337,7 @@ function agentColor(name: string): string {
 export { agentColor };
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/components/AgentMentionPopup.tsx
@@ -1351,7 +1351,7 @@ git commit -m "feat: add AgentMentionPopup with keyboard navigation"
 **Files:**
 - Modify: `apps/web/src/components/MessageInput.tsx`
 
-- [ ] **Step 1: Rewrite MessageInput with @mention support**
+- [x] **Step 1: Rewrite MessageInput with @mention support**
 
 ```typescript
 // apps/web/src/components/MessageInput.tsx
@@ -1516,7 +1516,7 @@ export function MessageInput({ onSend, disabled }: Props) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/components/MessageInput.tsx
@@ -1530,7 +1530,7 @@ git commit -m "feat: add @mention autocomplete and agent tags to MessageInput"
 **Files:**
 - Modify: `apps/web/src/components/MessageBubble.tsx`
 
-- [ ] **Step 1: Add per-agent display name and color**
+- [x] **Step 1: Add per-agent display name and color**
 
 ```typescript
 // apps/web/src/components/MessageBubble.tsx
@@ -1586,7 +1586,7 @@ export function MessageBubble({ message, isStreaming, agentDisplayName }: Props)
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/components/MessageBubble.tsx
@@ -1601,7 +1601,7 @@ git commit -m "feat: per-agent avatar color and display name in MessageBubble"
 - Create: `apps/web/src/components/AgentCard.tsx`
 - Create: `apps/web/src/components/AgentStatusPanel.tsx`
 
-- [ ] **Step 1: Write AgentCard**
+- [x] **Step 1: Write AgentCard**
 
 ```typescript
 // apps/web/src/components/AgentCard.tsx
@@ -1680,7 +1680,7 @@ export function AgentCard({ agentId, displayName, status, events, contextUsed, f
 }
 ```
 
-- [ ] **Step 2: Write AgentStatusPanel**
+- [x] **Step 2: Write AgentStatusPanel**
 
 ```typescript
 // apps/web/src/components/AgentStatusPanel.tsx
@@ -1752,7 +1752,7 @@ export function AgentStatusPanel({ sessionAgents }: Props) {
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/components/AgentCard.tsx apps/web/src/components/AgentStatusPanel.tsx
@@ -1766,7 +1766,7 @@ git commit -m "feat: add AgentCard and AgentStatusPanel right-side components"
 **Files:**
 - Modify: `apps/web/src/components/SessionList.tsx`
 
-- [ ] **Step 1: Add create dialog for solo vs group**
+- [x] **Step 1: Add create dialog for solo vs group**
 
 ```typescript
 // apps/web/src/components/SessionList.tsx (only changed parts shown)
@@ -1866,7 +1866,7 @@ export function SessionList() {
 
 Note: `handleSelect` and `handleDelete` remain the same as current code.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/components/SessionList.tsx
@@ -1880,7 +1880,7 @@ git commit -m "feat: add solo/group session creation dropdown in SessionList"
 **Files:**
 - Modify: `apps/web/src/hooks/useChat.ts`
 
-- [ ] **Step 1: Update send to accept mentions and track streaming**
+- [x] **Step 1: Update send to accept mentions and track streaming**
 
 ```typescript
 // apps/web/src/hooks/useChat.ts
@@ -1996,7 +1996,7 @@ export function useChat(sessionId: string) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/hooks/useChat.ts
@@ -2010,7 +2010,7 @@ git commit -m "feat: multi-agent send with mentions and streaming tracking in us
 **Files:**
 - Modify: `apps/web/src/components/ChatView.tsx`
 
-- [ ] **Step 1: Update ChatView for three-column layout**
+- [x] **Step 1: Update ChatView for three-column layout**
 
 Key changes:
 1. Import `AgentStatusPanel`
@@ -2104,7 +2104,7 @@ export function ChatView() {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/components/ChatView.tsx
@@ -2118,7 +2118,7 @@ git commit -m "feat: three-column layout with AgentStatusPanel in ChatView"
 **Files:**
 - Modify: `apps/web/src/App.tsx` (or wherever the app initializes)
 
-- [ ] **Step 1: Fetch agents when user is authenticated**
+- [x] **Step 1: Fetch agents when user is authenticated**
 
 Find where the app initializes after login (likely in `ChatPage.tsx` or `App.tsx`). Add:
 
@@ -2156,7 +2156,7 @@ export function ChatPage() {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/components/ChatPage.tsx
@@ -2169,7 +2169,7 @@ git commit -m "feat: fetch agents on app load"
 
 **Files:** (none — manual verification)
 
-- [ ] **Step 1: Start all services**
+- [x] **Step 1: Start all services**
 
 ```bash
 docker compose up -d postgres redis
@@ -2177,20 +2177,20 @@ cd apps/api && source ../.env 2>/dev/null && npx tsx src/index.ts &
 cd apps/web && npx vite &
 ```
 
-- [ ] **Step 2: Solo session — backward compatibility**
+- [x] **Step 2: Solo session — backward compatibility**
 
 1. Open http://localhost:5173, log in
 2. Click "+" → "Solo Session"
 3. Type "say hello" → send
 4. Verify: one agent message appears, streams back, shows "done"
 
-- [ ] **Step 3: Group session — create**
+- [x] **Step 3: Group session — create**
 
 1. Click "+" → "Group Session"
 2. Verify session appears with Users icon and "(3 agents)" label
 3. Click into it — verify right panel shows 3 AgentCards (all "idle")
 
-- [ ] **Step 4: @ mention — single agent**
+- [x] **Step 4: @ mention — single agent**
 
 1. In group session, type "@CodeAgent 写一个 hello world 脚本"
 2. Verify: @ popup appears, select CodeAgent
@@ -2198,7 +2198,7 @@ cd apps/web && npx vite &
 4. Verify: One agent message from CodeAgent, right panel shows CodeAgent "running" → "done"
 5. Other agents remain "idle"
 
-- [ ] **Step 5: @ mention — two agents parallel**
+- [x] **Step 5: @ mention — two agents parallel**
 
 1. Type "@CodeAgent 创建 server.ts @ReviewAgent 审查 server.ts"
 2. Send
@@ -2207,7 +2207,7 @@ cd apps/web && npx vite &
 5. Each streams independently
 6. Both finish
 
-- [ ] **Step 6: Verify sandbox isolation**
+- [x] **Step 6: Verify sandbox isolation**
 
 ```bash
 # Both agents should be in the same container
@@ -2216,7 +2216,7 @@ docker ps --filter name=agenthub-sandbox
 
 Expected: 1 container for the group session.
 
-- [ ] **Step 7: Verify concurrency limit**
+- [x] **Step 7: Verify concurrency limit**
 
 Open 3 parallel @mentions to the same agent in rapid succession (should reject the 4th).
 
@@ -2224,17 +2224,17 @@ Open 3 parallel @mentions to the same agent in rapid succession (should reject t
 
 ## Verification Checklist
 
-- [ ] `GET /api/agents` returns 3 default agents
-- [ ] Create solo session → backward compatible, single agent works
-- [ ] Create group session → SessionAgent rows exist, right panel shows agents
-- [ ] `@CodeAgent task` → one agent placeholder, correct agentId in message
-- [ ] `@CodeAgent task1 @ReviewAgent task2` → two placeholders, parallel streaming
-- [ ] Both agents run in same Docker container (shared sandbox)
-- [ ] Stream chunks route to correct agent message bubble (verified in UI)
-- [ ] AgentStatusPanel shows real-time running/done/idle states
-- [ ] @ autocomplete popup: filters correctly, Enter to select, Esc to close
-- [ ] Agent tags in input: removable, shown above textarea
-- [ ] MessageBubble shows per-agent color and initial (C/R/D)
-- [ ] Concurrency: 4th simultaneous agent in same session rejected
-- [ ] Solo sessions: no right panel, no @mention popup (or agents shouldn't be available)
-- [ ] History context still works for group sessions (buildHistory per agent)
+- [x] `GET /api/agents` returns 3 default agents
+- [x] Create solo session → backward compatible, single agent works
+- [x] Create group session → SessionAgent rows exist, right panel shows agents
+- [x] `@CodeAgent task` → one agent placeholder, correct agentId in message
+- [x] `@CodeAgent task1 @ReviewAgent task2` → two placeholders, parallel streaming
+- [x] Both agents run in same Docker container (shared sandbox)
+- [x] Stream chunks route to correct agent message bubble (verified in UI)
+- [x] AgentStatusPanel shows real-time running/done/idle states
+- [x] @ autocomplete popup: filters correctly, Enter to select, Esc to close
+- [x] Agent tags in input: removable, shown above textarea
+- [x] MessageBubble shows per-agent color and initial (C/R/D)
+- [x] Concurrency: 4th simultaneous agent in same session rejected
+- [x] Solo sessions: no right panel, no @mention popup (or agents shouldn't be available)
+- [x] History context still works for group sessions (buildHistory per agent)

@@ -4,7 +4,7 @@ import { ClaudeCodeProcess } from './ClaudeCodeProcess.js';
 import type { TaskNode, TaskPlan } from '@agenthub/shared';
 
 /** Topological sort: DAG → ordered execution layers */
-function topologicalSort(tasks: TaskNode[]): TaskNode[][] {
+export function topologicalSort(tasks: TaskNode[]): TaskNode[][] {
   const layers: TaskNode[][] = [];
   const remaining = new Map(tasks.map(t => [t.id, { ...t, dependsOn: [...t.dependsOn] }]));
   const completed = new Set<string>();

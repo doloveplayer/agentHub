@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
-import { Square } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Square, Wrench } from 'lucide-react';
 import { agentColor } from './AgentMentionPopup';
+import { useAppStore } from '../store/appStore';
 import type { AgentEvent } from '../store/appStore';
 
 interface Props {
@@ -9,6 +10,9 @@ interface Props {
   status: 'running' | 'done' | 'idle';
   events: AgentEvent[];
   onStop?: () => void;
+  agentName?: string;
+  collapsed?: boolean;
+  viewMode?: 'detailed' | 'aggregated' | 'errors';
 }
 
 const EVENT_ICONS: Record<string, string> = {
@@ -21,8 +25,13 @@ const EVENT_ICONS: Record<string, string> = {
   token_update: '📊',
 };
 
-export function AgentCard({ agentId, displayName, status, events, onStop }: Props) {
+export function AgentCard({ agentId, displayName, status, events, onStop, agentName, collapsed, viewMode }: Props) {
   const feedRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(true);
+
+  useEffect(() => {
+    if (status === 'running') setExpanded(true);
+  }, [status]);
 
   useEffect(() => {
     if (status === 'running' && feedRef.current) {
@@ -30,10 +39,30 @@ export function AgentCard({ agentId, displayName, status, events, onStop }: Prop
     }
   }, [events.length, status]);
 
+  const isCollapsed = collapsed && !expanded;
+
+  if (isCollapsed) {
+    return (
+      <div
+        onClick={() => setExpanded(true)}
+        className="apple-card mb-2 px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-white/[0.04] transition"
+      >
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+          status === 'running' ? 'bg-[#30D158] agent-pulse' :
+          status === 'done' ? 'bg-[#30D158]' : 'bg-white/[0.15]'
+        }`} />
+        <span className="text-caption font-medium text-white/60 truncate">{displayName}</span>
+        <span className="text-[10px] text-white/25 ml-auto flex-shrink-0">{status}</span>
+      </div>
+    );
+  }
+
   const recentEvents = events.slice(-20);
   const toolCount = events.filter((e) => e.type === 'tool_use').length;
   const tokenEvents = events.filter((e) => e.type === 'token_update');
   const lastToken = tokenEvents.length > 0 ? tokenEvents[tokenEvents.length - 1].details.tokenUsage : null;
+  const currentTask = useAppStore(s => agentName ? s.agentCurrentTask[agentName] : null);
+  const taskCount = useAppStore(s => agentName ? (s.agentTaskCounts[agentName] || 0) : 0);
 
   return (
     <div className="apple-card mb-2.5 overflow-hidden">
@@ -67,6 +96,17 @@ export function AgentCard({ agentId, displayName, status, events, onStop }: Prop
           <span className="ml-auto text-caption text-white/25 flex-shrink-0 font-medium">{status}</span>
         )}
       </div>
+
+      {/* Task banner */}
+      {currentTask && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-[#5E5CE6]/8 border-b border-[#5E5CE6]/15 text-caption">
+          <Wrench className="w-3 h-3 text-[#5E5CE6]" />
+          <span className="text-[#5E5CE6] font-medium truncate">{currentTask.title}</span>
+          {taskCount > 0 && (
+            <span className="ml-auto text-white/25 flex-shrink-0">{taskCount} queued</span>
+          )}
+        </div>
+      )}
 
       {/* Activity feed */}
       <div ref={feedRef} className="max-h-52 overflow-y-auto panel-scroll px-2.5 py-1.5 space-y-1 text-caption leading-relaxed">

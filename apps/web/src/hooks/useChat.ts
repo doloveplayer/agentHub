@@ -127,16 +127,65 @@ export function useChat(sessionId: string) {
                 }
               }
               break;
+            case 'task_assigned':
+              if (data.planId && data.taskId && data.agentName) {
+                const store = useAppStore.getState();
+                store.setTaskAgent(data.planId, data.taskId, data.agentId, data.agentName);
+              }
+              break;
+            case 'conflict_detected': {
+              const cfStore = useAppStore.getState();
+              const conflictFiles = (data.conflicts || []).map((c: any) =>
+                `  • ${c.filePath} (${c.agents.join(', ')})`
+              ).join('\n');
+              const cfMsg: Message = {
+                id: 'cf-' + Date.now(),
+                sessionId,
+                senderType: 'agent',
+                content: `⚠️ 代码冲突检测：以下文件被多个 Agent 同时修改，请检查合并：\n${conflictFiles}`,
+                status: 'done',
+                createdAt: new Date().toISOString(),
+              };
+              cfStore.addMessage(sessionId, cfMsg);
+              break;
+            }
+            case 'agent_missing': {
+              const store = useAppStore.getState();
+              const fallbackNote = data.fallbackAgent
+                ? ` (已自动分配给 ${data.fallbackAgent})`
+                : '';
+              // Add a system message to notify user
+              const sysMsg: Message = {
+                id: 'sys-' + Date.now(),
+                sessionId,
+                senderType: 'agent',
+                content: `⚠️ 任务 "${data.taskTitle}" 需要 ${data.agentType}，但群内无此类型 Agent${fallbackNote}。${data.suggestedAgent ? `建议添加: ${data.suggestedAgent.displayName} (${data.suggestedAgent.description})` : ''}`,
+                status: 'done',
+                createdAt: new Date().toISOString(),
+              };
+              store.addMessage(sessionId, sysMsg);
+              break;
+            }
             case 'task_completed':
               if (data.planId && data.taskId) {
                 const store = useAppStore.getState();
                 store.updateTaskStatus(data.planId, data.taskId, 'done');
+                if (data.agentName) {
+                  useAppStore.setState(s => ({
+                    agentCurrentTask: { ...s.agentCurrentTask, [data.agentName]: null },
+                  }));
+                }
               }
               break;
             case 'task_failed':
               if (data.planId && data.taskId) {
                 const store = useAppStore.getState();
                 store.updateTaskStatus(data.planId, data.taskId, 'failed');
+                if (data.agentName) {
+                  useAppStore.setState(s => ({
+                    agentCurrentTask: { ...s.agentCurrentTask, [data.agentName]: null },
+                  }));
+                }
               }
               break;
             case 'plan_summary': {

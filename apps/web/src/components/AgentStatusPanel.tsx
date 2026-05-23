@@ -14,9 +14,11 @@ interface Props {
 }
 
 type PanelTab = 'Files' | 'Agents' | 'Tasks';
+type ViewMode = 'detailed' | 'aggregated' | 'errors';
 
 export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>('Agents');
+  const [viewMode, setViewMode] = useState<ViewMode>('detailed');
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const agentEvents = useAppStore((s) => s.agentEvents);
   const messages = useAppStore((s) => {
@@ -42,7 +44,34 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
     return { agent, status, events };
   });
 
+  // Sort: running → done → idle
+  const sortedAgents = [...agentStates].sort((a, b) => {
+    const order = { running: 0, done: 1, idle: 2 };
+    return (order[a.status] ?? 2) - (order[b.status] ?? 2);
+  });
+
+  // Filter for errors-only mode
+  const filteredAgents = viewMode === 'errors'
+    ? sortedAgents.filter(a => a.events.some(e => e.type === 'permission_request') || a.status !== 'idle')
+    : sortedAgents;
+
+  const runningCount = sortedAgents.filter(a => a.status === 'running').length;
+  const idleCount = sortedAgents.filter(a => a.status === 'idle').length;
+  const runningAgent = sortedAgents.find(a => a.status === 'running');
+  const lastToolEvent = runningAgent
+    ? (agentEvents[Object.keys(agentEvents).find(k => messages.find(m => m.id === k && m.agentId === runningAgent.agent.id)) ?? ''] ?? [])
+        .filter(e => e.type === 'tool_use').slice(-1)[0]
+    : null;
+  const overviewText = runningAgent
+    ? `${runningAgent.agent.displayName} 正在 ${lastToolEvent?.details.toolName || '思考中...'}`
+    : (runningCount === 0 ? '全部空闲' : '');
+
   const tabs: PanelTab[] = ['Files', 'Agents', 'Tasks'];
+  const modes: { key: ViewMode; label: string }[] = [
+    { key: 'detailed', label: '详细' },
+    { key: 'aggregated', label: '聚合' },
+    { key: 'errors', label: '异常' },
+  ];
 
   return (
     <div className="w-72 apple-panel border-l border-white/[0.06] flex flex-col h-full">
@@ -61,23 +90,59 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
           </div>
         ))}
       </div>
+      {activeTab === 'Agents' && (
+        <>
+          {/* View mode toggle + overview */}
+          <div className="flex items-center gap-1 px-2 py-1.5 border-b border-white/[0.04] bg-white/[0.02]">
+            <div className="flex gap-0.5 mr-auto">
+              {modes.map((m) => (
+                <button
+                  key={m.key}
+                  onClick={() => setViewMode(m.key)}
+                  className={`px-2 py-0.5 text-[10px] rounded font-medium transition ${
+                    viewMode === m.key
+                      ? 'bg-accent/20 text-accent'
+                      : 'text-white/25 hover:text-white/50'
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            <span className="text-[10px] text-white/30 ml-auto flex-shrink-0">
+              {runningCount}/{sortedAgents.length} 运行 · {idleCount} 空闲
+            </span>
+          </div>
+          {/* Overview bar */}
+          {viewMode === 'aggregated' && overviewText && (
+            <div className="px-3 py-1.5 text-[10px] text-white/35 italic border-b border-white/[0.04] truncate">
+              {overviewText}
+            </div>
+          )}
+        </>
+      )}
       <div className="flex-1 overflow-y-auto panel-scroll p-3">
         {activeTab === 'Agents' && (
           <>
-            {agentStates.length === 0 && (
-              <p className="text-footnote text-white/25 text-center py-4">No agents in this session</p>
+            {filteredAgents.length === 0 && (
+              <p className="text-footnote text-white/25 text-center py-4">
+                {viewMode === 'errors' ? 'No errors or active agents' : 'No agents in this session'}
+              </p>
             )}
-            {agentStates.map(({ agent, status, events }) => {
-              // Find the running message for this agent to pass its ID to onStop
+            {filteredAgents.map(({ agent, status, events }) => {
               const runningMsg = messages.find((m) => m.agentId === agent.id && m.status === 'streaming');
+              const collapsed = viewMode === 'aggregated' && status === 'idle';
               return (
               <AgentCard
                 key={agent.id}
                 agentId={agent.name}
                 displayName={agent.displayName}
+                agentName={agent.name}
                 status={status}
                 events={events}
                 onStop={runningMsg && onStopAgent ? () => onStopAgent(runningMsg.id) : undefined}
+                viewMode={viewMode}
+                collapsed={collapsed}
               />
               );
             })}

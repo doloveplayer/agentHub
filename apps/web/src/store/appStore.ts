@@ -52,6 +52,9 @@ interface AppState {
   isSessionStreaming: (sessionId: string) => boolean;
   setTaskPlan: (planId: string, tasks: TaskState[]) => void;
   updateTaskStatus: (planId: string, taskId: string, status: TaskState['status']) => void;
+  setTaskAgent: (planId: string, taskId: string, agentId: string, agentName: string) => void;
+  agentCurrentTask: Record<string, { planId: string; taskId: string; title: string } | null>;
+  agentTaskCounts: Record<string, number>;
   unreadCounts: Record<string, number>;
   incrementUnread: (sessionId: string) => void;
   clearUnread: (sessionId: string) => void;
@@ -62,9 +65,14 @@ export interface TaskState {
   planId: string;
   title: string;
   agentType: string;
-  status: 'waiting' | 'running' | 'done' | 'failed';
+  status: 'waiting' | 'queued' | 'running' | 'done' | 'failed';
   dependsOn: string[];
   progress?: { completed: number; total: number };
+  assignedAgentId?: string;
+  assignedAgentName?: string;
+  expectedOutput?: string;
+  priority?: string;
+  description?: string;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -80,6 +88,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   orchestrationMode: 'parallel' as const,
   taskPlans: {},
   planSummaries: {},
+  agentCurrentTask: {},
+  agentTaskCounts: {},
   unreadCounts: {},
 
   setToken: (token) => {
@@ -175,6 +185,29 @@ export const useAppStore = create<AppState>((set, get) => ({
         taskPlans: {
           ...state.taskPlans,
           [planId]: tasks.map((t) => t.taskId === taskId ? { ...t, status } : t),
+        },
+      };
+    }),
+
+  setTaskAgent: (planId, taskId, agentId, agentName) =>
+    set((state) => {
+      const tasks = state.taskPlans[planId];
+      if (!tasks) return state;
+      const task = tasks.find(t => t.taskId === taskId);
+      return {
+        taskPlans: {
+          ...state.taskPlans,
+          [planId]: tasks.map((t) => t.taskId === taskId
+            ? { ...t, assignedAgentId: agentId, assignedAgentName: agentName, status: 'running' as const }
+            : t),
+        },
+        agentCurrentTask: {
+          ...state.agentCurrentTask,
+          [agentName]: { planId, taskId, title: task?.title || '' },
+        },
+        agentTaskCounts: {
+          ...state.agentTaskCounts,
+          [agentName]: Math.max(0, (state.agentTaskCounts[agentName] || 0) - 1),
         },
       };
     }),

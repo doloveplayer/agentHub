@@ -1,4 +1,5 @@
-import { User } from 'lucide-react';
+import { useState } from 'react';
+import { User, Copy, Check } from 'lucide-react';
 import type { Message } from '@agenthub/shared';
 import { agentColor } from './AgentMentionPopup';
 
@@ -16,8 +17,18 @@ const AGENT_ICONS: Record<string, string> = {
 };
 
 export function MessageBubble({ message, isStreaming, agentDisplayName, agentName }: Props) {
+  const [copied, setCopied] = useState(false);
   const isHuman = message.senderType === 'human';
   const nameForKey = agentName || message.agentId || 'agent';
+
+  const handleCopy = async () => {
+    if (!message.content) return;
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
+  };
   const color = isHuman ? undefined : agentColor(nameForKey);
 
   const label = isHuman ? 'You' : (agentDisplayName || 'Agent');
@@ -41,6 +52,15 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
         <div className={`flex items-center gap-2 mb-1 ${isHuman ? 'flex-row-reverse' : ''}`}>
           <span className="text-xs text-gray-400 font-medium">{label}</span>
           {time && <span className="text-[10px] text-gray-600">{time}</span>}
+          {message.content && message.status === 'done' && (
+            <button
+              onClick={handleCopy}
+              className="opacity-0 group-hover:opacity-100 transition p-0.5 rounded hover:bg-white/10"
+              title="复制"
+            >
+              {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-gray-500" />}
+            </button>
+          )}
         </div>
         <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
           isHuman

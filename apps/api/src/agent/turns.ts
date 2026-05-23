@@ -170,3 +170,21 @@ function isKnownAgentType(value: unknown): value is TaskNode['agentType'] {
 function isKnownPriority(value: unknown): value is TaskNode['priority'] {
   return value === 'high' || value === 'medium' || value === 'low';
 }
+
+/** Find the closest available agent when exact type match fails */
+export function findClosestAgent(
+  neededType: string,
+  available: { name: string; displayName: string }[],
+): { name: string; displayName: string } | null {
+  if (available.length === 0) return null;
+  // Exact match on displayName
+  const exact = available.find(a => a.displayName === neededType);
+  if (exact) return exact;
+  // Prefix match: "Code" matches "CodeAgent"
+  const prefix = available.find(a =>
+    a.displayName.toLowerCase().includes(neededType.toLowerCase().replace('agent', ''))
+  );
+  if (prefix) return prefix;
+  // Fallback to code-agent
+  return available.find(a => a.name === 'code-agent') ?? available[0];
+}
