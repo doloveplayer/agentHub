@@ -54,6 +54,18 @@ async function handleConnection(ws: WebSocket, request: any) {
     return;
   }
 
+  // Register message handler FIRST — before any async DB queries.
+  const earlyMessages: { data: any }[] = [];
+  let sandboxReady = false;
+  ws.on('message', (raw) => {
+    let data: any;
+    try { data = JSON.parse(raw.toString()); } catch { return; }
+    if (!sandboxReady) { earlyMessages.push({ data }); return; }
+    handleMessage(ws, sessionId, data);
+  });
+  ws.on('close', () => cleanupSessionClient(sessionId, ws));
+  ws.on('error', () => cleanupSessionClient(sessionId, ws));
+
   try {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
     if (!user) {
@@ -105,17 +117,13 @@ async function handleConnection(ws: WebSocket, request: any) {
   console.log(`[ws] Client connected: session=${sessionId} userId=${userId}`);
   sendTo(ws, { type: 'connected', sessionId });
 
-  ws.on('message', (raw) => {
-    let data: any;
-    try { data = JSON.parse(raw.toString()); } catch {
-      sendTo(ws, { type: 'error', message: 'Invalid JSON' });
-      return;
-    }
-    handleMessage(ws, sessionId, data);
-  });
-
-  ws.on('close', () => cleanupSessionClient(sessionId, ws));
-  ws.on('error', () => cleanupSessionClient(sessionId, ws));
+  // Flush early messages that arrived before sandbox was ready
+  sandboxReady = true;
+  if (earlyMessages.length > 0) {
+    console.log(`[ws] Flushing ${earlyMessages.length} early message(s) for session=${sessionId.slice(0,8)}`);
+    for (const em of earlyMessages) handleMessage(ws, sessionId, em.data);
+    earlyMessages.length = 0;
+  }
 }
 
 function handleMessage(ws: WebSocket, sessionId: string, data: any): void {

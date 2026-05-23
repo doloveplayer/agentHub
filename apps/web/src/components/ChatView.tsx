@@ -265,9 +265,11 @@ export function ChatView() {
         <MessageInput onSend={send} disabled={hasRunningAgent} />
       </div>
 
-      {/* Agent status panel — only for group sessions */}
+      {/* Agent status panel — only for group sessions, hidden on small screens */}
       {activeSession?.type === 'group' && sessionAgents.length > 0 && (
-        <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} />
+        <div className="hidden lg:block w-72 flex-shrink-0">
+          <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} />
+        </div>
       )}
     </div>
   );

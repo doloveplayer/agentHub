@@ -65,7 +65,10 @@ export const agentCurrentMessage = new Map<string, string>();
 /** Permission timeouts */
 export const permissionTimeouts = new Map<string, NodeJS.Timeout>();
 export const PERMISSION_TIMEOUT_MS = 120_000;
-export const ENABLE_PERSISTENT_REPL = true;
+// REPL mode disabled: `cat file - | claude` blocks on spawn's stdin pipe
+// which never receives EOF. Use one-shot ClaudeCodeProcess (--print mode) instead.
+// Re-enable after implementing PTY-based stdin or docker exec send mechanism.
+export const ENABLE_PERSISTENT_REPL = false;
 
 /** TaskQueueManager reference (set by index.ts) */
 export let taskQueueManager: any = null;

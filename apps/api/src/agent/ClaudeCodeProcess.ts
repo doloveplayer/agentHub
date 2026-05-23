@@ -131,7 +131,6 @@ export class ClaudeCodeProcess {
 
     console.log(`[agent:spawn] docker ${args.slice(0, 6).join(' ')} ... container=${containerName}`);
     console.log(`[agent:spawn] Auth: API_KEY=${safeEnv['ANTHROPIC_API_KEY'] ? 'yes' : 'no'} BASE_URL=${safeEnv['ANTHROPIC_BASE_URL'] ? 'yes' : 'no'}`);
-
     const proc = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
     this.childProc = proc;
 

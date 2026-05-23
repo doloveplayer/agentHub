@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Plus, MessageSquare, Trash2, Users } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Users, X } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
 
-export function SessionList() {
+interface Props { onCloseMobile?: () => void; }
+
+export function SessionList({ onCloseMobile }: Props) {
   const { sessions, activeSessionId, setSessions, setActiveSession, user, unreadCounts, clearUnread } = useAppStore();
   const [showCreate, setShowCreate] = useState(false);
 
@@ -35,9 +37,14 @@ export function SessionList() {
   };
 
   return (
-    <div className="w-64 h-full bg-slate-900/80 border-r border-slate-800 flex flex-col backdrop-blur-sm">
+    <div className="w-full h-full bg-slate-900/80 border-r border-slate-800 flex flex-col backdrop-blur-sm">
       <div className="p-4 border-b border-slate-800/60 flex items-center justify-between">
         <h2 className="font-semibold text-slate-100">Sessions</h2>
+        {onCloseMobile && (
+          <button onClick={onCloseMobile} className="md:hidden p-1 hover:bg-white/[0.08] rounded">
+            <X className="w-4 h-4 text-white/50" />
+          </button>
+        )}
         <div className="relative">
           <button onClick={() => setShowCreate(!showCreate)} className="p-1.5 hover:bg-slate-800 rounded-lg transition" title="New Session">
             <Plus className="w-4 h-4 text-slate-400" />

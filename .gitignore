@@ -39,3 +39,4 @@ temp/
 
 # Dev utility scripts (contain dev secrets)
 apps/api/scripts/gen_token.ts
+docs/superpowers/plans/.archived

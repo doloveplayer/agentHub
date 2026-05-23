@@ -74,7 +74,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
   ];
 
   return (
-    <div className="w-72 apple-panel border-l border-white/[0.06] flex flex-col h-full">
+    <div className="w-full apple-panel border-l border-white/[0.06] flex flex-col h-full">
       <div className="flex border-b border-white/[0.06]">
         {tabs.map((tab) => (
           <div
