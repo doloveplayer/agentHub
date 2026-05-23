@@ -7,6 +7,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '../../..');
 dotenvConfig({ path: resolve(PROJECT_ROOT, '.env') });
 
+// Apply HTTPS proxy for external API calls (e.g., GitHub OAuth behind GFW).
+// undici's native fetch() respects https_proxy when set in process.env.
+const httpsProxy = process.env.HTTPS_PROXY || '';
+if (httpsProxy) {
+  process.env.https_proxy = httpsProxy;
+}
+
 function required(key: string): string {
   const val = process.env[key];
   if (!val) {

@@ -6,7 +6,21 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 AgentHub is an IM-style web chat app that manages multiple Claude Code instances inside Docker sandboxes. Users log in via GitHub OAuth, create sessions (solo or group), and chat with Claude Code agents through a WebSocket-driven streaming interface. Each session gets an isolated Docker container with a bind-mounted workspace directory at `.sandboxes/{sessionId}/`.
 
-**Phase 2 complete (2026-05-19):** Multi-agent group chat with @mentions, agent registry, Agent Card live activity feed, / command passthrough, agent stop control.
+### Core design philosophy
+
+AgentHub is a **message forwarding and input injection layer** — nothing more. It does NOT implement agent architecture, agent-to-agent communication protocols, or multi-agent collaboration logic. Those belong to the underlying CLI tools (Claude Code, Codex, OpenCode, etc.).
+
+What AgentHub does:
+- **Message routing**: user message → parse @mentions → deliver sub-prompt to the right agent instance
+- **Input injection**: write prompt to agent stdin, stream stdout back to the frontend
+- **Session management**: Docker sandbox lifecycle, WebSocket multiplexing, message persistence
+
+What AgentHub does NOT do:
+- Agent architecture (spawning, tool execution, planning) — that's the CLI tool's job
+- Agent-to-agent communication — agents don't talk to each other; they only receive prompts from the hub and respond to the user
+- Multi-agent orchestration — no DAG scheduling, no result aggregation, no inter-agent dependency resolution (those are Phase 3 features implemented by a dedicated Planner agent, not by AgentHub itself)
+
+In short: AgentHub is a **dumb pipe with a chat UI**. The intelligence lives in the agents, not in the hub.
 
 ## Commands
 
@@ -141,3 +155,13 @@ Input starts with "/" → backend skips mention parsing + system prompt injectio
 - **Git**: Uses SSH remote (`git@github.com:doloveplayer/agentHub.git`) because HTTPS/443 blocked by GFW.
 - **Design system**: Inter font, slate-based dark palette (slate-900/slate-800), green accent (#22C55E), 150ms ease-out transitions, lucide-react icons.
 - **Refer to `RUNBOOK.md`** for startup/shutdown/reset procedures and `PRD.md` for feature roadmap.
+
+## Code Review Workflow
+
+每完成一个功能板块，必须进行代码审查：
+
+- 输入 `/code-review` 触发自动化代码审查（调用 `superpowers:requesting-code-review` 技能）
+- 审查基于当前未提交的改动（或最近一次 commit）对比计划/需求文档
+- 修复 Critical 和 Important 问题
+- 不要跳过审查认为"改动简单没必要"
+- 每当确认功能代码无误后，需要更新计划/需求文档中的完成状态

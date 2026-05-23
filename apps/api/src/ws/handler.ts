@@ -853,10 +853,10 @@ function handlePermissionResponse(
   st.process.write(data.allowed ? 'y\n' : 'n\n');
 }
 
-function handleConfirmPlan(
+async function handleConfirmPlan(
   sessionId: string,
   data: { planId: string; tasks: any[] },
-): void {
+): Promise<void> {
   if (!taskQueueManager) {
     broadcast(sessionId, { type: 'stream_error', error: 'Task queue not initialized' });
     return;
@@ -878,9 +878,26 @@ function handleConfirmPlan(
     expectedOutput: t.expectedOutput || '',
     priority: t.priority || 'medium',
   }));
+
+  // Resolve agentType (PRD: "CodeAgent"/"ReviewAgent"/"DevOpsAgent") → registered Agent from DB
+  const agentTypes = [...new Set(tasks.map(t => t.agentType))];
+  const agentMap = new Map<string, { name: string; systemPrompt: string }>();
+  for (const agentType of agentTypes) {
+    const agent = await prisma.agent.findFirst({
+      where: { displayName: agentType },
+      select: { name: true, systemPrompt: true },
+    });
+    if (agent) {
+      agentMap.set(agentType, agent);
+      // Initialize agent directory in sandbox (same as chat @mention path)
+      AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt);
+    }
+  }
+
   taskQueueManager.submitPlan(
     data.planId, sessionId, { planTitle: '', summary: '', tasks },
     sandbox.containerId, sandbox.workDir, sandbox.hostWorkDir,
+    agentMap,
   ).then(() => {
     broadcast(sessionId, { type: 'plan_executing', planId: data.planId });
   }).catch((err: any) => {
@@ -914,10 +931,10 @@ function applyTaskModifications(tasks: any[]): any[] {
   });
 }
 
-function handleRetryTask(
+async function handleRetryTask(
   sessionId: string,
   data: { planId: string; taskId: string; task?: any },
-): void {
+): Promise<void> {
   if (!taskQueueManager) {
     broadcast(sessionId, { type: 'stream_error', error: 'Task queue not initialized' });
     return;
@@ -935,9 +952,24 @@ function handleRetryTask(
   // Ensure id field is set (frontend uses taskId, backend needs id)
   taskNode.id = taskNode.taskId || taskNode.id || data.taskId;
 
+  // Resolve agentType → registered agent for proper identity
+  let agentName: string | undefined;
+  let agentSystemPrompt: string | undefined;
+  if (taskNode.agentType) {
+    const agent = await prisma.agent.findFirst({
+      where: { displayName: taskNode.agentType },
+      select: { name: true, systemPrompt: true },
+    });
+    if (agent) {
+      agentName = agent.name;
+      agentSystemPrompt = agent.systemPrompt;
+    }
+  }
+
   taskQueueManager.retryTask(
     data.planId, sessionId, taskNode,
     sandbox.containerId, sandbox.workDir, sandbox.hostWorkDir,
+    agentName, agentSystemPrompt,
   ).catch((err: any) => {
     broadcast(sessionId, { type: 'stream_error', error: `Retry failed: ${err.message}` });
   });

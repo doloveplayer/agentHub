@@ -36,6 +36,10 @@ export interface TaskJobData {
   containerId: string;
   workDir: string;
   hostWorkDir: string;
+  /** Resolved agent name (e.g. "code-agent") — used for promptFileId + directory naming */
+  agentName?: string;
+  /** Resolved agent systemPrompt — prepended to task context */
+  agentSystemPrompt?: string;
 }
 
 export class TaskQueueManager {
@@ -66,6 +70,7 @@ export class TaskQueueManager {
     containerId: string,
     workDir: string,
     hostWorkDir: string,
+    agentMap?: Map<string, { name: string; systemPrompt: string }>,
   ): Promise<void> {
     const layers = topologicalSort(plan.tasks);
 
@@ -79,6 +84,8 @@ export class TaskQueueManager {
             ? `- ${dep.title}: expected output ${dep.expectedOutput}`
             : `- task ${did}`;
         }).join('\n');
+
+        const agent = agentMap?.get(task.agentType);
 
         const contextPrompt = `Task: ${task.title}
 Description: ${task.description}
@@ -97,6 +104,8 @@ Execute this task now. Output the results to the specified files.`;
             containerId,
             workDir,
             hostWorkDir,
+            agentName: agent?.name,
+            agentSystemPrompt: agent?.systemPrompt,
           },
           opts: {
             attempts: config.taskQueue.maxRetries + 1,
@@ -131,10 +140,16 @@ Execute this task now. Output the results to the specified files.`;
     this.worker = new Worker<TaskJobData>(
       'agenthub-tasks',
       async (job: Job<TaskJobData>) => {
-        const { contextPrompt, containerId, workDir, hostWorkDir, sessionId, task } = job.data;
+        const { contextPrompt, containerId, workDir, hostWorkDir, sessionId, task, agentName, agentSystemPrompt } = job.data;
 
         const proc = new ClaudeCodeProcess();
         let output = '';
+
+        // Use real agent name for prompt file and directory naming (PRD section 4.2)
+        const promptFileId = agentName ? `${agentName}-${task.id}` : `task-${task.id}`;
+        const fullPrompt = agentSystemPrompt
+          ? `${agentSystemPrompt}\n\n---\n\n${contextPrompt}`
+          : contextPrompt;
 
         return new Promise((resolve, reject) => {
           const timeout = setTimeout(() => {
@@ -159,8 +174,8 @@ Execute this task now. Output the results to the specified files.`;
           });
 
           proc.start(
-            sessionId, contextPrompt, containerId, workDir,
-            /* trustMode= */ true, hostWorkDir, `task-${task.id}`
+            sessionId, fullPrompt, containerId, workDir,
+            /* trustMode= */ true, hostWorkDir, promptFileId,
           ).catch((err) => {
             clearTimeout(timeout);
             reject(err);
@@ -195,6 +210,7 @@ Execute this task now. Output the results to the specified files.`;
   async retryTask(
     planId: string, sessionId: string,
     task: TaskNode, containerId: string, workDir: string, hostWorkDir: string,
+    agentName?: string, agentSystemPrompt?: string,
   ): Promise<void> {
     const contextPrompt = `Task: ${task.title}
 Description: ${task.description}
@@ -204,6 +220,7 @@ Retry this failed task. Review the current state of the workspace and attempt ag
 
     await this.queue.add(task.id, {
       planId, sessionId, task, contextPrompt, containerId, workDir, hostWorkDir,
+      agentName, agentSystemPrompt,
     }, {
       attempts: config.taskQueue.maxRetries + 1,
       backoff: { type: 'fixed' as const, delay: config.taskQueue.retryDelayMs },
