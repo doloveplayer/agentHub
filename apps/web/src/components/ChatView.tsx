@@ -9,13 +9,10 @@ import { agentColor } from './AgentMentionPopup';
 import { Wrench, FileText, GitBranch, CheckCircle, Shield, ChevronDown, ChevronUp } from 'lucide-react';
 import { ConfirmationPanel } from './ConfirmationPanel';
 import { DiffCard } from './DiffCard';
-import { PreviewFrame } from './PreviewFrame';
-import { PPTViewer } from './PPTViewer';
 import { DeployCard } from './DeployCard';
 import { TestReportCard } from './TestReportCard';
 import { SecurityCard } from './SecurityCard';
 import { ReviewCard } from './ReviewCard';
-import { DeploymentLauncher } from './DeploymentLauncher';
 import type { Message, AgentConfig } from '@agenthub/shared';
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -288,13 +285,6 @@ export function ChatView() {
           {securityReports.map((item) => <SecurityCard key={item.id} sessionId={activeSessionId} report={item.report} />)}
           {reviewReports.map((item) => <ReviewCard key={item.id} report={item.report} />)}
           <div ref={bottomRef} />
-        </div>
-        <PreviewFrame sessionId={activeSessionId} />
-        <div className="border-t border-white/10 px-4 py-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <PPTViewer />
-            <DeploymentLauncher sessionId={activeSessionId} />
-          </div>
         </div>
         <MessageInput onSend={send} disabled={hasRunningAgent} />
       </div>

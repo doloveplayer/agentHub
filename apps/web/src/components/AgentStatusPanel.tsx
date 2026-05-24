@@ -4,6 +4,7 @@ import { AgentCard } from './AgentCard';
 import { TaskCard } from './TaskCard';
 import { FileTree } from './FileTree';
 import { VersionTimeline } from './VersionTimeline';
+import { PreviewFrame } from './PreviewFrame';
 import type { AgentConfig } from '@agenthub/shared';
 import type { AgentEvent } from '../store/appStore';
 
@@ -14,7 +15,7 @@ interface Props {
   onStopAgent?: (agentMessageId: string) => void;
 }
 
-type PanelTab = 'Files' | 'Agents' | 'Tasks';
+type PanelTab = 'Files' | 'Agents' | 'Tasks' | 'Preview';
 type ViewMode = 'detailed' | 'aggregated' | 'errors';
 
 export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
@@ -67,7 +68,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
     ? `${runningAgent.agent.displayName} 正在 ${lastToolEvent?.details.toolName || '思考中...'}`
     : (runningCount === 0 ? '全部空闲' : '');
 
-  const tabs: PanelTab[] = ['Files', 'Agents', 'Tasks'];
+  const tabs: PanelTab[] = ['Files', 'Agents', 'Tasks', 'Preview'];
   const modes: { key: ViewMode; label: string }[] = [
     { key: 'detailed', label: '详细' },
     { key: 'aggregated', label: '聚合' },
@@ -157,6 +158,9 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
         )}
         {activeTab === 'Tasks' && (
           <ActivePlanView />
+        )}
+        {activeTab === 'Preview' && activeSessionId && (
+          <PreviewFrame sessionId={activeSessionId} />
         )}
       </div>
     </div>

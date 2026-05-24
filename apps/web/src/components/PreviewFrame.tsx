@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink, PanelRight, RefreshCcw } from 'lucide-react';
+import { ExternalLink, RefreshCcw } from 'lucide-react';
 import { api } from '../lib/api';
 import { ScreenshotComparisonCard } from './ScreenshotComparisonCard';
 
@@ -7,6 +7,7 @@ interface Props {
   sessionId: string;
 }
 
+/** Inline preview component for embedding inside panel tabs or message cards */
 export function PreviewFrame({ sessionId }: Props) {
   const [ports, setPorts] = useState<number[]>([]);
   const [port, setPort] = useState<number>(5173);
@@ -14,8 +15,6 @@ export function PreviewFrame({ sessionId }: Props) {
   const [directUrl, setDirectUrl] = useState('');
   const [beforeShot, setBeforeShot] = useState('');
   const [afterShot, setAfterShot] = useState('');
-  const [height, setHeight] = useState(280);
-  const [pinned, setPinned] = useState(false);
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -58,7 +57,6 @@ export function PreviewFrame({ sessionId }: Props) {
         if (result.ports[0]) setPort(result.ports[0]);
       } catch {
         if (cancelled) return;
-        // Sandbox may not be ready yet — retry with backoff (1s, 2s, then give up)
         if (attempt < 2) {
           setTimeout(() => tryPorts(attempt + 1), (attempt + 1) * 1000);
         }
@@ -68,8 +66,8 @@ export function PreviewFrame({ sessionId }: Props) {
     return () => { cancelled = true; };
   }, [sessionId]);
 
-  const frame = (
-    <div className="flex h-full flex-col overflow-hidden border border-white/10 bg-slate-950">
+  return (
+    <div className="flex h-full flex-col overflow-hidden">
       <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
         <select
           value={port}
@@ -94,13 +92,6 @@ export function PreviewFrame({ sessionId }: Props) {
           className="rounded bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
         >
           Open
-        </button>
-        <button
-          onClick={() => setPinned((value) => !value)}
-          className="ml-auto inline-flex h-8 w-8 items-center justify-center rounded text-slate-300 hover:bg-white/10"
-          title={pinned ? 'Unpin preview' : 'Pin preview'}
-        >
-          <PanelRight className="h-4 w-4" />
         </button>
         {url && (
           <a
@@ -128,8 +119,8 @@ export function PreviewFrame({ sessionId }: Props) {
           sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-downloads"
         />
       ) : (
-        <div className="flex flex-1 items-center justify-center text-xs text-slate-500">
-          Start a dev server in the sandbox and open its port.
+        <div className="flex flex-1 items-center justify-center text-xs text-slate-500 px-4 text-center">
+          Select a port and click Open to preview.
         </div>
       )}
       {url && (
@@ -141,30 +132,6 @@ export function PreviewFrame({ sessionId }: Props) {
         </button>
       )}
       <ScreenshotComparisonCard before={beforeShot} after={afterShot} />
-    </div>
-  );
-
-  if (pinned) {
-    return <div className="hidden w-[420px] shrink-0 border-l border-white/10 lg:block">{frame}</div>;
-  }
-
-  return (
-    <div className="border-t border-white/10">
-      <div
-        className="h-1 cursor-row-resize bg-white/10"
-        onMouseDown={(event) => {
-          const startY = event.clientY;
-          const startHeight = height;
-          const onMove = (move: MouseEvent) => setHeight(Math.min(560, Math.max(180, startHeight - (move.clientY - startY))));
-          const onUp = () => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-          };
-          window.addEventListener('mousemove', onMove);
-          window.addEventListener('mouseup', onUp);
-        }}
-      />
-      <div style={{ height }}>{frame}</div>
     </div>
   );
 }

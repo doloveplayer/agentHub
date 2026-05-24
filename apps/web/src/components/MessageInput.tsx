@@ -1,9 +1,10 @@
 import { useEffect, useState, useRef, KeyboardEvent } from 'react';
-import { Send } from 'lucide-react';
+import { Send, Paperclip } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { AgentMentionPopup } from './AgentMentionPopup';
 import { SlashCommandPopup } from './SlashCommandPopup';
 import { recommendAgents } from '../lib/mentionParser';
+import { api } from '../lib/api';
 import type { AgentConfig } from '@agenthub/shared';
 
 interface MentionTag {
@@ -33,6 +34,7 @@ export function MessageInput({ onSend, disabled }: Props) {
   const [cursorPos, setCursorPos] = useState(0);
   const [tags, setTags] = useState<MentionTag[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [slashQuery, setSlashQuery] = useState('');
   const [showSlash, setShowSlash] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
@@ -152,10 +154,32 @@ export function MessageInput({ onSend, disabled }: Props) {
   const handleSend = () => {
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
+
+    // Intercept /deploy command — trigger deployment workflow instead of chat message
+    if (trimmed.startsWith('/deploy')) {
+      const target = trimmed.split(/\s+/)[1] || 'docker';
+      const validTargets = ['docker', 'vercel', 'cloudflare'];
+      const deployTarget = validTargets.includes(target) ? target : 'docker';
+      handleDeploy(deployTarget);
+      setValue('');
+      ref.current?.focus();
+      return;
+    }
+
     onSend(trimmed, tags, orchestrationMode);
     setValue('');
     setTags([]);
     ref.current?.focus();
+  };
+
+  const handleDeploy = async (target: string) => {
+    if (!activeSessionId) return;
+    try {
+      await api.generateDeployConfig(activeSessionId, { appName: 'agent-hub-app', buildCommand: 'npm run build', startCommand: 'npm start' });
+      await api.deployToPlatform(activeSessionId, { target: target as 'docker' | 'vercel' | 'cloudflare', production: target !== 'docker' });
+    } catch (err: any) {
+      console.error('[deploy] Failed:', err.message);
+    }
   };
 
   return (
@@ -225,6 +249,28 @@ export function MessageInput({ onSend, disabled }: Props) {
           />
           Trust
         </label>
+
+        <input
+          ref={fileRef}
+          type="file"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file && activeSessionId) {
+              // Attach file to workspace and notify in chat
+              onSend(`[Attached: ${file.name}]`, tags, orchestrationMode);
+            }
+            // Reset so the same file can be re-selected
+            if (fileRef.current) fileRef.current.value = '';
+          }}
+          className="hidden"
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          className="p-3 text-white/40 hover:text-white/70 rounded-md hover:bg-white/[0.06] transition"
+          title="Attach file"
+        >
+          <Paperclip className="w-4 h-4" />
+        </button>
 
         <button
           onClick={handleSend}

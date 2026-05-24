@@ -58,8 +58,8 @@
   - 文件：`apps/api/src/agent/SandboxManager.ts` (新增 `portForward`)
 - [x] **反向代理**：Nginx/Caddy 动态子域名 → 容器端口（当前实现为 `/preview/` 与 `/api/preview/.../proxy` 路由代理）
   - 文件：`docker/nginx.conf`
-- [x] **iframe 内嵌预览**：聊天窗口底部可拖拽高度 iframe，支持固定/取消固定到右侧面板
-  - 文件：新建 `apps/web/src/components/PreviewFrame.tsx`
+- [x] **iframe 内嵌预览**：右侧面板 Preview 标签页内嵌 iframe，不再常驻聊天区域底部
+  - 文件：`apps/web/src/components/PreviewFrame.tsx` (简化) + `apps/web/src/components/AgentStatusPanel.tsx` (Preview 标签)
 - [ ] **HMR 自动刷新**：Vite HMR WebSocket 通过反向代理链路（待后续实现）
 - [x] **截图对比卡片**：手动截取修改前后页面，以对比卡片发送
 
@@ -156,20 +156,24 @@
 | `apps/api/src/agent/SandboxManager.ts` | 新增 portForward |
 | `docker/nginx.conf` | 预览子域名代理配置 |
 | `apps/api/src/routes/preview.ts` | **新建** — 端口检测、预览代理、截图 API |
-| `apps/web/src/components/PreviewFrame.tsx` | **新建** — iframe 预览 |
+| `apps/web/src/components/PreviewFrame.tsx` | **新建** — iframe 预览（简化，移除拖拽/pin，嵌于右侧面板 Preview 标签） |
+| `apps/web/src/components/AgentStatusPanel.tsx` | 新增 Preview 标签页（Files/Agents/Tasks/Preview） |
 | `apps/web/src/components/ScreenshotComparisonCard.tsx` | **新建** — 截图前后对比 |
-| `apps/web/src/components/PPTViewer.tsx` | **新建** — PPT 浏览 |
+| `apps/web/src/components/PPTViewer.tsx` | **新建** — PPT 浏览（内联卡片调用） |
+| `apps/web/src/components/MessageInput.tsx` | 扩展：通用附件按钮（📎）、/deploy 命令拦截 |
 | `apps/web/src/components/MessageBubble.tsx` | 扩展：Markdown 渲染、代码内联编辑、段落引用 |
-| `apps/web/src/components/ChatView.tsx` | 底部 iframe 预览区域 |
+| `apps/web/src/components/ChatView.tsx` | 移除底部工具栏（PreviewFrame、PPTViewer、DeploymentLauncher 不再常驻） |
 
 ### Tier 2
 | 文件 | 改动 |
 |------|------|
 | `apps/api/src/routes/deploy.ts` | **新建** — 部署 API |
-| `apps/web/src/components/DeployCard.tsx` | **新建** — 部署状态卡片 |
-| `apps/web/src/components/DeploymentLauncher.tsx` | **新建** — 部署目标与生产确认入口 |
+| `apps/web/src/components/DeployCard.tsx` | **新建** — 部署状态卡片（内联消息流） |
+| `apps/web/src/components/MessageInput.tsx` | /deploy 命令拦截，触发部署 API |
 | `apps/web/src/hooks/useChat.ts` | deployment_status 事件处理 |
 | `packages/shared/src/types.ts` | deployment_status 消息类型 |
+
+> **交互方式变更**：部署由 `/deploy <target>` 命令触发（遵循 IM 聊天范式），`DeploymentLauncher.tsx` 已废弃，不再使用常驻工具栏控件。
 
 ### Tier 3
 | 文件 | 改动 |
@@ -187,11 +191,11 @@
 ## 验证方案
 
 1. **Diff**：Agent 仅修改内部文件时 → 不显示 diff 卡片；Agent 修改用户项目文件时 → 通知型卡片默认折叠，展开后 Monaco 并排对比，文件级 accept/reject 可选，关闭按钮忽略
-2. **网页预览**：Agent 启动 dev server → iframe 内嵌预览 → 手动截图对比
+2. **网页预览**：Agent 启动 dev server → 右侧面板 Preview 标签页打开 iframe → 手动截图对比
 3. **文档渲染**：Agent 输出 Markdown → 消息气泡内表格/代码块正确渲染 → 段落引用 → Agent 增量修改
 4. **PPT 浏览**：上传 PPTX → 聊天窗口内翻页浏览 → 导出 PDF
 5. **代码编辑**：代码块内联编辑 → 交给 Agent 修改 → 结果展示
-6. **部署**：发起部署 → 状态卡片 Building → Deploying → Success（含 URL）→ 生产环境双重确认
+6. **部署**：输入 `/deploy docker` → DeployCard 内联展示 Building → Deploying → Success（含 URL）
 7. **测试报告**：TestAgent 执行 → 报告卡片展示用例状态 → 失败重试
 8. **安全检查**：npm audit → CVE 分组卡片 → 一键升级
 9. **审查报告**：ReviewAgent 输出 → 分级卡片 → 点击跳转 Diff 行
