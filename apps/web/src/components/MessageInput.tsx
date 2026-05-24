@@ -1,4 +1,4 @@
-import { useState, useRef, KeyboardEvent } from 'react';
+import { useEffect, useState, useRef, KeyboardEvent } from 'react';
 import { Send } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { AgentMentionPopup } from './AgentMentionPopup';
@@ -38,6 +38,17 @@ export function MessageInput({ onSend, disabled }: Props) {
   const [slashIndex, setSlashIndex] = useState(0);
 
   const matchedAgents = recommendAgents(mentionQuery, agents, recentMessages);
+
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ prompt: string }>).detail;
+      if (!detail?.prompt) return;
+      setValue((current) => `${current.trim() ? `${current.trim()}\n\n` : ''}${detail.prompt}`);
+      ref.current?.focus();
+    };
+    window.addEventListener('agenthub:prompt-insert', handler);
+    return () => window.removeEventListener('agenthub:prompt-insert', handler);
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;

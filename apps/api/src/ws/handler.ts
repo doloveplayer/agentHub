@@ -11,6 +11,8 @@ import { selectDefaultAgent, extractPlannerPlan, toTaskStates } from '../agent/t
 import { prisma } from '../db/prisma.js';
 import { verifyToken } from '../lib/jwt.js';
 import { config } from '../config.js';
+import { normalizeTarget, startDeployment } from '../routes/deploy.js';
+import { parseReviewReport, parseTestOutput, parseNpmAuditJson } from '../artifacts/ArtifactTools.js';
 
 import {
   sessions, agentStates, agentProcesses, sandboxes,
@@ -28,6 +30,11 @@ import {
 import {
   dispatchTasksToAgents, processNextInQueue, startTaskAgent,
 } from './taskDispatcher.js';
+import {
+  broadcastDiffSummary,
+  recordMessageBeforeVersion,
+  takeMessageBeforeVersion,
+} from './diffBroadcast.js';
 
 export { broadcast, setTaskQueueManager } from './state.js';
 
@@ -132,9 +139,44 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'permission_response': handlePermissionResponse(sessionId, data); break;
     case 'stop_agent': handleStopAgent(sessionId, data); break;
     case 'confirm_plan': handleConfirmPlan(sessionId, data); break;
+    case 'deploy_to_platform': handleDeployToPlatform(sessionId, data); break;
     case 'modify_task': handleModifyTask(sessionId, data); break;
     case 'retry_task': handleRetryTask(sessionId, data); break;
     default: sendTo(ws, { type: 'error', message: `Unknown message type: ${data.type}` });
+  }
+}
+
+function handleDeployToPlatform(sessionId: string, data: { target?: string; production?: boolean; confirmPhrase?: string }): void {
+  const sandbox = sandboxes.get(sessionId);
+  if (!sandbox) { broadcast(sessionId, { type: 'stream_error', error: 'No active sandbox' }); return; }
+  const target = normalizeTarget(data.target);
+  if (data.production && data.confirmPhrase !== `DEPLOY ${target.toUpperCase()}`) {
+    broadcast(sessionId, { type: 'deployment_status', deploymentId: `dep-${Date.now()}`, target, status: 'failed', error: `Confirmation phrase must be DEPLOY ${target.toUpperCase()}`, timestamp: Date.now() });
+    return;
+  }
+  startDeployment(sessionId, sandbox.hostWorkDir, target);
+}
+
+function broadcastStructuredArtifact(sessionId: string, agentName: string, content: string): void {
+  if (agentName === 'review-agent') {
+    const report = parseReviewReport(content);
+    if (report.findings.length > 0) broadcast(sessionId, { type: 'review_report', report, timestamp: Date.now() });
+  }
+  if (agentName === 'test-agent') {
+    const report = parseTestOutput(content);
+    if (report.total > 0 || report.cases.length > 0) {
+      broadcast(sessionId, { type: 'test_report', report, exitCode: report.failed > 0 ? 1 : 0, timestamp: Date.now() });
+    }
+  }
+  if (agentName === 'deps-agent') {
+    try {
+      const jsonStart = content.indexOf('{');
+      const jsonEnd = content.lastIndexOf('}');
+      if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        const report = parseNpmAuditJson(content.slice(jsonStart, jsonEnd + 1));
+        if (report.total > 0) broadcast(sessionId, { type: 'security_report', report, exitCode: 0, timestamp: Date.now() });
+      }
+    } catch { /* content was not npm audit JSON */ }
   }
 }
 
@@ -264,6 +306,14 @@ async function handleChatMessage(
     const agentNameForProc = mention.agentId
       ? (await prisma.agent.findUnique({ where: { id: mention.agentId }, select: { name: true } }))?.name
       : null;
+    const diffAgentName = agentNameForProc || 'agent';
+    recordMessageBeforeVersion(
+      mention.messageId,
+      sandbox.hostWorkDir,
+      sessionId,
+      diffAgentName,
+      `Before ${diffAgentName} turn`,
+    );
     const existingProc = agentNameForProc ? agentProcesses.get(sessionId)?.get(agentNameForProc) : null;
 
     if (ENABLE_PERSISTENT_REPL && existingProc && existingProc.provider.isAlive()) {
@@ -341,6 +391,15 @@ async function handleChatMessage(
             stateTracker.setDone(msgId);
             if (agentNameForProc) MilestoneBroadcaster.classify({ sessionId, agentName: agentNameForProc, agentMessageId: msgId, eventType: 'done' });
             broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: finalContent, exitCode: ev.exitCode ?? 0 });
+            broadcastDiffSummary(
+              sessionId,
+              msgId,
+              sandbox.hostWorkDir,
+              takeMessageBeforeVersion(msgId),
+              agentName,
+              finalContent.slice(0, 180),
+            );
+            broadcastStructuredArtifact(sessionId, agentName, finalContent);
             const stateMap = agentStates.get(sessionId);
             if (stateMap) {
               const st = stateMap.get(msgId);
@@ -457,6 +516,15 @@ async function handleChatMessage(
           const finalContent = accumulatedContent || (event.exitCode !== 0 ? '[Agent stopped]' : '[Agent finished]');
           prisma.message.update({ where: { id: mention.messageId }, data: { content: finalContent, status: event.exitCode === 0 ? 'done' : 'error' } }).catch(() => {});
           broadcast(sessionId, { type: 'stream_end', agentMessageId: mention.messageId, fullContent: finalContent, exitCode: event.exitCode });
+          broadcastDiffSummary(
+            sessionId,
+            mention.messageId,
+            sandbox.hostWorkDir,
+            takeMessageBeforeVersion(mention.messageId),
+            diffAgentName,
+            finalContent.slice(0, 180),
+          );
+          broadcastStructuredArtifact(sessionId, diffAgentName, finalContent);
           const stateMap = agentStates.get(sessionId);
           if (stateMap) {
             const st = stateMap.get(mention.messageId);

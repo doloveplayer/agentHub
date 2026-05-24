@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore';
 import { AgentCard } from './AgentCard';
 import { TaskCard } from './TaskCard';
 import { FileTree } from './FileTree';
+import { VersionTimeline } from './VersionTimeline';
 import type { AgentConfig } from '@agenthub/shared';
 import type { AgentEvent } from '../store/appStore';
 
@@ -149,7 +150,10 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
           </>
         )}
         {activeTab === 'Files' && activeSessionId && (
-          <FileTree sessionId={activeSessionId} />
+          <div className="space-y-4">
+            <FileTree sessionId={activeSessionId} />
+            <VersionTimeline sessionId={activeSessionId} />
+          </div>
         )}
         {activeTab === 'Tasks' && (
           <ActivePlanView />

@@ -1,7 +1,12 @@
 import { useState } from 'react';
-import { User, Copy, Check } from 'lucide-react';
+import { User, Copy, Check, Quote, Wand2 } from 'lucide-react';
+import Editor from '@monaco-editor/react';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import remarkGfm from 'remark-gfm';
 import type { Message } from '@agenthub/shared';
 import { agentColor } from './AgentMentionPopup';
+import { safeMarkdownUrl } from '../lib/markdown';
 
 interface Props {
   message: Message;
@@ -62,13 +67,23 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
             </button>
           )}
         </div>
-        <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap ${
+        <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
           isHuman
             ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-md'
             : 'bg-slate-800/80 border border-slate-700/50 text-slate-200 rounded-tl-md'
         }`}>
           {message.content ? (
-            message.content
+            <div className="markdown-content">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+                skipHtml
+                urlTransform={(url) => safeMarkdownUrl(url)}
+                components={markdownComponents}
+              >
+                {message.content}
+              </ReactMarkdown>
+            </div>
           ) : isStreaming ? (
             <span className="inline-flex items-center gap-1">
               <span className="w-1.5 h-4 bg-gray-400 rounded-full streaming-cursor" />
@@ -82,4 +97,89 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
       </div>
     </div>
   );
+}
+
+const markdownComponents: Components = {
+  a: ({ children, href, ...props }) => (
+    <a href={href} target="_blank" rel="noreferrer" {...props}>
+      {children}
+    </a>
+  ),
+  table: ({ children, ...props }) => (
+    <div className="markdown-table-wrap">
+      <table {...props}>{children}</table>
+    </div>
+  ),
+  img: ({ alt, src, ...props }) => (
+    <img alt={alt ?? ''} src={src ?? ''} loading="lazy" {...props} />
+  ),
+  p: ({ children }) => {
+    const text = childrenToText(children);
+    return (
+      <p className="group/paragraph relative pr-7">
+        {children}
+        {text && (
+          <button
+            onClick={() => insertPrompt(`请基于以下引用继续处理：\n\n> ${text.replace(/\n/g, '\n> ')}`)}
+            className="absolute right-0 top-0 hidden h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-white/10 group-hover/paragraph:inline-flex"
+            title="引用并交给 Agent"
+          >
+            <Quote className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </p>
+    );
+  },
+  code: ({ inline, className, children, ...props }: any) => {
+    const code = String(children ?? '').replace(/\n$/, '');
+    const language = /language-(\w+)/.exec(className ?? '')?.[1] ?? 'plaintext';
+    if (inline) return <code className={className} {...props}>{children}</code>;
+    return <InlineCodeEditor code={code} language={language} />;
+  },
+};
+
+function InlineCodeEditor({ code, language }: { code: string; language: string }) {
+  const [value, setValue] = useState(code);
+  const height = Math.min(420, Math.max(120, code.split('\n').length * 20 + 44));
+  return (
+    <div className="my-3 overflow-hidden rounded-md border border-white/10 bg-slate-950">
+      <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
+        <span className="font-mono text-[11px] text-slate-500">{language}</span>
+        <button
+          onClick={() => insertPrompt(`请修改并应用这段代码：\n\n\`\`\`${language}\n${value}\n\`\`\``)}
+          className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-300 hover:bg-white/10"
+          title="让 Agent 修改这段代码"
+        >
+          <Wand2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <Editor
+        height={`${height}px`}
+        language={language}
+        value={value}
+        theme="vs-dark"
+        onChange={(next) => setValue(next ?? '')}
+        options={{
+          minimap: { enabled: false },
+          scrollBeyondLastLine: false,
+          wordWrap: 'on',
+          fontSize: 12,
+          lineNumbersMinChars: 3,
+        }}
+      />
+    </div>
+  );
+}
+
+function insertPrompt(prompt: string): void {
+  window.dispatchEvent(new CustomEvent('agenthub:prompt-insert', { detail: { prompt } }));
+}
+
+function childrenToText(children: unknown): string {
+  if (typeof children === 'string') return children.trim();
+  if (Array.isArray(children)) return children.map(childrenToText).join('').trim();
+  if (children && typeof children === 'object' && 'props' in children) {
+    return childrenToText((children as { props?: { children?: unknown } }).props?.children);
+  }
+  return '';
 }

@@ -16,6 +16,11 @@ import {
   incRunningAgentCount, decRunningAgentCount,
   type AgentTaskQueue, type TaskDispatchNode,
 } from './state.js';
+import {
+  broadcastDiffSummary,
+  recordMessageBeforeVersion,
+  takeMessageBeforeVersion,
+} from './diffBroadcast.js';
 
 export { type AgentTaskQueue, type TaskDispatchNode };
 
@@ -45,9 +50,17 @@ export async function processNextInQueue(
 
   if (procInfo && procInfo.provider.isAlive()) {
     const taskPrompt = buildTaskPrompt(task);
-    agentCurrentMessage.set(agentName, `task-${task.id}`);
+    const taskMessageId = `task-${task.id}`;
+    recordMessageBeforeVersion(
+      taskMessageId,
+      queue.sandbox.hostWorkDir,
+      sessionId,
+      agentName,
+      `Before ${agentName} task ${task.id}`,
+    );
+    agentCurrentMessage.set(agentName, taskMessageId);
     const taskMsg = await prisma.message.create({
-      data: { id: `task-${task.id}`, sessionId, senderType: 'agent', agentId: procInfo.agentId, content: '', status: 'streaming' },
+      data: { id: taskMessageId, sessionId, senderType: 'agent', agentId: procInfo.agentId, content: '', status: 'streaming' },
     }).catch(() => null);
     if (taskMsg) {
       if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
@@ -83,6 +96,14 @@ export async function startTaskAgent(
   agentCurrentTask.set(agentName, { planId: queue.planId, taskId: task.id });
 
   const taskPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}`;
+  const taskMessageId = `task-${task.id}`;
+  recordMessageBeforeVersion(
+    taskMessageId,
+    sandbox.hostWorkDir,
+    sessionId,
+    agentName,
+    `Before ${agentName} task ${task.id}`,
+  );
 
   provider.onEvent((ev) => {
     const msgId = agentCurrentMessage.get(agentName) || `task-${task.id}`;
@@ -95,8 +116,17 @@ export async function startTaskAgent(
           details: { toolName: ev.toolName, input: ev.toolInput }, agentMessageId: msgId, timestamp: Date.now() });
         break;
       case 'done': {
+        const fullContent = ev.exitCode === 0 ? '[Task completed]' : '[Task failed]';
         broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId,
-          fullContent: ev.exitCode === 0 ? '[Task completed]' : '[Task failed]', exitCode: ev.exitCode ?? 0 });
+          fullContent, exitCode: ev.exitCode ?? 0 });
+        broadcastDiffSummary(
+          sessionId,
+          msgId,
+          sandbox.hostWorkDir,
+          takeMessageBeforeVersion(msgId),
+          agentName,
+          fullContent,
+        );
         broadcast(sessionId, {
           type: ev.exitCode === 0 ? 'task_completed' : 'task_failed',
           planId: queue.planId, taskId: task.id, output: ev.exitCode === 0 ? 'done' : `exit code ${ev.exitCode}`,
@@ -123,10 +153,10 @@ export async function startTaskAgent(
   }, config.agent.timeoutMs);
   agentProcesses.get(sessionId)!.set(agentName, { provider, timer, agentId: agent.id });
 
-  agentCurrentMessage.set(agentName, `task-${task.id}`);
+  agentCurrentMessage.set(agentName, taskMessageId);
 
   const taskMsg = await prisma.message.create({
-    data: { id: `task-${task.id}`, sessionId, senderType: 'agent', agentId: agent.id, content: '', status: 'streaming' },
+    data: { id: taskMessageId, sessionId, senderType: 'agent', agentId: agent.id, content: '', status: 'streaming' },
   }).catch(() => null);
 
   if (taskMsg) {
@@ -168,7 +198,7 @@ export async function dispatchTasksToAgents(
   }
 
   const layers = topologicalSort(tasks.map(t => ({
-    ...t, agentType: t.agentType as 'CodeAgent' | 'ReviewAgent' | 'DevOpsAgent',
+    ...t, agentType: t.agentType as 'CodeAgent' | 'ReviewAgent' | 'DevOpsAgent' | 'TestAgent' | 'DepsAgent',
   })));
 
   const missingTypes = new Set<string>();
@@ -242,6 +272,12 @@ export async function dispatchTasksToAgents(
 
   for (const [agentName, queue] of assigned) {
     agentTaskQueues.set(agentName, queue);
-    await processNextInQueue(sessionId, agentName, queue);
+    const procInfo = agentProcesses.get(sessionId)?.get(agentName);
+    if (procInfo?.provider.isAlive()) {
+      await processNextInQueue(sessionId, agentName, queue);
+      continue;
+    }
+    const agent = sessionAgents.find((sa) => sa.agent.name === agentName)?.agent;
+    if (agent) await startTaskAgent(sessionId, agent, sandbox);
   }
 }
