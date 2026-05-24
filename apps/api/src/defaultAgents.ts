@@ -4,30 +4,63 @@ export const defaultAgents = [
     displayName: 'CodeAgent',
     description: 'Writes and modifies code, runs shell commands, creates files',
     systemPrompt: 'You are CodeAgent, an expert software engineer. Write clean, secure, well-tested code. Use tools to read, write, and execute code. Prefer editing existing files over creating new ones. Default to no comments unless the WHY is non-obvious.',
+    settings: {
+      model: 'deepseek-v4-flash',
+      permissions: {
+        deny: ['Bash(rm -rf:*)', 'Bash(sudo:*)', 'Bash(chmod 777:*)', 'Bash(>: /dev/sda:*)'],
+      },
+    },
   },
   {
     name: 'review-agent',
     displayName: 'ReviewAgent',
     description: 'Reviews code for bugs, security vulnerabilities, and style issues',
     systemPrompt: 'You are ReviewAgent, a thorough code reviewer. Check every file for: security vulnerabilities (OWASP Top 10), logic bugs, type safety, error handling gaps, and code style. Report findings with severity (high/medium/low) and specific file:line references. Suggest concrete fixes for each issue.',
+    settings: {
+      model: 'deepseek-v4-flash',
+      permissions: {
+        allow: ['Read(/workspace/**)', 'Bash(npm:*:*)', 'Bash(npx:*:*)', 'Bash(node:*:*)', 'Bash(git:*:*)'],
+        deny: ['Write(/workspace/**)', 'Edit(/workspace/**)'],
+      },
+    },
   },
   {
     name: 'devops-agent',
     displayName: 'DevOpsAgent',
     description: 'Handles deployment, CI/CD, Docker, and infrastructure tasks',
     systemPrompt: 'You are DevOpsAgent, an infrastructure and deployment specialist. Handle Docker, CI/CD pipelines, environment configuration, and deployment scripts. Ensure production-readiness: health checks, graceful shutdown, logging, monitoring hooks.',
+    settings: {
+      model: 'deepseek-v4-flash',
+      permissions: {
+        deny: ['Bash(rm -rf /:*)', 'Bash(sudo:*)', 'Bash(chmod 777:*)'],
+      },
+    },
   },
   {
     name: 'test-agent',
     displayName: 'TestAgent',
     description: 'Generates tests, runs test suites, and diagnoses failures',
     systemPrompt: 'You are TestAgent, a test automation specialist. Analyze target files, generate focused unit/integration tests, run the project test command, and report pass/fail counts, duration, and failure stacks. Prefer minimal tests that cover observable behavior.',
+    settings: {
+      model: 'deepseek-v4-flash',
+      permissions: {
+        allow: ['Write(/workspace/**/*.test.*:*)', 'Write(/workspace/**/*.spec.*:*)', 'Bash(npm test:*)', 'Bash(npx jest:*)', 'Bash(npx vitest:*)'],
+        deny: ['Write(/workspace/src/**)', 'Bash(rm -rf:*)'],
+      },
+    },
   },
   {
     name: 'deps-agent',
     displayName: 'DepsAgent',
     description: 'Audits dependencies, maps vulnerabilities to CVEs, and proposes safe upgrades',
     systemPrompt: 'You are DepsAgent, a dependency security specialist. Run npm audit or the project equivalent, group findings by severity, identify CVEs and affected ranges, and propose the smallest safe upgrades. Avoid breaking upgrades unless explicitly requested.',
+    settings: {
+      model: 'deepseek-v4-flash',
+      permissions: {
+        allow: ['Read(/workspace/**)', 'Bash(npm audit:*)', 'Bash(npm ls:*)', 'Bash(npm outdated:*)', 'Bash(npx:*)'],
+        deny: ['Write(/workspace/**)', 'Edit(/workspace/**)', 'Bash(npm install:*)', 'Bash(npm update:*)'],
+      },
+    },
   },
   {
     name: 'planner',
@@ -97,5 +130,13 @@ export const defaultAgents = [
 - 用户说"帮我写一个函数"、"帮我修复这个 bug"、"解释一下这段代码"等，都是聊天请求，不要输出 JSON
 - 不要在聊天模式中进行任何形式的任务拆解
 - 遇到超出能力范围的请求，拒绝并引导，不要强行解答`,
+    settings: {
+      model: 'deepseek-v4-pro',
+      thinking: true,
+      permissions: {
+        allow: ['Read(/workspace/**)', 'Bash(ls:*)', 'Bash(cat:*)', 'Bash(git:*:*)', 'Bash(find:*:*)'],
+        deny: ['Write(/workspace/**)', 'Edit(/workspace/**)', 'Bash(npm install:*)', 'Bash(npm uninstall:*)'],
+      },
+    },
   },
 ];

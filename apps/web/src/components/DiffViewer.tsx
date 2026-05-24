@@ -96,6 +96,7 @@ export function DiffViewer({ path, diff, hunks = [], conflictRanges = [], busyHu
         </div>
       )}
       <DiffEditor
+        key={`${path}-${original.length}-${modified.length}`}
         height="360px"
         language={language}
         original={original}

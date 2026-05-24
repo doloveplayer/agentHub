@@ -269,7 +269,7 @@ async function handleChatMessage(
     let agentPrompt = mention.subPrompt;
     let isPlannerAgent = false;
     const history = await buildHistory(sessionId);
-    if (!isSlashCommand && !mention.agentId) {
+    if (!mention.agentId) {
       const defaultAgent = await resolveDefaultAgentForSession(sessionId);
       if (defaultAgent) {
         mention.agentId = defaultAgent.id;
@@ -277,9 +277,7 @@ async function handleChatMessage(
       }
     }
 
-    if (isSlashCommand) {
-      // / 指令透明透传
-    } else if (mention.agentId) {
+    if (mention.agentId) {
       const agent = await prisma.agent.findUnique({ where: { id: mention.agentId } });
       if (agent) {
         let sessionMemberBlock = '';
@@ -295,7 +293,7 @@ async function handleChatMessage(
         }
         agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sessionMemberBlock}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
         isPlannerAgent = agent.name === 'planner';
-        if (sandbox) AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt);
+        if (sandbox) AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.settings as Record<string, unknown> | null);
       }
     } else {
       agentPrompt = history ? `${history}\n\n---\nUser: ${mention.subPrompt}` : mention.subPrompt;
@@ -619,7 +617,21 @@ function applyTaskModifications(tasks: any[]): any[] {
   });
 }
 
+/** Prevent re-dispatching the same plan (can happen on WS reconnect with buffered messages) */
+const dispatchedPlans = new Set<string>();
+
+function addDispatchedPlan(planId: string): void {
+  if (dispatchedPlans.size > 500) dispatchedPlans.clear();
+  dispatchedPlans.add(planId);
+}
+
 async function handleConfirmPlan(sessionId: string, data: { planId: string; tasks: any[] }): Promise<void> {
+  if (dispatchedPlans.has(data.planId)) {
+    console.log(`[ws] Plan ${data.planId} already dispatched, skipping`);
+    return;
+  }
+  addDispatchedPlan(data.planId);
+
   const sandbox = sandboxes.get(sessionId);
   if (!sandbox) { broadcast(sessionId, { type: 'stream_error', error: 'No active sandbox' }); return; }
   const normalized = applyTaskModifications(data.tasks.map((t: any) => ({ ...t, planId: data.planId })));
@@ -631,10 +643,10 @@ async function handleConfirmPlan(sessionId: string, data: { planId: string; task
 
   const sessionAgents = await prisma.sessionAgent.findMany({
     where: { sessionId },
-    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true } } },
+    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, settings: true } } },
   });
   for (const sa of sessionAgents) {
-    AgentDirectoryManager.initialize(sandbox.hostWorkDir, sa.agent.name, sa.agent.systemPrompt);
+    AgentDirectoryManager.initialize(sandbox.hostWorkDir, sa.agent.name, sa.agent.systemPrompt, sa.agent.settings as Record<string, unknown> | null);
   }
 
   dispatchTasksToAgents(sessionId, data.planId, tasks, {
@@ -642,6 +654,7 @@ async function handleConfirmPlan(sessionId: string, data: { planId: string; task
   }).then(() => {
     broadcast(sessionId, { type: 'plan_executing', planId: data.planId });
   }).catch((err: any) => {
+    dispatchedPlans.delete(data.planId);
     broadcast(sessionId, { type: 'stream_error', error: `Failed to dispatch tasks: ${err.message}` });
   });
 }

@@ -9,6 +9,7 @@ export class AgentDirectoryManager {
    *   {hostWorkDir}/_agent_{agentName}/
    *     CLAUDE.md
    *     .claude/
+   *       settings.json   (if settings provided)
    *       memory/
    *       skills/
    */
@@ -16,12 +17,15 @@ export class AgentDirectoryManager {
     hostWorkDir: string,
     agentName: string,
     systemPrompt: string,
+    settings?: Record<string, unknown> | null,
   ): string {
     const agentDir = resolve(hostWorkDir, `_agent_${agentName}`);
+    const claudeConfigDir = resolve(agentDir, '.claude');
+
     if (!existsSync(agentDir)) {
       mkdirSync(agentDir, { recursive: true });
-      mkdirSync(resolve(agentDir, '.claude', 'memory'), { recursive: true });
-      mkdirSync(resolve(agentDir, '.claude', 'skills'), { recursive: true });
+      mkdirSync(resolve(claudeConfigDir, 'memory'), { recursive: true });
+      mkdirSync(resolve(claudeConfigDir, 'skills'), { recursive: true });
     }
 
     const claudeMd = `# Agent: ${agentName}
@@ -38,6 +42,12 @@ ${systemPrompt}
 `;
 
     writeFileSync(resolve(agentDir, 'CLAUDE.md'), claudeMd, 'utf-8');
+
+    // Write Claude Code settings.json if provided (model, permissions, etc.)
+    if (settings) {
+      writeFileSync(resolve(claudeConfigDir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf-8');
+    }
+
     return agentDir;
   }
 

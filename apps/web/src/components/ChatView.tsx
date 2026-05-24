@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import type { AgentEvent } from '../store/appStore';
 import { useChat } from '../hooks/useChat';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { AgentStatusPanel } from './AgentStatusPanel';
 import { agentColor } from './AgentMentionPopup';
-import { Wrench, FileText, GitBranch, CheckCircle, Shield, ChevronDown, ChevronUp } from 'lucide-react';
+import { Shield } from 'lucide-react';
 import { ConfirmationPanel } from './ConfirmationPanel';
 import { DiffCard } from './DiffCard';
 import { DeployCard } from './DeployCard';
@@ -90,7 +89,6 @@ export function ChatView() {
   const reviewReports = useAppStore((s) => activeSessionId ? (s.reviewReports[activeSessionId] ?? EMPTY_REVIEW_REPORTS) : EMPTY_REVIEW_REPORTS);
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
   const { send, stopAgent, respondToPermission, confirmPlan } = useChat(activeSessionId ?? '');
-  const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [resolvedPermissions] = useState<Set<string>>(() => new Set());
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
 
@@ -108,116 +106,61 @@ export function ChatView() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, agentEvents]);
 
-  const eventIcon = (type: AgentEvent['type']) => {
-    const cls = 'w-3.5 h-3.5 shrink-0';
-    switch (type) {
-      case 'tool_use':        return <Wrench className={cls} />;
-      case 'tool_result':     return <FileText className={cls} />;
-      case 'subagent_start':  return <GitBranch className={cls} />;
-      case 'subagent_result': return <CheckCircle className={cls} />;
-      case 'permission_request': return <Shield className={cls} />;
-      default: return null;
-    }
-  };
-
-  const eventLabel = (ev: AgentEvent): string => {
-    const d = ev.details;
-    const trunc = (s: string | undefined, n: number) =>
-      s && s.length > n ? s.slice(0, n) + '…' : s ?? '';
-
-    switch (ev.type) {
-      case 'tool_use':
-        return `Running: ${d.toolName ?? 'tool'}${d.input ? ' ' + trunc(JSON.stringify(d.input), 60) : ''}`;
-      case 'tool_result':
-        return `Result: ${trunc(d.content, 80)}`;
-      case 'subagent_start':
-        return `Sub-agent: ${d.agentType ?? 'unknown'}${d.description ? ' ' + trunc(d.description, 60) : ''}`;
-      case 'subagent_result':
-        return `Sub-agent done: ${d.agentType ?? 'unknown'}`;
-      case 'permission_request':
-        return `Permission needed: ${d.tool ?? 'unknown'} on ${d.path ?? 'unknown path'}`;
-      default: return '';
-    }
-  };
-
-  const fullEventContent = (ev: AgentEvent): string => {
-    const d = ev.details;
-    switch (ev.type) {
-      case 'tool_use':
-        return d.input ? JSON.stringify(d.input, null, 2) : '(no input)';
-      case 'tool_result':
-        return d.content ?? '(empty)';
-      case 'subagent_start':
-        return `Agent type: ${d.agentType ?? 'unknown'}\nDescription: ${d.description ?? 'none'}`;
-      case 'subagent_result':
-        return `Agent type: ${d.agentType ?? 'unknown'}`;
-      case 'permission_request':
-        return `Tool: ${d.tool ?? 'unknown'}\nPath: ${d.path ?? 'unknown'}`;
-      default: return '';
-    }
-  };
-
-  const renderAgentEvents = (messageId: string) => {
+  const renderAgentInfo = (messageId: string) => {
     const events = agentEvents[messageId];
     if (!events || events.length === 0) return null;
+
+    // Extract token usage from the latest token_update event
+    const tokenUpdates = events.filter((ev) => ev.type === 'token_update');
+    const lastToken = tokenUpdates[tokenUpdates.length - 1]?.details?.tokenUsage;
+    const inputTokens = lastToken?.input ?? 0;
+    const outputTokens = lastToken?.output ?? 0;
+
+    // Extract permission requests (still interactive)
+    const permissionReqs = events.filter((ev) => ev.type === 'permission_request');
+
     return (
       <div className="mx-4 my-1 space-y-1">
-        {events.map((ev) => {
-          // Permission requests render as interactive cards with Allow/Deny
-          if (ev.type === 'permission_request') {
-            const pid = ev.details.permissionId ?? ev.id;
-            const resolved = resolvedPermissions.has(pid);
-            return (
-              <div key={ev.id} className="bg-amber-950/30 border border-amber-700/50 rounded-lg px-4 py-3 my-2">
-                <div className="flex items-center gap-2 mb-2">
-                  <Shield className="w-4 h-4 text-amber-400" />
-                  <span className="text-sm font-medium text-amber-300">Permission Request</span>
-                </div>
-                <div className="text-xs text-gray-400 space-y-1 mb-3">
-                  <div>Tool: <span className="text-gray-300 font-mono">{ev.details.tool ?? 'unknown'}</span></div>
-                  {ev.details.path && <div>Path: <span className="text-gray-300 font-mono">{ev.details.path}</span></div>}
-                </div>
-                {!resolved ? (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, true); }}
-                      className="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white text-xs rounded-md font-medium transition"
-                    >
-                      Allow
-                    </button>
-                    <button
-                      onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, false); }}
-                      className="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs rounded-md font-medium transition"
-                    >
-                      Deny
-                    </button>
-                  </div>
-                ) : (
-                  <span className="text-xs text-gray-500 italic">Response sent</span>
-                )}
-              </div>
-            );
-          }
+        {/* Token usage bar */}
+        {(inputTokens > 0 || outputTokens > 0) && (
+          <div className="flex items-center gap-3 text-[11px] text-gray-500 px-1">
+            <span title="Input tokens">↑ {formatTokens(inputTokens)}</span>
+            <span title="Output tokens">↓ {formatTokens(outputTokens)}</span>
+            <span title="Total tokens">Σ {formatTokens(inputTokens + outputTokens)}</span>
+          </div>
+        )}
 
-          const isExpanded = expandedEventId === ev.id;
+        {/* Permission requests render as interactive cards */}
+        {permissionReqs.map((ev) => {
+          const pid = ev.details.permissionId ?? ev.id;
+          const resolved = resolvedPermissions.has(pid);
           return (
-            <div key={ev.id}>
-              <div
-                onClick={() => setExpandedEventId(isExpanded ? null : ev.id)}
-                className="bg-gray-800/50 border border-gray-700 rounded px-3 py-1.5 flex items-center gap-2 text-xs text-gray-400 cursor-pointer hover:bg-gray-800 hover:text-gray-300 transition-colors select-none"
-              >
-                <span className="text-gray-500">{eventIcon(ev.type)}</span>
-                <span className="font-mono truncate">{eventLabel(ev)}</span>
-                <span className="ml-auto text-gray-600">
-                  {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                </span>
+            <div key={ev.id} className="bg-amber-950/30 border border-amber-700/50 rounded-lg px-4 py-3 my-2">
+              <div className="flex items-center gap-2 mb-2">
+                <Shield className="w-4 h-4 text-amber-400" />
+                <span className="text-sm font-medium text-amber-300">Permission Request</span>
               </div>
-              {isExpanded && (
-                <div className="bg-gray-900/80 border border-gray-700 border-t-0 rounded-b px-4 py-2 mx-0 text-xs">
-                  <pre className="text-gray-300 whitespace-pre-wrap break-all font-mono max-h-48 overflow-y-auto">
-                    {fullEventContent(ev)}
-                  </pre>
+              <div className="text-xs text-gray-400 space-y-1 mb-3">
+                <div>Tool: <span className="text-gray-300 font-mono">{ev.details.tool ?? 'unknown'}</span></div>
+                {ev.details.path && <div>Path: <span className="text-gray-300 font-mono">{ev.details.path}</span></div>}
+              </div>
+              {!resolved ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, true); }}
+                    className="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white text-xs rounded-md font-medium transition"
+                  >
+                    Allow
+                  </button>
+                  <button
+                    onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, false); }}
+                    className="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs rounded-md font-medium transition"
+                  >
+                    Deny
+                  </button>
                 </div>
+              ) : (
+                <span className="text-xs text-gray-500 italic">Response sent</span>
               )}
             </div>
           );
@@ -225,6 +168,12 @@ export function ChatView() {
       </div>
     );
   };
+
+  function formatTokens(n: number): string {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+    return String(n);
+  }
 
   if (!activeSessionId) {
     return (
@@ -267,7 +216,7 @@ export function ChatView() {
                 agentDisplayName={msg.agentId ? agentMap.get(msg.agentId)?.displayName : undefined}
                 agentName={msg.agentId ? agentMap.get(msg.agentId)?.name : undefined}
               />
-              {msg.senderType === 'agent' && renderAgentEvents(msg.id)}
+              {msg.senderType === 'agent' && renderAgentInfo(msg.id)}
               {diffCards.filter((card) => card.agentMessageId === msg.id).map((card) => (
                 <DiffCard key={card.id} sessionId={activeSessionId} title={card.title} files={card.files} />
               ))}

@@ -1,0 +1,1902 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "AgentHub",
+    "languages": [
+      "css",
+      "dockerfile",
+      "dotenv",
+      "html",
+      "ini",
+      "javascript",
+      "json",
+      "markdown",
+      "prisma",
+      "sql",
+      "toml",
+      "typescript",
+      "yaml"
+    ],
+    "frameworks": [
+      "jsonwebtoken",
+      "Hono",
+      "Vite",
+      "Docker",
+      "Monaco Editor",
+      "React",
+      "Lucide React",
+      "Dockerode",
+      "TypeScript",
+      "npm workspaces",
+      "Docker Compose",
+      "Prisma",
+      "BullMQ",
+      "react-markdown",
+      "Zustand",
+      "ioredis",
+      "Tailwind CSS",
+      "Playwright",
+      "WebSocket (ws)",
+      "Zod",
+      "React Flow (xyflow)"
+    ],
+    "description": "AgentHub is an IM-style web chat application that serves as a smart collaboration hub for multiple AI coding agents (Claude Code, Codex, OpenCode). It features multi-agent group sessions via @mentions, Docker sandbox isolation per session, WebSocket-driven streaming, DAG-based task orchestration with BullMQ, and artifact preview/editing with deployment.",
+    "analyzedAt": "2026-05-24T03:41:20Z",
+    "gitCommitHash": "d39a73c5aef947be369d25b525bf8fc3b61c9fb7"
+  },
+  "nodes": [
+    {
+      "id": "config:.env.example",
+      "type": "config",
+      "name": ".env.example",
+      "filePath": ".env.example",
+      "summary": ".env.example (17 lines, dotenv)",
+      "tags": [
+        "configuration"
+      ],
+      "language": "dotenv"
+    },
+    {
+      "id": "config:apps/api/package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "apps/api/package.json",
+      "summary": "package.json (32 lines, json)",
+      "tags": [
+        "backend",
+        "configuration"
+      ],
+      "language": "json"
+    },
+    {
+      "id": "table:apps/api/prisma/migrations/20260519070155_init/migration.sql",
+      "type": "table",
+      "name": "migration.sql",
+      "filePath": "apps/api/prisma/migrations/20260519070155_init/migration.sql",
+      "summary": "migration.sql (83 lines, sql)",
+      "tags": [
+        "backend",
+        "database"
+      ],
+      "language": "sql"
+    },
+    {
+      "id": "config:apps/api/prisma/migrations/migration_lock.toml",
+      "type": "config",
+      "name": "migration_lock.toml",
+      "filePath": "apps/api/prisma/migrations/migration_lock.toml",
+      "summary": "migration_lock.toml (3 lines, toml)",
+      "tags": [
+        "backend",
+        "database",
+        "configuration"
+      ],
+      "language": "toml"
+    },
+    {
+      "id": "table:apps/api/prisma/schema.prisma",
+      "type": "table",
+      "name": "schema.prisma",
+      "filePath": "apps/api/prisma/schema.prisma",
+      "summary": "schema.prisma (67 lines, prisma)",
+      "tags": [
+        "backend",
+        "database"
+      ],
+      "language": "prisma"
+    },
+    {
+      "id": "file:apps/api/prisma/seed.ts",
+      "type": "file",
+      "name": "seed.ts",
+      "filePath": "apps/api/prisma/seed.ts",
+      "summary": "seed.ts (21 lines, typescript)",
+      "tags": [
+        "backend",
+        "database"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/AgentDirectoryManager.ts",
+      "type": "file",
+      "name": "AgentDirectoryManager.ts",
+      "filePath": "apps/api/src/agent/AgentDirectoryManager.ts",
+      "summary": "AgentDirectoryManager.ts (59 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/ClaudeCodeProcess.ts",
+      "type": "file",
+      "name": "ClaudeCodeProcess.ts",
+      "filePath": "apps/api/src/agent/ClaudeCodeProcess.ts",
+      "summary": "ClaudeCodeProcess.ts (217 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/core.test.ts",
+      "type": "file",
+      "name": "core.test.ts",
+      "filePath": "apps/api/src/agent/core.test.ts",
+      "summary": "core.test.ts (288 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent",
+        "test"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/EventParser.ts",
+      "type": "file",
+      "name": "EventParser.ts",
+      "filePath": "apps/api/src/agent/EventParser.ts",
+      "summary": "EventParser.ts (206 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/InboxManager.ts",
+      "type": "file",
+      "name": "InboxManager.ts",
+      "filePath": "apps/api/src/agent/InboxManager.ts",
+      "summary": "InboxManager.ts (76 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/MilestoneBroadcaster.ts",
+      "type": "file",
+      "name": "MilestoneBroadcaster.ts",
+      "filePath": "apps/api/src/agent/MilestoneBroadcaster.ts",
+      "summary": "MilestoneBroadcaster.ts (77 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/PlannerAgent.ts",
+      "type": "file",
+      "name": "PlannerAgent.ts",
+      "filePath": "apps/api/src/agent/PlannerAgent.ts",
+      "summary": "PlannerAgent.ts (115 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/ProjectContext.ts",
+      "type": "file",
+      "name": "ProjectContext.ts",
+      "filePath": "apps/api/src/agent/ProjectContext.ts",
+      "summary": "ProjectContext.ts (60 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/providers/base.ts",
+      "type": "file",
+      "name": "base.ts",
+      "filePath": "apps/api/src/agent/providers/base.ts",
+      "summary": "base.ts (50 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/providers/claude-code.ts",
+      "type": "file",
+      "name": "claude-code.ts",
+      "filePath": "apps/api/src/agent/providers/claude-code.ts",
+      "summary": "claude-code.ts (200 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/providers/factory.ts",
+      "type": "file",
+      "name": "factory.ts",
+      "filePath": "apps/api/src/agent/providers/factory.ts",
+      "summary": "factory.ts (30 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/SandboxManager.test.ts",
+      "type": "file",
+      "name": "SandboxManager.test.ts",
+      "filePath": "apps/api/src/agent/SandboxManager.test.ts",
+      "summary": "SandboxManager.test.ts (12 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent",
+        "test"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/SandboxManager.ts",
+      "type": "file",
+      "name": "SandboxManager.ts",
+      "filePath": "apps/api/src/agent/SandboxManager.ts",
+      "summary": "SandboxManager.ts (329 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/StateTracker.ts",
+      "type": "file",
+      "name": "StateTracker.ts",
+      "filePath": "apps/api/src/agent/StateTracker.ts",
+      "summary": "StateTracker.ts (86 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/TaskQueue.ts",
+      "type": "file",
+      "name": "TaskQueue.ts",
+      "filePath": "apps/api/src/agent/TaskQueue.ts",
+      "summary": "TaskQueue.ts (249 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/turns.test.ts",
+      "type": "file",
+      "name": "turns.test.ts",
+      "filePath": "apps/api/src/agent/turns.test.ts",
+      "summary": "turns.test.ts (132 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent",
+        "test"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/turns.ts",
+      "type": "file",
+      "name": "turns.ts",
+      "filePath": "apps/api/src/agent/turns.ts",
+      "summary": "turns.ts (190 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/WorkspaceManager.test.ts",
+      "type": "file",
+      "name": "WorkspaceManager.test.ts",
+      "filePath": "apps/api/src/agent/WorkspaceManager.test.ts",
+      "summary": "WorkspaceManager.test.ts (135 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent",
+        "test"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/agent/WorkspaceManager.ts",
+      "type": "file",
+      "name": "WorkspaceManager.ts",
+      "filePath": "apps/api/src/agent/WorkspaceManager.ts",
+      "summary": "WorkspaceManager.ts (497 lines, typescript)",
+      "tags": [
+        "backend",
+        "agent"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/artifacts/ArtifactTools.test.ts",
+      "type": "file",
+      "name": "ArtifactTools.test.ts",
+      "filePath": "apps/api/src/artifacts/ArtifactTools.test.ts",
+      "summary": "ArtifactTools.test.ts (67 lines, typescript)",
+      "tags": [
+        "backend",
+        "test"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/artifacts/ArtifactTools.ts",
+      "type": "file",
+      "name": "ArtifactTools.ts",
+      "filePath": "apps/api/src/artifacts/ArtifactTools.ts",
+      "summary": "ArtifactTools.ts (198 lines, typescript)",
+      "tags": [
+        "backend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/config.ts",
+      "type": "file",
+      "name": "config.ts",
+      "filePath": "apps/api/src/config.ts",
+      "summary": "config.ts (81 lines, typescript)",
+      "tags": [
+        "backend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/config/index.ts",
+      "type": "file",
+      "name": "index.ts",
+      "filePath": "apps/api/src/config/index.ts",
+      "summary": "index.ts (3 lines, typescript)",
+      "tags": [
+        "backend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/db/prisma.ts",
+      "type": "file",
+      "name": "prisma.ts",
+      "filePath": "apps/api/src/db/prisma.ts",
+      "summary": "prisma.ts (3 lines, typescript)",
+      "tags": [
+        "backend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/defaultAgents.ts",
+      "type": "file",
+      "name": "defaultAgents.ts",
+      "filePath": "apps/api/src/defaultAgents.ts",
+      "summary": "defaultAgents.ts (142 lines, typescript)",
+      "tags": [
+        "backend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/index.ts",
+      "type": "file",
+      "name": "index.ts",
+      "filePath": "apps/api/src/index.ts",
+      "summary": "index.ts (179 lines, typescript)",
+      "tags": [
+        "backend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/lib/jwt.ts",
+      "type": "file",
+      "name": "jwt.ts",
+      "filePath": "apps/api/src/lib/jwt.ts",
+      "summary": "jwt.ts (17 lines, typescript)",
+      "tags": [
+        "backend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/middleware/auth.ts",
+      "type": "file",
+      "name": "auth.ts",
+      "filePath": "apps/api/src/middleware/auth.ts",
+      "summary": "auth.ts (38 lines, typescript)",
+      "tags": [
+        "backend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/middleware/whitelist.ts",
+      "type": "file",
+      "name": "whitelist.ts",
+      "filePath": "apps/api/src/middleware/whitelist.ts",
+      "summary": "whitelist.ts (5 lines, typescript)",
+      "tags": [
+        "backend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/agents.ts",
+      "type": "file",
+      "name": "agents.ts",
+      "filePath": "apps/api/src/routes/agents.ts",
+      "summary": "agents.ts (78 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/auth.ts",
+      "type": "file",
+      "name": "auth.ts",
+      "filePath": "apps/api/src/routes/auth.ts",
+      "summary": "auth.ts (111 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/chat.ts",
+      "type": "file",
+      "name": "chat.ts",
+      "filePath": "apps/api/src/routes/chat.ts",
+      "summary": "chat.ts (95 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/deploy.ts",
+      "type": "file",
+      "name": "deploy.ts",
+      "filePath": "apps/api/src/routes/deploy.ts",
+      "summary": "deploy.ts (151 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/diff.ts",
+      "type": "file",
+      "name": "diff.ts",
+      "filePath": "apps/api/src/routes/diff.ts",
+      "summary": "diff.ts (101 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/preview.ts",
+      "type": "file",
+      "name": "preview.ts",
+      "filePath": "apps/api/src/routes/preview.ts",
+      "summary": "preview.ts (99 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/review.ts",
+      "type": "file",
+      "name": "review.ts",
+      "filePath": "apps/api/src/routes/review.ts",
+      "summary": "review.ts (21 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/security.ts",
+      "type": "file",
+      "name": "security.ts",
+      "filePath": "apps/api/src/routes/security.ts",
+      "summary": "security.ts (58 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/sessions.ts",
+      "type": "file",
+      "name": "sessions.ts",
+      "filePath": "apps/api/src/routes/sessions.ts",
+      "summary": "sessions.ts (155 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/test.ts",
+      "type": "file",
+      "name": "test.ts",
+      "filePath": "apps/api/src/routes/test.ts",
+      "summary": "test.ts (46 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/routes/workspace.ts",
+      "type": "file",
+      "name": "workspace.ts",
+      "filePath": "apps/api/src/routes/workspace.ts",
+      "summary": "workspace.ts (110 lines, typescript)",
+      "tags": [
+        "backend",
+        "api-endpoint"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/ws/diffBroadcast.ts",
+      "type": "file",
+      "name": "diffBroadcast.ts",
+      "filePath": "apps/api/src/ws/diffBroadcast.ts",
+      "summary": "diffBroadcast.ts (102 lines, typescript)",
+      "tags": [
+        "backend",
+        "websocket"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/ws/handler.ts",
+      "type": "file",
+      "name": "handler.ts",
+      "filePath": "apps/api/src/ws/handler.ts",
+      "summary": "handler.ts (702 lines, typescript)",
+      "tags": [
+        "backend",
+        "websocket"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/ws/state.ts",
+      "type": "file",
+      "name": "state.ts",
+      "filePath": "apps/api/src/ws/state.ts",
+      "summary": "state.ts (197 lines, typescript)",
+      "tags": [
+        "backend",
+        "websocket"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/src/ws/taskDispatcher.ts",
+      "type": "file",
+      "name": "taskDispatcher.ts",
+      "filePath": "apps/api/src/ws/taskDispatcher.ts",
+      "summary": "taskDispatcher.ts (323 lines, typescript)",
+      "tags": [
+        "backend",
+        "websocket"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/api/test_task_dispatch.ts",
+      "type": "file",
+      "name": "test_task_dispatch.ts",
+      "filePath": "apps/api/test_task_dispatch.ts",
+      "summary": "test_task_dispatch.ts (81 lines, typescript)",
+      "tags": [
+        "backend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "config:apps/api/tsconfig.json",
+      "type": "config",
+      "name": "tsconfig.json",
+      "filePath": "apps/api/tsconfig.json",
+      "summary": "tsconfig.json (15 lines, json)",
+      "tags": [
+        "backend",
+        "configuration"
+      ],
+      "language": "json"
+    },
+    {
+      "id": "file:apps/web/index.html",
+      "type": "file",
+      "name": "index.html",
+      "filePath": "apps/web/index.html",
+      "summary": "index.html (12 lines, html)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "html"
+    },
+    {
+      "id": "config:apps/web/package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "apps/web/package.json",
+      "summary": "package.json (35 lines, json)",
+      "tags": [
+        "frontend",
+        "configuration"
+      ],
+      "language": "json"
+    },
+    {
+      "id": "file:apps/web/postcss.config.js",
+      "type": "file",
+      "name": "postcss.config.js",
+      "filePath": "apps/web/postcss.config.js",
+      "summary": "postcss.config.js (6 lines, javascript)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "javascript"
+    },
+    {
+      "id": "file:apps/web/src/App.tsx",
+      "type": "file",
+      "name": "App.tsx",
+      "filePath": "apps/web/src/App.tsx",
+      "summary": "App.tsx (19 lines, typescript)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/AgentCard.tsx",
+      "type": "file",
+      "name": "AgentCard.tsx",
+      "filePath": "apps/web/src/components/AgentCard.tsx",
+      "summary": "AgentCard.tsx (153 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/AgentMentionPopup.tsx",
+      "type": "file",
+      "name": "AgentMentionPopup.tsx",
+      "filePath": "apps/web/src/components/AgentMentionPopup.tsx",
+      "summary": "AgentMentionPopup.tsx (65 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/AgentStatusPanel.tsx",
+      "type": "file",
+      "name": "AgentStatusPanel.tsx",
+      "filePath": "apps/web/src/components/AgentStatusPanel.tsx",
+      "summary": "AgentStatusPanel.tsx (203 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/AuthCallback.tsx",
+      "type": "file",
+      "name": "AuthCallback.tsx",
+      "filePath": "apps/web/src/components/AuthCallback.tsx",
+      "summary": "AuthCallback.tsx (19 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/ChatView.tsx",
+      "type": "file",
+      "name": "ChatView.tsx",
+      "filePath": "apps/web/src/components/ChatView.tsx",
+      "summary": "ChatView.tsx (300 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/ConfirmationPanel.tsx",
+      "type": "file",
+      "name": "ConfirmationPanel.tsx",
+      "filePath": "apps/web/src/components/ConfirmationPanel.tsx",
+      "summary": "ConfirmationPanel.tsx (81 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/DeployCard.tsx",
+      "type": "file",
+      "name": "DeployCard.tsx",
+      "filePath": "apps/web/src/components/DeployCard.tsx",
+      "summary": "DeployCard.tsx (46 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/DeploymentLauncher.tsx",
+      "type": "file",
+      "name": "DeploymentLauncher.tsx",
+      "filePath": "apps/web/src/components/DeploymentLauncher.tsx",
+      "summary": "DeploymentLauncher.tsx (54 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/DiffCard.tsx",
+      "type": "file",
+      "name": "DiffCard.tsx",
+      "filePath": "apps/web/src/components/DiffCard.tsx",
+      "summary": "DiffCard.tsx (117 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/DiffViewer.tsx",
+      "type": "file",
+      "name": "DiffViewer.tsx",
+      "filePath": "apps/web/src/components/DiffViewer.tsx",
+      "summary": "DiffViewer.tsx (154 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/FileTree.tsx",
+      "type": "file",
+      "name": "FileTree.tsx",
+      "filePath": "apps/web/src/components/FileTree.tsx",
+      "summary": "FileTree.tsx (102 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/LoginPage.tsx",
+      "type": "file",
+      "name": "LoginPage.tsx",
+      "filePath": "apps/web/src/components/LoginPage.tsx",
+      "summary": "LoginPage.tsx (23 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/MessageBubble.tsx",
+      "type": "file",
+      "name": "MessageBubble.tsx",
+      "filePath": "apps/web/src/components/MessageBubble.tsx",
+      "summary": "MessageBubble.tsx (185 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/MessageInput.tsx",
+      "type": "file",
+      "name": "MessageInput.tsx",
+      "filePath": "apps/web/src/components/MessageInput.tsx",
+      "summary": "MessageInput.tsx (285 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/PPTViewer.tsx",
+      "type": "file",
+      "name": "PPTViewer.tsx",
+      "filePath": "apps/web/src/components/PPTViewer.tsx",
+      "summary": "PPTViewer.tsx (132 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/PreviewFrame.tsx",
+      "type": "file",
+      "name": "PreviewFrame.tsx",
+      "filePath": "apps/web/src/components/PreviewFrame.tsx",
+      "summary": "PreviewFrame.tsx (137 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/ReviewCard.tsx",
+      "type": "file",
+      "name": "ReviewCard.tsx",
+      "filePath": "apps/web/src/components/ReviewCard.tsx",
+      "summary": "ReviewCard.tsx (38 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/ScreenshotComparisonCard.tsx",
+      "type": "file",
+      "name": "ScreenshotComparisonCard.tsx",
+      "filePath": "apps/web/src/components/ScreenshotComparisonCard.tsx",
+      "summary": "ScreenshotComparisonCard.tsx (19 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/SecurityCard.tsx",
+      "type": "file",
+      "name": "SecurityCard.tsx",
+      "filePath": "apps/web/src/components/SecurityCard.tsx",
+      "summary": "SecurityCard.tsx (50 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/SessionList.tsx",
+      "type": "file",
+      "name": "SessionList.tsx",
+      "filePath": "apps/web/src/components/SessionList.tsx",
+      "summary": "SessionList.tsx (120 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/SlashCommandPopup.tsx",
+      "type": "file",
+      "name": "SlashCommandPopup.tsx",
+      "filePath": "apps/web/src/components/SlashCommandPopup.tsx",
+      "summary": "SlashCommandPopup.tsx (65 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/TaskCard.tsx",
+      "type": "file",
+      "name": "TaskCard.tsx",
+      "filePath": "apps/web/src/components/TaskCard.tsx",
+      "summary": "TaskCard.tsx (66 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/TaskDAG.tsx",
+      "type": "file",
+      "name": "TaskDAG.tsx",
+      "filePath": "apps/web/src/components/TaskDAG.tsx",
+      "summary": "TaskDAG.tsx (190 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/TestReportCard.tsx",
+      "type": "file",
+      "name": "TestReportCard.tsx",
+      "filePath": "apps/web/src/components/TestReportCard.tsx",
+      "summary": "TestReportCard.tsx (37 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/components/VersionTimeline.tsx",
+      "type": "file",
+      "name": "VersionTimeline.tsx",
+      "filePath": "apps/web/src/components/VersionTimeline.tsx",
+      "summary": "VersionTimeline.tsx (107 lines, typescript)",
+      "tags": [
+        "frontend",
+        "ui-component"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/hooks/useAuth.ts",
+      "type": "file",
+      "name": "useAuth.ts",
+      "filePath": "apps/web/src/hooks/useAuth.ts",
+      "summary": "useAuth.ts (38 lines, typescript)",
+      "tags": [
+        "frontend",
+        "hook"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/hooks/useChat.ts",
+      "type": "file",
+      "name": "useChat.ts",
+      "filePath": "apps/web/src/hooks/useChat.ts",
+      "summary": "useChat.ts (378 lines, typescript)",
+      "tags": [
+        "frontend",
+        "hook"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/index.css",
+      "type": "file",
+      "name": "index.css",
+      "filePath": "apps/web/src/index.css",
+      "summary": "index.css (198 lines, css)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "css"
+    },
+    {
+      "id": "file:apps/web/src/lib/api.ts",
+      "type": "file",
+      "name": "api.ts",
+      "filePath": "apps/web/src/lib/api.ts",
+      "summary": "api.ts (118 lines, typescript)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/lib/markdown.test.ts",
+      "type": "file",
+      "name": "markdown.test.ts",
+      "filePath": "apps/web/src/lib/markdown.test.ts",
+      "summary": "markdown.test.ts (21 lines, typescript)",
+      "tags": [
+        "frontend",
+        "test"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/lib/markdown.ts",
+      "type": "file",
+      "name": "markdown.ts",
+      "filePath": "apps/web/src/lib/markdown.ts",
+      "summary": "markdown.ts (17 lines, typescript)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/lib/mentionParser.ts",
+      "type": "file",
+      "name": "mentionParser.ts",
+      "filePath": "apps/web/src/lib/mentionParser.ts",
+      "summary": "mentionParser.ts (124 lines, typescript)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/main.tsx",
+      "type": "file",
+      "name": "main.tsx",
+      "filePath": "apps/web/src/main.tsx",
+      "summary": "main.tsx (8 lines, typescript)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/pages/ChatPage.tsx",
+      "type": "file",
+      "name": "ChatPage.tsx",
+      "filePath": "apps/web/src/pages/ChatPage.tsx",
+      "summary": "ChatPage.tsx (45 lines, typescript)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/store/appStore.ts",
+      "type": "file",
+      "name": "appStore.ts",
+      "filePath": "apps/web/src/store/appStore.ts",
+      "summary": "appStore.ts (338 lines, typescript)",
+      "tags": [
+        "frontend",
+        "state"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/src/types/monaco-editor.d.ts",
+      "type": "file",
+      "name": "monaco-editor.d.ts",
+      "filePath": "apps/web/src/types/monaco-editor.d.ts",
+      "summary": "monaco-editor.d.ts (3 lines, typescript)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "file:apps/web/tailwind.config.js",
+      "type": "file",
+      "name": "tailwind.config.js",
+      "filePath": "apps/web/tailwind.config.js",
+      "summary": "tailwind.config.js (7 lines, javascript)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "javascript"
+    },
+    {
+      "id": "config:apps/web/tsconfig.json",
+      "type": "config",
+      "name": "tsconfig.json",
+      "filePath": "apps/web/tsconfig.json",
+      "summary": "tsconfig.json (13 lines, json)",
+      "tags": [
+        "frontend",
+        "configuration"
+      ],
+      "language": "json"
+    },
+    {
+      "id": "file:apps/web/vite.config.ts",
+      "type": "file",
+      "name": "vite.config.ts",
+      "filePath": "apps/web/vite.config.ts",
+      "summary": "vite.config.ts (23 lines, typescript)",
+      "tags": [
+        "frontend"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "document:CLAUDE.md",
+      "type": "document",
+      "name": "CLAUDE.md",
+      "filePath": "CLAUDE.md",
+      "summary": "CLAUDE.md (287 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "service:docker-compose.yml",
+      "type": "service",
+      "name": "docker-compose.yml",
+      "filePath": "docker-compose.yml",
+      "summary": "docker-compose.yml (56 lines, yaml)",
+      "tags": [
+        "infrastructure"
+      ],
+      "language": "yaml"
+    },
+    {
+      "id": "service:docker/api.Dockerfile",
+      "type": "service",
+      "name": "api.Dockerfile",
+      "filePath": "docker/api.Dockerfile",
+      "summary": "api.Dockerfile (22 lines, dockerfile)",
+      "tags": [
+        "docker",
+        "infrastructure"
+      ],
+      "language": "dockerfile"
+    },
+    {
+      "id": "config:docker/nginx.conf",
+      "type": "config",
+      "name": "nginx.conf",
+      "filePath": "docker/nginx.conf",
+      "summary": "nginx.conf (33 lines, ini)",
+      "tags": [
+        "docker",
+        "configuration"
+      ],
+      "language": "ini"
+    },
+    {
+      "id": "service:docker/sandbox.Dockerfile",
+      "type": "service",
+      "name": "sandbox.Dockerfile",
+      "filePath": "docker/sandbox.Dockerfile",
+      "summary": "sandbox.Dockerfile (17 lines, dockerfile)",
+      "tags": [
+        "docker",
+        "infrastructure"
+      ],
+      "language": "dockerfile"
+    },
+    {
+      "id": "document:docs/superpowers/plans/2026-05-18-agenthub-mvp-phase1.md",
+      "type": "document",
+      "name": "2026-05-18-agenthub-mvp-phase1.md",
+      "filePath": "docs/superpowers/plans/2026-05-18-agenthub-mvp-phase1.md",
+      "summary": "2026-05-18-agenthub-mvp-phase1.md (1987 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/plans/2026-05-19-phase2-multi-agent.md",
+      "type": "document",
+      "name": "2026-05-19-phase2-multi-agent.md",
+      "filePath": "docs/superpowers/plans/2026-05-19-phase2-multi-agent.md",
+      "summary": "2026-05-19-phase2-multi-agent.md (2240 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/plans/2026-05-23-phase3-smart-hub-core.md",
+      "type": "document",
+      "name": "2026-05-23-phase3-smart-hub-core.md",
+      "filePath": "docs/superpowers/plans/2026-05-23-phase3-smart-hub-core.md",
+      "summary": "2026-05-23-phase3-smart-hub-core.md (303 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/plans/2026-05-23-phase4-artifacts-deployment.md",
+      "type": "document",
+      "name": "2026-05-23-phase4-artifacts-deployment.md",
+      "filePath": "docs/superpowers/plans/2026-05-23-phase4-artifacts-deployment.md",
+      "summary": "2026-05-23-phase4-artifacts-deployment.md (201 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/specs/2026-05-19-phase2-multi-agent-design.md",
+      "type": "document",
+      "name": "2026-05-19-phase2-multi-agent-design.md",
+      "filePath": "docs/superpowers/specs/2026-05-19-phase2-multi-agent-design.md",
+      "summary": "2026-05-19-phase2-multi-agent-design.md (18 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/specs/2026-05-20-phase2-ux-remnants.md",
+      "type": "document",
+      "name": "2026-05-20-phase2-ux-remnants.md",
+      "filePath": "docs/superpowers/specs/2026-05-20-phase2-ux-remnants.md",
+      "summary": "2026-05-20-phase2-ux-remnants.md (74 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/specs/2026-05-20-phase3-core-infra.md",
+      "type": "document",
+      "name": "2026-05-20-phase3-core-infra.md",
+      "filePath": "docs/superpowers/specs/2026-05-20-phase3-core-infra.md",
+      "summary": "2026-05-20-phase3-core-infra.md (58 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/specs/2026-05-20-phase3-core-ui.md",
+      "type": "document",
+      "name": "2026-05-20-phase3-core-ui.md",
+      "filePath": "docs/superpowers/specs/2026-05-20-phase3-core-ui.md",
+      "summary": "2026-05-20-phase3-core-ui.md (73 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/specs/2026-05-20-phase3-enhancement.md",
+      "type": "document",
+      "name": "2026-05-20-phase3-enhancement.md",
+      "filePath": "docs/superpowers/specs/2026-05-20-phase3-enhancement.md",
+      "summary": "2026-05-20-phase3-enhancement.md (71 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/specs/2026-05-21-agent-collab-workspace-provider-design.md",
+      "type": "document",
+      "name": "2026-05-21-agent-collab-workspace-provider-design.md",
+      "filePath": "docs/superpowers/specs/2026-05-21-agent-collab-workspace-provider-design.md",
+      "summary": "2026-05-21-agent-collab-workspace-provider-design.md (358 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/specs/2026-05-21-repl-persistent-agent.md",
+      "type": "document",
+      "name": "2026-05-21-repl-persistent-agent.md",
+      "filePath": "docs/superpowers/specs/2026-05-21-repl-persistent-agent.md",
+      "summary": "2026-05-21-repl-persistent-agent.md (106 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:docs/superpowers/specs/2026-05-22-apple-design-system.md",
+      "type": "document",
+      "name": "2026-05-22-apple-design-system.md",
+      "filePath": "docs/superpowers/specs/2026-05-22-apple-design-system.md",
+      "summary": "2026-05-22-apple-design-system.md (195 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "config:package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "package.json",
+      "summary": "package.json (17 lines, json)",
+      "tags": [
+        "configuration"
+      ],
+      "language": "json"
+    },
+    {
+      "id": "config:packages/shared/package.json",
+      "type": "config",
+      "name": "package.json",
+      "filePath": "packages/shared/package.json",
+      "summary": "package.json (9 lines, json)",
+      "tags": [
+        "shared",
+        "configuration"
+      ],
+      "language": "json"
+    },
+    {
+      "id": "file:packages/shared/src/types.ts",
+      "type": "file",
+      "name": "types.ts",
+      "filePath": "packages/shared/src/types.ts",
+      "summary": "types.ts (119 lines, typescript)",
+      "tags": [
+        "shared"
+      ],
+      "language": "typescript"
+    },
+    {
+      "id": "config:packages/shared/tsconfig.json",
+      "type": "config",
+      "name": "tsconfig.json",
+      "filePath": "packages/shared/tsconfig.json",
+      "summary": "tsconfig.json (11 lines, json)",
+      "tags": [
+        "shared",
+        "configuration"
+      ],
+      "language": "json"
+    },
+    {
+      "id": "document:PRD.md",
+      "type": "document",
+      "name": "PRD.md",
+      "filePath": "PRD.md",
+      "summary": "PRD.md (577 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:README.md",
+      "type": "document",
+      "name": "README.md",
+      "filePath": "README.md",
+      "summary": "README.md (102 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    },
+    {
+      "id": "document:RUNBOOK.md",
+      "type": "document",
+      "name": "RUNBOOK.md",
+      "filePath": "RUNBOOK.md",
+      "summary": "RUNBOOK.md (103 lines, markdown)",
+      "tags": [
+        "documentation"
+      ],
+      "language": "markdown"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:apps/web/src/App.tsx",
+      "target": "file:apps/web/src/pages/ChatPage.tsx",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/pages/ChatPage.tsx",
+      "target": "file:apps/web/src/components/ChatView.tsx",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/pages/ChatPage.tsx",
+      "target": "file:apps/web/src/components/AgentStatusPanel.tsx",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/components/ChatView.tsx",
+      "target": "file:apps/web/src/components/MessageBubble.tsx",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/components/ChatView.tsx",
+      "target": "file:apps/web/src/components/MessageInput.tsx",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/components/ChatView.tsx",
+      "target": "file:apps/web/src/components/DiffCard.tsx",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/components/ChatView.tsx",
+      "target": "file:apps/web/src/components/PreviewFrame.tsx",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/components/ChatView.tsx",
+      "target": "file:apps/web/src/components/DeployCard.tsx",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/hooks/useChat.ts",
+      "target": "file:apps/web/src/store/appStore.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/hooks/useChat.ts",
+      "target": "file:apps/web/src/lib/api.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/components/MessageInput.tsx",
+      "target": "file:apps/web/src/lib/mentionParser.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/web/src/components/MessageInput.tsx",
+      "target": "file:apps/web/src/components/AgentMentionPopup.tsx",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/index.ts",
+      "target": "file:apps/api/src/routes/auth.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/index.ts",
+      "target": "file:apps/api/src/routes/chat.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/index.ts",
+      "target": "file:apps/api/src/routes/sessions.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/index.ts",
+      "target": "file:apps/api/src/ws/handler.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/ws/handler.ts",
+      "target": "file:apps/api/src/agent/ClaudeCodeProcess.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/ws/handler.ts",
+      "target": "file:apps/api/src/agent/SandboxManager.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/ws/handler.ts",
+      "target": "file:apps/api/src/agent/turns.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/ws/handler.ts",
+      "target": "file:apps/api/src/agent/WorkspaceManager.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/agent/ClaudeCodeProcess.ts",
+      "target": "file:apps/api/src/agent/EventParser.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/agent/ClaudeCodeProcess.ts",
+      "target": "file:apps/api/src/agent/AgentDirectoryManager.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/routes/chat.ts",
+      "target": "file:apps/api/src/agent/turns.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/ws/diffBroadcast.ts",
+      "target": "file:apps/api/src/agent/WorkspaceManager.ts",
+      "type": "imports",
+      "weight": 0.7
+    },
+    {
+      "source": "file:apps/api/src/routes/chat.ts",
+      "target": "file:apps/web/src/lib/api.ts",
+      "type": "depends_on",
+      "weight": 0.6
+    },
+    {
+      "source": "file:apps/web/src/lib/api.ts",
+      "target": "file:apps/web/src/hooks/useChat.ts",
+      "type": "depends_on",
+      "weight": 0.6
+    },
+    {
+      "source": "file:apps/web/src/store/appStore.ts",
+      "target": "file:apps/api/src/ws/handler.ts",
+      "type": "depends_on",
+      "weight": 0.6
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer:frontend",
+      "name": "Frontend (React Chat UI)",
+      "description": "React 18 + Vite + Tailwind + Zustand \u2014 chat interface, streaming display, agent status panels, artifact preview cards",
+      "nodeIds": [
+        "file:apps/web/index.html",
+        "file:apps/web/postcss.config.js",
+        "file:apps/web/src/App.tsx",
+        "file:apps/web/src/components/AgentCard.tsx",
+        "file:apps/web/src/components/AgentMentionPopup.tsx",
+        "file:apps/web/src/components/AgentStatusPanel.tsx",
+        "file:apps/web/src/components/AuthCallback.tsx",
+        "file:apps/web/src/components/ChatView.tsx",
+        "file:apps/web/src/components/ConfirmationPanel.tsx",
+        "file:apps/web/src/components/DeployCard.tsx",
+        "file:apps/web/src/components/DeploymentLauncher.tsx",
+        "file:apps/web/src/components/DiffCard.tsx",
+        "file:apps/web/src/components/DiffViewer.tsx",
+        "file:apps/web/src/components/FileTree.tsx",
+        "file:apps/web/src/components/LoginPage.tsx",
+        "file:apps/web/src/components/MessageBubble.tsx",
+        "file:apps/web/src/components/MessageInput.tsx",
+        "file:apps/web/src/components/PPTViewer.tsx",
+        "file:apps/web/src/components/PreviewFrame.tsx",
+        "file:apps/web/src/components/ReviewCard.tsx",
+        "file:apps/web/src/components/ScreenshotComparisonCard.tsx",
+        "file:apps/web/src/components/SecurityCard.tsx",
+        "file:apps/web/src/components/SessionList.tsx",
+        "file:apps/web/src/components/SlashCommandPopup.tsx",
+        "file:apps/web/src/components/TaskCard.tsx",
+        "file:apps/web/src/components/TaskDAG.tsx",
+        "file:apps/web/src/components/TestReportCard.tsx",
+        "file:apps/web/src/components/VersionTimeline.tsx",
+        "file:apps/web/src/hooks/useAuth.ts",
+        "file:apps/web/src/hooks/useChat.ts",
+        "file:apps/web/src/index.css",
+        "file:apps/web/src/lib/api.ts",
+        "file:apps/web/src/lib/markdown.test.ts",
+        "file:apps/web/src/lib/markdown.ts",
+        "file:apps/web/src/lib/mentionParser.ts",
+        "file:apps/web/src/main.tsx",
+        "file:apps/web/src/pages/ChatPage.tsx",
+        "file:apps/web/src/store/appStore.ts",
+        "file:apps/web/src/types/monaco-editor.d.ts",
+        "file:apps/web/tailwind.config.js",
+        "file:apps/web/vite.config.ts"
+      ]
+    },
+    {
+      "id": "layer:backend-api",
+      "name": "Backend API (Hono Routes)",
+      "description": "Hono REST API \u2014 auth, sessions, chat, agents, workspace, deploy, preview routes",
+      "nodeIds": [
+        "file:apps/api/src/routes/agents.ts",
+        "file:apps/api/src/routes/auth.ts",
+        "file:apps/api/src/routes/chat.ts",
+        "file:apps/api/src/routes/deploy.ts",
+        "file:apps/api/src/routes/diff.ts",
+        "file:apps/api/src/routes/preview.ts",
+        "file:apps/api/src/routes/review.ts",
+        "file:apps/api/src/routes/security.ts",
+        "file:apps/api/src/routes/sessions.ts",
+        "file:apps/api/src/routes/test.ts",
+        "file:apps/api/src/routes/workspace.ts"
+      ]
+    },
+    {
+      "id": "layer:backend-agent",
+      "name": "Agent Execution Layer",
+      "description": "Sandbox lifecycle, provider abstraction (ClaudeCodeProcess/Provider), event parsing, task orchestration",
+      "nodeIds": [
+        "file:apps/api/src/agent/AgentDirectoryManager.ts",
+        "file:apps/api/src/agent/ClaudeCodeProcess.ts",
+        "file:apps/api/src/agent/core.test.ts",
+        "file:apps/api/src/agent/EventParser.ts",
+        "file:apps/api/src/agent/InboxManager.ts",
+        "file:apps/api/src/agent/MilestoneBroadcaster.ts",
+        "file:apps/api/src/agent/PlannerAgent.ts",
+        "file:apps/api/src/agent/ProjectContext.ts",
+        "file:apps/api/src/agent/providers/base.ts",
+        "file:apps/api/src/agent/providers/claude-code.ts",
+        "file:apps/api/src/agent/providers/factory.ts",
+        "file:apps/api/src/agent/SandboxManager.test.ts",
+        "file:apps/api/src/agent/SandboxManager.ts",
+        "file:apps/api/src/agent/StateTracker.ts",
+        "file:apps/api/src/agent/TaskQueue.ts",
+        "file:apps/api/src/agent/turns.test.ts",
+        "file:apps/api/src/agent/turns.ts",
+        "file:apps/api/src/agent/WorkspaceManager.test.ts",
+        "file:apps/api/src/agent/WorkspaceManager.ts"
+      ]
+    },
+    {
+      "id": "layer:backend-ws",
+      "name": "WebSocket & State Management",
+      "description": "WebSocket handler, session state, diff broadcasting, multi-agent coordination, cleanup",
+      "nodeIds": [
+        "file:apps/api/src/ws/diffBroadcast.ts",
+        "file:apps/api/src/ws/handler.ts",
+        "file:apps/api/src/ws/state.ts",
+        "file:apps/api/src/ws/taskDispatcher.ts"
+      ]
+    },
+    {
+      "id": "layer:backend-infra",
+      "name": "Backend Infrastructure",
+      "description": "Database (Prisma), auth middleware, config, startup sequence",
+      "nodeIds": [
+        "file:apps/api/src/artifacts/ArtifactTools.test.ts",
+        "file:apps/api/src/artifacts/ArtifactTools.ts",
+        "file:apps/api/src/config.ts",
+        "file:apps/api/src/config/index.ts",
+        "file:apps/api/src/db/prisma.ts",
+        "file:apps/api/src/defaultAgents.ts",
+        "file:apps/api/src/index.ts",
+        "file:apps/api/src/lib/jwt.ts",
+        "file:apps/api/src/middleware/auth.ts",
+        "file:apps/api/src/middleware/whitelist.ts",
+        "table:apps/api/prisma/schema.prisma",
+        "table:apps/api/prisma/migrations/20260519070155_init/migration.sql",
+        "file:apps/api/prisma/seed.ts",
+        "file:apps/api/test_task_dispatch.ts"
+      ]
+    },
+    {
+      "id": "layer:shared-types",
+      "name": "Shared Types Package",
+      "description": "Shared TypeScript interfaces (User, Session, Message, Agent, Artifact, etc.) used by both frontend and backend",
+      "nodeIds": [
+        "config:packages/shared/package.json",
+        "file:packages/shared/src/types.ts",
+        "config:packages/shared/tsconfig.json"
+      ]
+    },
+    {
+      "id": "layer:docker-infra",
+      "name": "Docker & Infrastructure",
+      "description": "Docker sandbox image, Docker Compose, Nginx config \u2014 containerization and deployment",
+      "nodeIds": [
+        "service:docker/api.Dockerfile",
+        "config:docker/nginx.conf",
+        "service:docker/sandbox.Dockerfile",
+        "service:docker-compose.yml"
+      ]
+    },
+    {
+      "id": "layer:docs",
+      "name": "Documentation",
+      "description": "PRD, RUNBOOK, CLAUDE.md, and archived plans \u2014 project specification and operational docs",
+      "nodeIds": [
+        "document:CLAUDE.md",
+        "document:docs/superpowers/plans/2026-05-18-agenthub-mvp-phase1.md",
+        "document:docs/superpowers/plans/2026-05-19-phase2-multi-agent.md",
+        "document:docs/superpowers/plans/2026-05-23-phase3-smart-hub-core.md",
+        "document:docs/superpowers/plans/2026-05-23-phase4-artifacts-deployment.md",
+        "document:docs/superpowers/specs/2026-05-19-phase2-multi-agent-design.md",
+        "document:docs/superpowers/specs/2026-05-20-phase2-ux-remnants.md",
+        "document:docs/superpowers/specs/2026-05-20-phase3-core-infra.md",
+        "document:docs/superpowers/specs/2026-05-20-phase3-core-ui.md",
+        "document:docs/superpowers/specs/2026-05-20-phase3-enhancement.md",
+        "document:docs/superpowers/specs/2026-05-21-agent-collab-workspace-provider-design.md",
+        "document:docs/superpowers/specs/2026-05-21-repl-persistent-agent.md",
+        "document:docs/superpowers/specs/2026-05-22-apple-design-system.md",
+        "document:PRD.md",
+        "document:README.md",
+        "document:RUNBOOK.md"
+      ]
+    },
+    {
+      "id": "layer:config",
+      "name": "Configuration Files",
+      "description": "TypeScript configs, package.json manifests, environment templates \u2014 build and runtime configuration",
+      "nodeIds": [
+        "config:.env.example",
+        "config:apps/api/package.json",
+        "config:apps/api/prisma/migrations/migration_lock.toml",
+        "config:apps/api/tsconfig.json",
+        "config:apps/web/package.json",
+        "config:apps/web/tsconfig.json",
+        "config:package.json",
+        "config:packages/shared/package.json",
+        "config:packages/shared/tsconfig.json"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "order": 1,
+      "title": "\u9879\u76ee\u6982\u8ff0",
+      "description": "\u4ece README \u548c PRD \u4e86\u89e3 AgentHub \u7684\u9879\u76ee\u613f\u666f\uff1a\u4e00\u4e2a IM \u804a\u5929\u5f0f\u7684\u591a\u5e73\u53f0 AI Agent \u534f\u4f5c\u4e2d\u67a2\uff08Smart Hub\uff09\u3002",
+      "nodeIds": [
+        "document:PRD.md",
+        "document:README.md"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "\u540e\u7aef\u5165\u53e3\u4e0e\u542f\u52a8\u6d41\u7a0b",
+      "description": "index.ts \u662f\u540e\u7aef\u5165\u53e3\uff0c\u8d1f\u8d23\u6e05\u7406\u5b64\u513f\u5bb9\u5668\u3001seed agent\u3001\u6ce8\u518c Provider\u3001\u6302\u8f7d\u8def\u7531\u3001\u542f\u52a8 WebSocket\u3002",
+      "nodeIds": [
+        "file:apps/api/src/index.ts"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "Agent \u6267\u884c\u5f15\u64ce",
+      "description": "\u6838\u5fc3\u6267\u884c\u5c42\uff1aSandboxManager \u7ba1\u7406 Docker \u6c99\u7bb1\uff0cClaudeCodeProcess \u6d3e\u751f\u5b50\u8fdb\u7a0b\uff0cEventParser \u89e3\u6790 stream-json \u8f93\u51fa\uff0cProvider \u62bd\u8c61\u5c42\u89e3\u8026\u591a\u5e73\u53f0\u63a5\u5165\u3002",
+      "nodeIds": [
+        "file:apps/api/src/agent/AgentDirectoryManager.ts",
+        "file:apps/api/src/agent/ClaudeCodeProcess.ts",
+        "file:apps/api/src/agent/core.test.ts",
+        "file:apps/api/src/agent/EventParser.ts",
+        "file:apps/api/src/agent/InboxManager.ts",
+        "file:apps/api/src/agent/MilestoneBroadcaster.ts",
+        "file:apps/api/src/agent/PlannerAgent.ts",
+        "file:apps/api/src/agent/ProjectContext.ts",
+        "file:apps/api/src/agent/providers/base.ts",
+        "file:apps/api/src/agent/providers/claude-code.ts",
+        "file:apps/api/src/agent/providers/factory.ts",
+        "file:apps/api/src/agent/SandboxManager.test.ts",
+        "file:apps/api/src/agent/SandboxManager.ts",
+        "file:apps/api/src/agent/StateTracker.ts",
+        "file:apps/api/src/agent/TaskQueue.ts",
+        "file:apps/api/src/agent/turns.test.ts",
+        "file:apps/api/src/agent/turns.ts",
+        "file:apps/api/src/agent/WorkspaceManager.test.ts",
+        "file:apps/api/src/agent/WorkspaceManager.ts"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "WebSocket \u5b9e\u65f6\u901a\u4fe1",
+      "description": "WebSocket handler \u662f\u4e2d\u67a2\uff1a\u591a\u8def\u590d\u7528\u6d41\u5f0f\u63a8\u9001\u3001\u6743\u9650\u4ee3\u7406\u3001diff \u5e7f\u64ad\u3001\u591a Agent \u5e76\u884c\u8c03\u5ea6\u3001session \u751f\u547d\u5468\u671f\u7ba1\u7406\u3002",
+      "nodeIds": [
+        "file:apps/api/src/ws/diffBroadcast.ts",
+        "file:apps/api/src/ws/handler.ts",
+        "file:apps/api/src/ws/state.ts",
+        "file:apps/api/src/ws/taskDispatcher.ts"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "\u524d\u7aef\u804a\u5929\u754c\u9762",
+      "description": "ChatView \u662f\u524d\u7aef\u6838\u5fc3\u7ec4\u4ef6\uff1a\u6d88\u606f\u6c14\u6ce1\u6d41\u3001Agent \u72b6\u6001\u9762\u677f\u3001Diff/Deploy/Test/Security \u5361\u7247\u6e32\u67d3\u3001\u5e95\u90e8\u8f93\u5165\u680f\u3002",
+      "nodeIds": [
+        "file:apps/web/src/components/AgentCard.tsx",
+        "file:apps/web/src/components/AgentMentionPopup.tsx",
+        "file:apps/web/src/components/AgentStatusPanel.tsx",
+        "file:apps/web/src/components/AuthCallback.tsx",
+        "file:apps/web/src/components/ChatView.tsx",
+        "file:apps/web/src/components/ConfirmationPanel.tsx",
+        "file:apps/web/src/components/DeployCard.tsx",
+        "file:apps/web/src/components/DeploymentLauncher.tsx",
+        "file:apps/web/src/components/DiffCard.tsx",
+        "file:apps/web/src/components/DiffViewer.tsx",
+        "file:apps/web/src/components/FileTree.tsx",
+        "file:apps/web/src/components/LoginPage.tsx",
+        "file:apps/web/src/components/MessageBubble.tsx",
+        "file:apps/web/src/components/MessageInput.tsx",
+        "file:apps/web/src/components/PPTViewer.tsx",
+        "file:apps/web/src/components/PreviewFrame.tsx",
+        "file:apps/web/src/components/ReviewCard.tsx",
+        "file:apps/web/src/components/ScreenshotComparisonCard.tsx",
+        "file:apps/web/src/components/SecurityCard.tsx",
+        "file:apps/web/src/components/SessionList.tsx",
+        "file:apps/web/src/components/SlashCommandPopup.tsx",
+        "file:apps/web/src/components/TaskCard.tsx",
+        "file:apps/web/src/components/TaskDAG.tsx",
+        "file:apps/web/src/components/TestReportCard.tsx",
+        "file:apps/web/src/components/VersionTimeline.tsx"
+      ]
+    },
+    {
+      "order": 6,
+      "title": "\u72b6\u6001\u7ba1\u7406\u4e0e\u6570\u636e\u6d41",
+      "description": "Zustand store \u7ba1\u7406\u5168\u5c40\u72b6\u6001\uff08\u4f1a\u8bdd\u3001\u6d88\u606f\u3001agent \u4e8b\u4ef6\u3001diff \u5361\u7247\u3001\u90e8\u7f72\u72b6\u6001\uff09\u3002useChat hook \u5c01\u88c5 WebSocket \u8fde\u63a5\u548c\u4e8b\u4ef6\u5206\u53d1\u3002",
+      "nodeIds": [
+        "file:apps/web/src/hooks/useAuth.ts",
+        "file:apps/web/src/hooks/useChat.ts",
+        "file:apps/web/src/lib/api.ts",
+        "file:apps/web/src/lib/markdown.test.ts",
+        "file:apps/web/src/lib/markdown.ts",
+        "file:apps/web/src/lib/mentionParser.ts",
+        "file:apps/web/src/store/appStore.ts"
+      ]
+    },
+    {
+      "order": 7,
+      "title": "\u5171\u4eab\u7c7b\u578b\u4e0e\u5951\u7ea6",
+      "description": "packages/shared \u5b9a\u4e49\u524d\u540e\u7aef\u63a5\u53e3\u5951\u7ea6\uff0c\u786e\u4fdd\u7c7b\u578b\u5b89\u5168\u7684\u6d88\u606f\u4f20\u9012\u548c API \u8c03\u7528\u3002",
+      "nodeIds": [
+        "config:packages/shared/package.json",
+        "file:packages/shared/src/types.ts",
+        "config:packages/shared/tsconfig.json"
+      ]
+    }
+  ]
+}

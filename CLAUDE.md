@@ -25,6 +25,17 @@ What AgentHub does NOT reimplement:
 
 In short: AgentHub is a **smart hub with a chat UI**. The intelligence is distributed — coordination lives in the hub, execution lives in the agents.
 
+## Code navigation
+
+When you need to understand or query the codebase (find where something is defined, trace relationships between files, identify which layer a component belongs to), **first consult the knowledge graph** at `.understand-anything/knowledge-graph.json`. The graph contains:
+
+- **Nodes**: 119 files across 9 architectural layers (Frontend, Backend API, Agent Engine, WebSocket, Backend Infra, Shared Types, Docker, Docs, Config)
+- **Edges**: import and dependency relationships between files
+- **Layers**: which layer each file belongs to
+- **Tour**: 7-step guided walkthrough of the architecture
+
+Use it to answer questions like "what files import X?", "which layer does Y belong to?", or "what's the dependency chain from A to B?" before falling back to grep/find. This reduces token consumption and speeds up lookups.
+
 ## Commands
 
 ```bash
@@ -83,12 +94,9 @@ Browser → parse @agent from text (mentionParser.ts) → POST /api/chat/send wi
   → Frontend routes stream chunks to correct MessageBubble; tool events to correct AgentCard
 ```
 
-### / command passthrough
+### / command handling
 
-```
-Input starts with "/" → backend skips mention parsing + system prompt injection
-  → raw prompt forwarded to agent CLI (agent handles /commands natively)
-```
+Input starting with "/" (e.g. `/plan`, `/deploy`) resolves to the default agent with full system prompt injection — same as any other message. The `/deploy` command is intercepted by the frontend before reaching the backend. Other `/` commands are passed through to the agent as user text for the agent persona to process naturally.
 
 ### Main Agent → DAG execution flow (Task Orchestration)
 

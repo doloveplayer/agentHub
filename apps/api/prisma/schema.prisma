@@ -59,6 +59,7 @@ model Agent {
   displayName   String
   description   String
   systemPrompt  String
+  settings      Json?
   isActive      Boolean        @default(true)
   sessionAgents SessionAgent[]
   createdAt     DateTime       @default(now())
