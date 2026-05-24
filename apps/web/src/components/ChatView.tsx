@@ -19,6 +19,11 @@ import { DeploymentLauncher } from './DeploymentLauncher';
 import type { Message, AgentConfig } from '@agenthub/shared';
 
 const EMPTY_MESSAGES: Message[] = [];
+const EMPTY_DIFF_CARDS: any[] = [];
+const EMPTY_DEPLOYMENT_CARDS: any[] = [];
+const EMPTY_TEST_REPORTS: any[] = [];
+const EMPTY_SECURITY_REPORTS: any[] = [];
+const EMPTY_REVIEW_REPORTS: any[] = [];
 
 /** Renders ConfirmationPanel below a Planner agent's message (DAG lives in sidebar Tasks tab) */
 function PlanRenderer({
@@ -81,11 +86,11 @@ export function ChatView() {
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
   const bottomRef = useRef<HTMLDivElement>(null);
   const taskPlans = useAppStore((s) => s.taskPlans);
-  const diffCards = useAppStore((s) => activeSessionId ? (s.diffCards[activeSessionId] ?? []) : []);
-  const deploymentCards = useAppStore((s) => activeSessionId ? (s.deploymentCards[activeSessionId] ?? []) : []);
-  const testReports = useAppStore((s) => activeSessionId ? (s.testReports[activeSessionId] ?? []) : []);
-  const securityReports = useAppStore((s) => activeSessionId ? (s.securityReports[activeSessionId] ?? []) : []);
-  const reviewReports = useAppStore((s) => activeSessionId ? (s.reviewReports[activeSessionId] ?? []) : []);
+  const diffCards = useAppStore((s) => activeSessionId ? (s.diffCards[activeSessionId] ?? EMPTY_DIFF_CARDS) : EMPTY_DIFF_CARDS);
+  const deploymentCards = useAppStore((s) => activeSessionId ? (s.deploymentCards[activeSessionId] ?? EMPTY_DEPLOYMENT_CARDS) : EMPTY_DEPLOYMENT_CARDS);
+  const testReports = useAppStore((s) => activeSessionId ? (s.testReports[activeSessionId] ?? EMPTY_TEST_REPORTS) : EMPTY_TEST_REPORTS);
+  const securityReports = useAppStore((s) => activeSessionId ? (s.securityReports[activeSessionId] ?? EMPTY_SECURITY_REPORTS) : EMPTY_SECURITY_REPORTS);
+  const reviewReports = useAppStore((s) => activeSessionId ? (s.reviewReports[activeSessionId] ?? EMPTY_REVIEW_REPORTS) : EMPTY_REVIEW_REPORTS);
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
   const { send, stopAgent, respondToPermission, confirmPlan } = useChat(activeSessionId ?? '');
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
