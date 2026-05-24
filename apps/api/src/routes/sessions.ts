@@ -26,21 +26,32 @@ sessions.get('/', async (c) => {
     },
   });
 
-  return c.json(result.map((s) => ({
-    id: s.id,
-    title: s.title,
-    type: s.type,
-    userId: s.userId,
-    sandboxContainerId: s.sandboxContainerId,
-    agents: s.agents.map((sa) => ({
-      agentId: sa.agent.id,
-      name: sa.agent.name,
-      displayName: sa.agent.displayName,
-    })),
-    lastMessage: s.messages[0] ?? null,
-    createdAt: s.createdAt.toISOString(),
-    updatedAt: s.updatedAt.toISOString(),
-  })));
+  return c.json(result.map((s) => {
+    const lastMessage = s.messages[0]
+      ? {
+          ...s.messages[0],
+          content: s.messages[0].content.length > 80
+            ? `${s.messages[0].content.slice(0, 77)}...`
+            : s.messages[0].content,
+        }
+      : null;
+
+    return {
+      id: s.id,
+      title: s.title,
+      type: s.type,
+      userId: s.userId,
+      sandboxContainerId: s.sandboxContainerId,
+      agents: s.agents.map((sa) => ({
+        agentId: sa.agent.id,
+        name: sa.agent.name,
+        displayName: sa.agent.displayName,
+      })),
+      lastMessage,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString(),
+    };
+  }));
 });
 
 const createSchema = z.object({
@@ -77,6 +88,18 @@ sessions.post('/', async (c) => {
         select: { id: true },
       });
       if (defaultAgent) agentIds = [defaultAgent.id];
+    }
+  }
+
+  if (agentIds && agentIds.length > 0) {
+    const activeAgents = await prisma.agent.findMany({
+      where: { id: { in: agentIds }, isActive: true },
+      select: { id: true },
+    });
+    const activeAgentIds = new Set(activeAgents.map((agent) => agent.id));
+    const invalidAgentIds = agentIds.filter((agentId) => !activeAgentIds.has(agentId));
+    if (invalidAgentIds.length > 0) {
+      return c.json({ error: 'One or more agents are not available', invalidAgentIds }, 400);
     }
   }
 

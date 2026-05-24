@@ -5,7 +5,7 @@ import { AgentMentionPopup } from './AgentMentionPopup';
 import { SlashCommandPopup } from './SlashCommandPopup';
 import { recommendAgents } from '../lib/mentionParser';
 import { api } from '../lib/api';
-import type { AgentConfig } from '@agenthub/shared';
+import type { AgentConfig, Message } from '@agenthub/shared';
 
 interface MentionTag {
   agentId: string;
@@ -25,6 +25,8 @@ export function MessageInput({ onSend, disabled }: Props) {
   const orchestrationMode = useAppStore((s) => s.orchestrationMode);
   const setOrchestrationMode = useAppStore((s) => s.setOrchestrationMode);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const activeSessionType = useAppStore((s) => s.sessions.find((session: any) => session.id === s.activeSessionId)?.type);
+  const addMessage = useAppStore((s) => s.addMessage);
   const messages = useAppStore((s) => s.messages);
   const recentMessages = (messages[activeSessionId ?? ''] ?? []).slice(-20).map(m => m.content).filter(Boolean);
   const [value, setValue] = useState('');
@@ -60,7 +62,7 @@ export function MessageInput({ onSend, disabled }: Props) {
 
     const textBefore = newValue.slice(0, pos);
     const atMatch = textBefore.match(/@(\S*)$/);
-    if (atMatch) {
+    if (atMatch && activeSessionType === 'group') {
       setMentionQuery(atMatch[1]);
       setShowPopup(true);
       setShowSlash(false);
@@ -159,8 +161,21 @@ export function MessageInput({ onSend, disabled }: Props) {
     if (trimmed.startsWith('/deploy')) {
       const target = trimmed.split(/\s+/)[1] || 'docker';
       const validTargets = ['docker', 'vercel', 'cloudflare'];
-      const deployTarget = validTargets.includes(target) ? target : 'docker';
-      handleDeploy(deployTarget);
+      if (validTargets.includes(target)) {
+        handleDeploy(target);
+      } else {
+        if (activeSessionId) {
+          const msg: Message = {
+            id: `deploy-error-${Date.now()}`,
+            sessionId: activeSessionId,
+            senderType: 'agent',
+            content: `Invalid deploy target: ${target}. Supported targets: docker, vercel, cloudflare.`,
+            status: 'error',
+            createdAt: new Date().toISOString(),
+          };
+          addMessage(activeSessionId, msg);
+        }
+      }
       setValue('');
       ref.current?.focus();
       return;

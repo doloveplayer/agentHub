@@ -1,0 +1,31 @@
+{
+  "checkedAt": "2026-05-24T15:26:49.569Z",
+  "scope": "TC-AUTH-001 live GitHub OAuth whitelist verification",
+  "environment": {
+    "api": "http://localhost:3000",
+    "web": "http://localhost:5173",
+    "database": "local PostgreSQL via Prisma",
+    "browser": "Playwright visible browser, user completed GitHub authorization"
+  },
+  "whitelistOAuth": {
+    "username": "JohnSiegfried",
+    "status": "passed",
+    "databaseUserCreated": true,
+    "githubId": 115396162,
+    "createdAt": "2026-05-24T15:24:56.723Z",
+    "updatedAt": "2026-05-24T15:24:56.723Z",
+    "authMeStatusWithJwtForPersistedUser": 200,
+    "authMeLogin": "JohnSiegfried"
+  },
+  "routeHealth": {
+    "webLoginStatus": 200,
+    "githubAuthorizeRedirectStatus": 302,
+    "authMeWithoutTokenStatus": 401
+  },
+  "nonWhitelistOAuth": {
+    "username": "hengming0820",
+    "status": "not executed per user request",
+    "databaseUserCreatedAtLastCheck": false
+  },
+  "secrets": "No authorization code, JWT, GitHub access credential, app secret, or password recorded."
+}

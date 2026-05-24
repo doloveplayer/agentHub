@@ -7,6 +7,16 @@ import { authMiddleware } from '../middleware/auth.js';
 
 const auth = new Hono();
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 10_000): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // GET /github — redirect to GitHub OAuth authorize URL
 auth.get('/github', (c) => {
   const url = new URL('https://github.com/login/oauth/authorize');
@@ -24,19 +34,24 @@ auth.get('/github/callback', async (c) => {
   }
 
   // Exchange code for access token
-  const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify({
-      client_id: config.github.clientId,
-      client_secret: config.github.clientSecret,
-      code,
-      redirect_uri: config.github.callbackUrl,
-    }),
-  });
+  let tokenRes: Response;
+  try {
+    tokenRes = await fetchWithTimeout('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        client_id: config.github.clientId,
+        client_secret: config.github.clientSecret,
+        code,
+        redirect_uri: config.github.callbackUrl,
+      }),
+    });
+  } catch {
+    return c.json({ error: 'GitHub token exchange failed' }, 500);
+  }
 
   const tokenData = (await tokenRes.json()) as {
     access_token?: string;
@@ -46,16 +61,21 @@ auth.get('/github/callback', async (c) => {
   if (!tokenData.access_token) {
     return c.json(
       { error: tokenData.error || 'Failed to exchange code for token' },
-      400,
+      401,
     );
   }
 
   // Fetch GitHub user
-  const userRes = await fetch('https://api.github.com/user', {
-    headers: {
-      Authorization: `Bearer ${tokenData.access_token}`,
-    },
-  });
+  let userRes: Response;
+  try {
+    userRes = await fetchWithTimeout('https://api.github.com/user', {
+      headers: {
+        Authorization: `Bearer ${tokenData.access_token}`,
+      },
+    });
+  } catch {
+    return c.json({ error: 'Failed to fetch GitHub user' }, 500);
+  }
   const githubUser = (await userRes.json()) as {
     id: number;
     login: string;

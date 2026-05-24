@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
-import { ClaudeCodeProcess, buildSafeEnv } from '../agent/ClaudeCodeProcess.js';
-import { ClaudeCodeProvider } from '../agent/providers/claude-code.js';
+import { buildSafeEnv } from '../agent/ClaudeCodeProcess.js';
+import { createOneShotAgentProcess } from '../agent/processFactory.js';
 import { InboxManager } from '../agent/InboxManager.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import { ProviderFactory } from '../agent/providers/factory.js';
@@ -11,7 +11,7 @@ import { selectDefaultAgent, extractPlannerPlan, toTaskStates } from '../agent/t
 import { prisma } from '../db/prisma.js';
 import { verifyToken } from '../lib/jwt.js';
 import { config } from '../config.js';
-import { normalizeTarget, startDeployment } from '../routes/deploy.js';
+import { isDeployTarget, normalizeTarget, startDeployment } from '../routes/deploy.js';
 import { parseReviewReport, parseTestOutput, parseNpmAuditJson } from '../artifacts/ArtifactTools.js';
 
 import {
@@ -40,6 +40,8 @@ export { broadcast, setTaskQueueManager } from './state.js';
 
 // ---- Connection handler ----
 
+const POLICY_VIOLATION_CLOSE_CODE = 1008;
+
 async function handleConnection(ws: WebSocket, request: any) {
   const url = new URL(request.url || '/', `http://${request.headers?.host || 'localhost'}`);
   const token = url.searchParams.get('token');
@@ -47,7 +49,7 @@ async function handleConnection(ws: WebSocket, request: any) {
 
   if (!token || !sessionId) {
     sendTo(ws, { type: 'error', message: 'Missing token or sessionId' });
-    ws.close(4000, 'Missing token or sessionId');
+    ws.close(POLICY_VIOLATION_CLOSE_CODE, 'Missing token or sessionId');
     return;
   }
 
@@ -57,7 +59,7 @@ async function handleConnection(ws: WebSocket, request: any) {
     userId = payload.userId;
   } catch {
     sendTo(ws, { type: 'error', message: 'Invalid token' });
-    ws.close(4001, 'Invalid token');
+    ws.close(POLICY_VIOLATION_CLOSE_CODE, 'Invalid token');
     return;
   }
 
@@ -149,6 +151,10 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
 function handleDeployToPlatform(sessionId: string, data: { target?: string; production?: boolean; confirmPhrase?: string }): void {
   const sandbox = sandboxes.get(sessionId);
   if (!sandbox) { broadcast(sessionId, { type: 'stream_error', error: 'No active sandbox' }); return; }
+  if (data.target !== undefined && !isDeployTarget(data.target)) {
+    broadcast(sessionId, { type: 'deployment_status', deploymentId: `dep-${Date.now()}`, target: String(data.target), status: 'failed', error: 'Invalid deploy target', timestamp: Date.now() });
+    return;
+  }
   const target = normalizeTarget(data.target);
   if (data.production && data.confirmPhrase !== `DEPLOY ${target.toUpperCase()}`) {
     broadcast(sessionId, { type: 'deployment_status', deploymentId: `dep-${Date.now()}`, target, status: 'failed', error: `Confirmation phrase must be DEPLOY ${target.toUpperCase()}`, timestamp: Date.now() });
@@ -335,7 +341,7 @@ async function handleChatMessage(
 
     if (ENABLE_PERSISTENT_REPL && agentNameForProc) {
       const agentName = agentNameForProc;
-      const provider = ProviderFactory.create('claude-code') as ClaudeCodeProvider;
+      const provider = ProviderFactory.create(config.agent.provider);
       const safeEnv = buildSafeEnv();
 
       provider.onEvent((ev) => {
@@ -385,40 +391,42 @@ async function handleChatMessage(
           case 'done': {
             console.log(`[ws] Agent done (REPL): session=${sessionId} agentMsg=${msgId} exitCode=${ev.exitCode}`);
             const finalContent = accumulatedContent || (ev.exitCode !== 0 ? '[Agent stopped]' : '[Agent finished]');
-            prisma.message.update({ where: { id: msgId }, data: { content: finalContent, status: ev.exitCode === 0 ? 'done' : 'error' } }).catch(() => {});
             stateTracker.setDone(msgId);
             if (agentNameForProc) MilestoneBroadcaster.classify({ sessionId, agentName: agentNameForProc, agentMessageId: msgId, eventType: 'done' });
-            broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: finalContent, exitCode: ev.exitCode ?? 0 });
-            broadcastDiffSummary(
-              sessionId,
-              msgId,
-              sandbox.hostWorkDir,
-              takeMessageBeforeVersion(msgId),
-              agentName,
-              finalContent.slice(0, 180),
-            );
-            broadcastStructuredArtifact(sessionId, agentName, finalContent);
-            const stateMap = agentStates.get(sessionId);
-            if (stateMap) {
-              const st = stateMap.get(msgId);
-              if (st) { clearTimeout(st.timer); stateMap.delete(msgId); decRunningAgentCount(); }
-              if (stateMap.size === 0) agentStates.delete(sessionId);
-            }
-            accumulatedContent = '';
-            const conflicts = detectConflicts(sessionId);
-            if (conflicts.length > 0) {
-              broadcast(sessionId, { type: 'conflict_detected', conflicts: conflicts.map(c => ({ filePath: c.filePath, agents: c.agents })) });
-              console.log(`[ws] Conflict detected: session=${sessionId} files=${conflicts.map(c => c.filePath).join(', ')}`);
-            }
-            const taskInfo = agentCurrentTask.get(agentName);
-            if (taskInfo) {
-              broadcast(sessionId, { type: ev.exitCode === 0 ? 'task_completed' : 'task_failed', planId: taskInfo.planId, taskId: taskInfo.taskId, agentName, output: finalContent.slice(0, 200) });
-              agentCurrentTask.delete(agentName);
-              const queue = agentTaskQueues.get(agentName);
-              if (queue) { queue.current = null; processNextInQueue(sessionId, agentName, queue); }
-            }
-            agentCurrentMessage.delete(agentName);
-            startNextSequential(sessionId);
+            void (async () => {
+              await prisma.message.update({ where: { id: msgId }, data: { content: finalContent, status: ev.exitCode === 0 ? 'done' : 'error' } }).catch(() => {});
+              broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: finalContent, exitCode: ev.exitCode ?? 0 });
+              broadcastDiffSummary(
+                sessionId,
+                msgId,
+                sandbox.hostWorkDir,
+                takeMessageBeforeVersion(msgId),
+                agentName,
+                finalContent.slice(0, 180),
+              );
+              broadcastStructuredArtifact(sessionId, agentName, finalContent);
+              const stateMap = agentStates.get(sessionId);
+              if (stateMap) {
+                const st = stateMap.get(msgId);
+                if (st) { clearTimeout(st.timer); stateMap.delete(msgId); decRunningAgentCount(); }
+                if (stateMap.size === 0) agentStates.delete(sessionId);
+              }
+              accumulatedContent = '';
+              const conflicts = detectConflicts(sessionId);
+              if (conflicts.length > 0) {
+                broadcast(sessionId, { type: 'conflict_detected', conflicts: conflicts.map(c => ({ filePath: c.filePath, agents: c.agents })) });
+                console.log(`[ws] Conflict detected: session=${sessionId} files=${conflicts.map(c => c.filePath).join(', ')}`);
+              }
+              const taskInfo = agentCurrentTask.get(agentName);
+              if (taskInfo) {
+                broadcast(sessionId, { type: ev.exitCode === 0 ? 'task_completed' : 'task_failed', planId: taskInfo.planId, taskId: taskInfo.taskId, agentName, output: finalContent.slice(0, 200) });
+                agentCurrentTask.delete(agentName);
+                const queue = agentTaskQueues.get(agentName);
+                if (queue) { queue.current = null; processNextInQueue(sessionId, agentName, queue); }
+              }
+              agentCurrentMessage.delete(agentName);
+              startNextSequential(sessionId);
+            })();
             break;
           }
           case 'error':
@@ -448,8 +456,8 @@ async function handleChatMessage(
       return;
     }
 
-    // Fallback: one-shot ClaudeCodeProcess with --resume for persistent memory
-    const agent = new ClaudeCodeProcess();
+    // Fallback: one-shot agent process with --resume for persistent memory.
+    const agent = createOneShotAgentProcess();
     if (agentNameForProc) {
       agent.onClaudeSession = (sid: string) => { agentClaudeSessions.set(`${sessionId}:${agentNameForProc}`, sid); };
     }
@@ -474,6 +482,12 @@ async function handleChatMessage(
         }
         case 'tool_use':
           stateTracker.updateTool(mention.messageId, event.toolName, event.input || {});
+          {
+            const modPath = event.input?.file_path || event.input?.path || event.input?.filePath;
+            if (typeof modPath === 'string' && ['Write', 'Edit'].includes(event.toolName || '')) {
+              trackFileMod(sessionId, diffAgentName, modPath);
+            }
+          }
           broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: event.toolName, input: event.input, inputPreview: JSON.stringify(event.input ?? {}).slice(0, 80) }, agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
         case 'tool_result':
@@ -515,24 +529,26 @@ async function handleChatMessage(
             }
           }
           const finalContent = accumulatedContent || (event.exitCode !== 0 ? '[Agent stopped]' : '[Agent finished]');
-          prisma.message.update({ where: { id: mention.messageId }, data: { content: finalContent, status: event.exitCode === 0 ? 'done' : 'error' } }).catch(() => {});
-          broadcast(sessionId, { type: 'stream_end', agentMessageId: mention.messageId, fullContent: finalContent, exitCode: event.exitCode });
-          broadcastDiffSummary(
-            sessionId,
-            mention.messageId,
-            sandbox.hostWorkDir,
-            takeMessageBeforeVersion(mention.messageId),
-            diffAgentName,
-            finalContent.slice(0, 180),
-          );
-          broadcastStructuredArtifact(sessionId, diffAgentName, finalContent);
-          const stateMap = agentStates.get(sessionId);
-          if (stateMap) {
-            const st = stateMap.get(mention.messageId);
-            if (st) { clearTimeout(st.timer); stateMap.delete(mention.messageId); decRunningAgentCount(); }
-            if (stateMap.size === 0) agentStates.delete(sessionId);
-          }
-          startNextSequential(sessionId);
+          void (async () => {
+            await prisma.message.update({ where: { id: mention.messageId }, data: { content: finalContent, status: event.exitCode === 0 ? 'done' : 'error' } }).catch(() => {});
+            broadcast(sessionId, { type: 'stream_end', agentMessageId: mention.messageId, fullContent: finalContent, exitCode: event.exitCode });
+            broadcastDiffSummary(
+              sessionId,
+              mention.messageId,
+              sandbox.hostWorkDir,
+              takeMessageBeforeVersion(mention.messageId),
+              diffAgentName,
+              finalContent.slice(0, 180),
+            );
+            broadcastStructuredArtifact(sessionId, diffAgentName, finalContent);
+            const stateMap = agentStates.get(sessionId);
+            if (stateMap) {
+              const st = stateMap.get(mention.messageId);
+              if (st) { clearTimeout(st.timer); stateMap.delete(mention.messageId); decRunningAgentCount(); }
+              if (stateMap.size === 0) agentStates.delete(sessionId);
+            }
+            startNextSequential(sessionId);
+          })();
           break;
         }
         case 'error':
@@ -562,7 +578,17 @@ async function handleChatMessage(
 
     try {
       console.log(`[ws] Starting agent: session=${sessionId} agentMsg=${mention.messageId} prompt="${agentPrompt.slice(0, 80)}..."`);
-      agent.start(sessionId, agentPrompt, sandbox.containerId, sandbox.workDir, data.trustMode ?? true, sandbox.hostWorkDir, mention.messageId, agentNameForProc ? agentClaudeSessions.get(`${sessionId}:${agentNameForProc}`) : undefined)
+      agent.start(
+        sessionId,
+        agentPrompt,
+        sandbox.containerId,
+        sandbox.workDir,
+        data.trustMode ?? true,
+        sandbox.hostWorkDir,
+        mention.messageId,
+        agentNameForProc ? agentClaudeSessions.get(`${sessionId}:${agentNameForProc}`) : undefined,
+        agentNameForProc || undefined,
+      )
         .catch((err) => {
           console.error(`[ws] Agent start failed: session=${sessionId} agentMsg=${mention.messageId} error=${err.message}`);
           broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed to start agent: ${err.message}` });

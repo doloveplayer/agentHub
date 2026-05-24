@@ -76,10 +76,10 @@ function normalizeAgentHandle(handle: string): string {
 
 /**
  * Find agents matching @query for autocomplete.
- * Returns [] for empty query; otherwise prefix matches against name and displayName.
+ * Returns all agents for empty query; otherwise prefix matches against name and displayName.
  */
 export function matchAgents(query: string, agents: AgentConfig[]): AgentConfig[] {
-  if (!query) return [];
+  if (!query) return agents;
   const lower = query.toLowerCase();
   return agents.filter(
     (a) => a.name.toLowerCase().startsWith(lower) || a.displayName.toLowerCase().startsWith(lower),

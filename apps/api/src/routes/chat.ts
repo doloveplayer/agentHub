@@ -15,7 +15,9 @@ const mentionSchema = z.object({
 
 const sendSchema = z.object({
   sessionId: z.string().uuid(),
-  content: z.string().min(1),
+  content: z.string().min(1).refine((value) => value.trim().length > 0, {
+    message: 'content must not be blank',
+  }),
   mentions: z.array(mentionSchema).optional(),
 });
 

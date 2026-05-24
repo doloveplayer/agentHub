@@ -1,0 +1,85 @@
+{
+  "createdAt": "2026-05-24T13:45:46.429Z",
+  "userId": "ac8f827e-854c-4e75-8fa9-5c5fe5a0aeac",
+  "sessions": {
+    "solo": "de2ebae4-19c7-4535-a35d-9c3bc8c7c3a0",
+    "group": "de940b9c-4c2a-4e96-a114-54bd760a2fe3"
+  },
+  "workspaces": {
+    "soloDir": "/home/c2216-5090/lmy/contest/agentHub/.sandboxes/de2ebae4-19c7-4535-a35d-9c3bc8c7c3a0",
+    "groupDir": "/home/c2216-5090/lmy/contest/agentHub/.sandboxes/de940b9c-4c2a-4e96-a114-54bd760a2fe3"
+  },
+  "results": [
+    {
+      "id": "LIVE-STREAM",
+      "title": "single agent stream output",
+      "status": "passed",
+      "evidence": {
+        "agentMessageId": "ebf69763-57a2-41fe-b2f9-b574e1709df5",
+        "chunks": 1,
+        "exitCode": 0,
+        "dbStatus": "done",
+        "contentLength": 12298
+      }
+    },
+    {
+      "id": "LIVE-READ",
+      "title": "agent reads SmartSupport files",
+      "status": "failed",
+      "evidence": {},
+      "error": "The input did not match the regular expression /README\\.md|TESTCASES\\.md|knowledge-base\\.md/. Input:\n\n''\n"
+    },
+    {
+      "id": "LIVE-PERMISSION-WRITE",
+      "title": "permission request before write and allow",
+      "status": "blocked",
+      "evidence": {},
+      "error": "Timed out after 420000ms waiting for event"
+    },
+    {
+      "id": "LIVE-STOP",
+      "title": "stop running agent",
+      "status": "passed",
+      "evidence": {
+        "agentMessageId": "e81c9db1-3845-4048-a076-6f42182538ba",
+        "stopped": true,
+        "exitCode": -1
+      }
+    },
+    {
+      "id": "LIVE-PLANNER",
+      "title": "planner returns plan_result",
+      "status": "passed",
+      "evidence": {
+        "agentMessageId": "2f062e91-9f4a-46f4-a8a7-e0ae0c9bab59",
+        "planId": "plan-1779630317510",
+        "taskCount": 7,
+        "title": "SmartSupport 智能聊天客服系统实现计划"
+      }
+    },
+    {
+      "id": "LIVE-MULTI-AGENT",
+      "title": "parallel mentions route to independent messages",
+      "status": "passed",
+      "evidence": {
+        "agentMessageIds": [
+          "5547f5f5-8389-4b5e-9740-b702d9d50a20",
+          "e16f1b92-654f-4ec8-9d7d-e3f69efbcc5e"
+        ],
+        "chunksById": {
+          "5547f5f5-8389-4b5e-9740-b702d9d50a20": 1,
+          "e16f1b92-654f-4ec8-9d7d-e3f69efbcc5e": 2
+        }
+      }
+    },
+    {
+      "id": "LIVE-PLAYWRIGHT-UI",
+      "title": "browser shows login/chat shell and injected auth",
+      "status": "passed",
+      "evidence": {
+        "loginVisible": true,
+        "chatShellVisible": true
+      }
+    }
+  ]
+}

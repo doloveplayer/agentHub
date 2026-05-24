@@ -1,0 +1,19 @@
+{
+  "createdAt": "2026-05-24T13:48:49.330Z",
+  "sessionId": "60cbb589-2b99-483c-b1e1-445a5693eb4e",
+  "agentMessageId": "fb3f8360-9616-47ab-b1fe-36f9bcad1dce",
+  "streamEndExitCode": 0,
+  "dbStatus": "done",
+  "dbContentLength": 163,
+  "hasReadPaths": true,
+  "eventTypes": [
+    "agent_status",
+    "agent_status",
+    "agent_status",
+    "stream_chunk",
+    "agent_status",
+    "phase_complete",
+    "stream_end",
+    "diff_summary"
+  ]
+}

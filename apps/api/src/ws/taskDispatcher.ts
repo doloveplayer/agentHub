@@ -1,20 +1,17 @@
 // Task-to-Agent dispatch: routes Planner tasks to session agents via REPL.
 // Extracted from handler.ts.
 
-import { ClaudeCodeProvider } from '../agent/providers/claude-code.js';
-import { ProviderFactory } from '../agent/providers/factory.js';
 import { stateTracker } from '../agent/StateTracker.js';
 import { findClosestAgent } from '../agent/turns.js';
 import { topologicalSort } from '../agent/TaskQueue.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
 
-import { ClaudeCodeProcess, buildSafeEnv } from '../agent/ClaudeCodeProcess.js';
+import { createOneShotAgentProcess } from '../agent/processFactory.js';
 import {
   broadcast, agentProcesses, agentStates, agentTaskQueues,
   agentCurrentTask, agentCurrentMessage, sandboxes,
   incRunningAgentCount, decRunningAgentCount,
-  ENABLE_PERSISTENT_REPL,
   type AgentTaskQueue, type TaskDispatchNode,
 } from './state.js';
 import {
@@ -89,7 +86,7 @@ async function dispatchTaskOneShot(
   const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, systemPrompt: true } });
   if (!agent) { console.log(`[ws] Task dispatch: agent ${agentName} not found in DB`); return; }
   const fullPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}`;
-  const proc = new ClaudeCodeProcess();
+  const proc = createOneShotAgentProcess();
   const taskMsgId = `task-${task.id}`;
   let output = '';
 
@@ -145,7 +142,7 @@ export async function startTaskAgent(
     `Before ${agent.name} task ${task.id}`,
   );
 
-  const proc = new ClaudeCodeProcess();
+  const proc = createOneShotAgentProcess();
   proc.onEvent((event) => {
     switch (event.type) {
       case 'text':

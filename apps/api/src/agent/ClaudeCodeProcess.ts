@@ -80,6 +80,7 @@ export class ClaudeCodeProcess {
     hostWorkDir?: string,
     promptFileId?: string,
     claudeSessionId?: string,    // for --resume: continue previous Claude session
+    agentConfigId?: string,      // stable per Agent so --resume can find prior session state
   ): Promise<void> {
     this.doneEmitted = false;
     this.killed = false;
@@ -87,6 +88,7 @@ export class ClaudeCodeProcess {
 
     const safeEnv = buildSafeEnv();
     const agentTag = promptFileId || 'agent';
+    const agentConfigTag = agentConfigId || agentTag;
     const containerName = `agenthub-agent-${sessionId.slice(0, 8)}-${agentTag.slice(0, 12)}`;
     this.containerId = containerName;
     const promptFile = `_prompt_${agentTag}.txt`;
@@ -123,7 +125,7 @@ export class ClaudeCodeProcess {
 
     // Per-agent CLAUDE_CONFIG_DIR for independent memory/skills (only when hostWorkDir is set)
     if (hostWorkDir) {
-      const agentConfigDir = resolve(hostWorkDir, `_agent_${agentTag}`, '.claude');
+      const agentConfigDir = resolve(hostWorkDir, `_agent_${agentConfigTag}`, '.claude');
       // Pre-create directory so it's owned by the host user, not root (Docker would create it as root)
       if (!existsSync(agentConfigDir)) {
         mkdirSync(agentConfigDir, { recursive: true });

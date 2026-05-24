@@ -1,0 +1,23 @@
+{
+  "generatedAt": "2026-05-24T15:12:02.620Z",
+  "caseId": "MOCK-UI-PERMISSION-CARD-ALLOW",
+  "passed": true,
+  "sessionId": "ef94bf1e-7637-4a86-b84e-f519ce854c8a",
+  "targetPath": "docs/mock-ui-allow.txt",
+  "workspaceFile": "/home/c2216-5090/lmy/contest/agentHub/.sandboxes/ef94bf1e-7637-4a86-b84e-f519ce854c8a/docs/mock-ui-allow.txt",
+  "screenshotPath": "/home/c2216-5090/lmy/contest/agentHub/docs/superpowers/reports/mock-provider-ui-permission.png",
+  "permissionCardVisibleMs": 224,
+  "messageCount": 2,
+  "agentMessages": [
+    {
+      "id": "48a11236-543d-461f-95ae-6d5c3d2f092e",
+      "status": "done",
+      "contentPreview": "Mock provider is preparing a file write.\nPermission allowed; wrote docs/mock-ui-allow.txt.\n"
+    }
+  ],
+  "consoleMessages": [
+    "warning: ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+    "warning: ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath."
+  ],
+  "failedRequests": []
+}

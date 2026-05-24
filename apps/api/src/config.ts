@@ -66,6 +66,7 @@ export const config = {
   agent: {
     timeoutMs: optionalInt('AGENT_TIMEOUT_MS', 300_000),  // 5 min default
     maxConcurrent: optionalInt('MAX_CONCURRENT_AGENTS', 5),
+    provider: optional('AGENTHUB_AGENT_PROVIDER', optional('AGENT_PROVIDER', 'claude-code')),
   },
 
   taskQueue: {

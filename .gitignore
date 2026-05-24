@@ -16,6 +16,7 @@ build/
 
 # Claude Code local state
 .claude/
+.codex/
 
 # IDE
 .vscode/

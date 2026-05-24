@@ -1,4 +1,4 @@
-import { ClaudeCodeProcess } from './ClaudeCodeProcess.js';
+import { createOneShotAgentProcess } from './processFactory.js';
 import type { TaskPlan } from '@agenthub/shared';
 
 export class PlannerAgent {
@@ -39,7 +39,7 @@ Output ONLY a valid JSON object (no markdown fences) with this schema:
 }`;
 
     return new Promise((resolve, reject) => {
-      const proc = new ClaudeCodeProcess();
+      const proc = createOneShotAgentProcess();
       let accumulated = '';
 
       proc.onEvent((event) => {

@@ -1,6 +1,6 @@
 import { Queue, Worker, Job } from 'bullmq';
 import { config, redis } from '../config.js';
-import { ClaudeCodeProcess } from './ClaudeCodeProcess.js';
+import { createOneShotAgentProcess } from './processFactory.js';
 import type { TaskNode, TaskPlan } from '@agenthub/shared';
 
 /** Topological sort: DAG → ordered execution layers */
@@ -142,7 +142,7 @@ Execute this task now. Output the results to the specified files.`;
       async (job: Job<TaskJobData>) => {
         const { contextPrompt, containerId, workDir, hostWorkDir, sessionId, task, agentName, agentSystemPrompt } = job.data;
 
-        const proc = new ClaudeCodeProcess();
+        const proc = createOneShotAgentProcess();
         let output = '';
 
         // Use real agent name for prompt file and directory naming (PRD section 4.2)

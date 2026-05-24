@@ -44,6 +44,9 @@ deploy.post('/:sessionId/run', async (c) => {
   const workDir = await getSessionWorkspace(sessionId, userId);
   if (!workDir) return c.json({ error: 'Forbidden' }, 403);
   const body = await c.req.json().catch(() => ({}));
+  if (body.target !== undefined && !isDeployTarget(body.target)) {
+    return c.json({ error: 'Invalid deploy target' }, 400);
+  }
   const target = normalizeTarget(body.target);
   const production = Boolean(body.production);
   if (production && body.confirmPhrase !== `DEPLOY ${target.toUpperCase()}`) {
@@ -107,6 +110,10 @@ function emit(sessionId: string, deploymentId: string, target: DeployTarget, sta
 export function normalizeTarget(value: unknown): DeployTarget {
   if (value === 'vercel' || value === 'cloudflare' || value === 'docker') return value;
   return 'docker';
+}
+
+export function isDeployTarget(value: unknown): value is DeployTarget {
+  return value === 'vercel' || value === 'cloudflare' || value === 'docker';
 }
 
 function commandForTarget(target: DeployTarget, stage: 'build' | 'deploy'): string {

@@ -1,0 +1,115 @@
+{
+  "generatedAt": "2026-05-24T15:12:02.105Z",
+  "provider": "test",
+  "results": [
+    {
+      "caseId": "MOCK-WS-PERMISSION-ALLOW",
+      "passed": true,
+      "permissionId": "f27dca2b-c492-4182-a9dc-4b612f0c33fe|::|Write|::|1779635520854",
+      "firstChunkMs": 40,
+      "exitCode": 0,
+      "fileExists": true,
+      "filePreview": "Mock provider wrote this file for: 请写文件 file: docs/mock-ws-allow.txt\n",
+      "dbStatus": "done",
+      "dbContentLength": 91,
+      "eventTypes": [
+        "connected",
+        "agent_status",
+        "stream_chunk",
+        "permission_request",
+        "phase_complete",
+        "stream_end"
+      ]
+    },
+    {
+      "caseId": "MOCK-WS-PERMISSION-DENY",
+      "passed": true,
+      "permissionId": "b6629b34-8d3a-4708-87a9-f66ac89df4ef|::|Write|::|1779635521084",
+      "exitCode": 1,
+      "fileExists": false,
+      "dbStatus": "error",
+      "eventTypes": [
+        "connected",
+        "agent_status",
+        "stream_chunk",
+        "permission_request",
+        "phase_complete",
+        "stream_end"
+      ]
+    },
+    {
+      "caseId": "MOCK-WS-TOOL-SUBAGENT",
+      "passed": true,
+      "statuses": [
+        "token_update",
+        "thinking",
+        "tool_use",
+        "tool_result",
+        "subagent_start",
+        "subagent_result",
+        "thinking"
+      ],
+      "eventTypes": [
+        "connected",
+        "agent_status",
+        "stream_chunk",
+        "phase_complete",
+        "stream_end"
+      ]
+    },
+    {
+      "caseId": "MOCK-WS-PLANNER-DAG",
+      "passed": true,
+      "planTitle": "Mock SmartSupport DAG",
+      "taskCount": 2,
+      "eventTypes": [
+        "connected",
+        "agent_status",
+        "stream_chunk",
+        "phase_complete",
+        "plan_result",
+        "stream_end"
+      ]
+    },
+    {
+      "caseId": "MOCK-WS-PERMISSION-INVALID",
+      "passed": true,
+      "error": "No active agents for permission response",
+      "eventTypes": [
+        "connected",
+        "stream_error"
+      ]
+    },
+    {
+      "caseId": "MOCK-WS-CONFLICT-DETECTED",
+      "passed": true,
+      "conflicts": [
+        {
+          "filePath": "docs/mock-conflict.txt",
+          "agents": [
+            "code-agent",
+            "review-agent"
+          ],
+          "ranges": [
+            {
+              "start": 0,
+              "end": 0
+            }
+          ]
+        }
+      ],
+      "eventTypes": [
+        "connected",
+        "agent_status",
+        "stream_chunk",
+        "permission_request",
+        "phase_complete",
+        "stream_end",
+        "diff_summary",
+        "conflict_detected"
+      ]
+    }
+  ],
+  "passed": 6,
+  "failed": 0
+}
