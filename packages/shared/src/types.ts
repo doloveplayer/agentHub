@@ -77,7 +77,7 @@ export interface TaskNode {
   id: string;
   title: string;
   description: string;
-  agentType: 'CodeAgent' | 'ReviewAgent' | 'DevOpsAgent';
+  agentType: 'CodeAgent' | 'ReviewAgent' | 'DevOpsAgent' | 'TestAgent' | 'DepsAgent';
   dependsOn: string[];
   expectedOutput: string;
   priority: 'high' | 'medium' | 'low';
@@ -96,4 +96,24 @@ export interface TaskPlanResult {
   plan: TaskPlan;
   status: 'pending_confirmation' | 'executing' | 'completed' | 'failed';
   createdAt: string;
+}
+
+export interface DeploymentStatusEvent {
+  type: 'deployment_status';
+  deploymentId: string;
+  target: 'docker' | 'vercel' | 'cloudflare';
+  status: 'queued' | 'building' | 'deploying' | 'success' | 'rolling_back' | 'failed';
+  log?: string;
+  url?: string;
+  buildTimeMs?: number;
+  imageSha?: string;
+  error?: string;
+  timestamp: number;
+}
+
+export interface DeployToPlatformEvent {
+  type: 'deploy_to_platform';
+  target: 'docker' | 'vercel' | 'cloudflare';
+  production?: boolean;
+  confirmPhrase?: string;
 }

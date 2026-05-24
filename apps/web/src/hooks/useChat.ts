@@ -18,7 +18,7 @@ export function useChat(sessionId: string) {
   const agents = useAppStore((s) => s.agents);
   const trustMode = useAppStore((s) => s.trustMode);
   const orchestrationMode = useAppStore((s) => s.orchestrationMode);
-  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread } = useAppStore();
+  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addSecurityReport, addReviewReport } = useAppStore();
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {
     if (!token || !sessionId) return Promise.reject(new Error('No token or sessionId'));
@@ -199,6 +199,62 @@ export function useChat(sessionId: string) {
               });
               break;
             }
+            case 'diff_summary':
+              if (data.files?.length) {
+                addDiffCard(sessionId, {
+                  id: data.id || 'diff-' + Date.now(),
+                  sessionId,
+                  agentMessageId: data.agentMessageId,
+                  title: data.title || 'File changes',
+                  files: data.files,
+                  createdAt: data.createdAt || Date.now(),
+                });
+              }
+              break;
+            case 'deployment_status':
+              if (data.deploymentId) {
+                upsertDeploymentCard(sessionId, {
+                  deploymentId: data.deploymentId,
+                  target: data.target || 'docker',
+                  status: data.status || 'queued',
+                  log: data.log,
+                  url: data.url,
+                  imageSha: data.imageSha,
+                  buildTimeMs: data.buildTimeMs,
+                  error: data.error,
+                  timestamp: data.timestamp,
+                });
+              }
+              break;
+            case 'test_report':
+              if (data.report) {
+                addTestReport(sessionId, {
+                  id: 'test-' + Date.now(),
+                  report: data.report,
+                  exitCode: data.exitCode ?? 0,
+                  timestamp: data.timestamp || Date.now(),
+                });
+              }
+              break;
+            case 'security_report':
+              if (data.report) {
+                addSecurityReport(sessionId, {
+                  id: 'sec-' + Date.now(),
+                  report: data.report,
+                  exitCode: data.exitCode ?? 0,
+                  timestamp: data.timestamp || Date.now(),
+                });
+              }
+              break;
+            case 'review_report':
+              if (data.report) {
+                addReviewReport(sessionId, {
+                  id: 'rev-' + Date.now(),
+                  report: data.report,
+                  timestamp: data.timestamp || Date.now(),
+                });
+              }
+              break;
           }
         } catch { /* ignore parse errors */ }
       };

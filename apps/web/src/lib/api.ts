@@ -54,4 +54,71 @@ export const api = {
   getWorkspaceFile: (sessionId: string, path: string) => request<any>(`/workspace/${sessionId}/file?path=${encodeURIComponent(path)}`),
 
   getWorkspaceChanges: (sessionId: string) => request<{ changes: string[] }>(`/workspace/${sessionId}/changes`),
+
+  getDiffFiles: (sessionId: string, baseVersionId?: string) =>
+    request<{ files: any[] }>(`/diff/${sessionId}/files${baseVersionId ? `?baseVersionId=${encodeURIComponent(baseVersionId)}` : ''}`),
+
+  getFileDiff: (sessionId: string, path: string, baseVersionId?: string) =>
+    request<{ file: any }>(`/diff/${sessionId}/file?path=${encodeURIComponent(path)}${baseVersionId ? `&baseVersionId=${encodeURIComponent(baseVersionId)}` : ''}`),
+
+  getVersions: (sessionId: string) => request<{ versions: any[] }>(`/diff/${sessionId}/versions`),
+
+  createVersion: (sessionId: string, body: { agentName?: string; summary?: string }) =>
+    request<{ version: any }>(`/diff/${sessionId}/versions`, { method: 'POST', body: JSON.stringify(body) }),
+
+  diffVersions: (sessionId: string, from: string, to: string, path?: string) =>
+    request<{ diff: any }>(`/diff/${sessionId}/versions/diff?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}${path ? `&path=${encodeURIComponent(path)}` : ''}`),
+
+  restoreVersion: (sessionId: string, versionId: string) =>
+    request<{ ok: boolean }>(`/diff/${sessionId}/restore`, { method: 'POST', body: JSON.stringify({ versionId }) }),
+
+  acceptDiffFile: (sessionId: string, path: string) =>
+    request<{ ok: boolean }>(`/diff/${sessionId}/accept`, { method: 'POST', body: JSON.stringify({ path }) }),
+
+  rejectDiffFile: (sessionId: string, path: string, baseVersionId?: string) =>
+    request<{ ok: boolean }>(`/diff/${sessionId}/reject`, { method: 'POST', body: JSON.stringify({ path, baseVersionId }) }),
+
+  acceptDiffHunk: (sessionId: string, path: string, hunkId: string, baseVersionId?: string) =>
+    request<{ ok: boolean }>(`/diff/${sessionId}/accept-hunk`, { method: 'POST', body: JSON.stringify({ path, hunkId, baseVersionId }) }),
+
+  rejectDiffHunk: (sessionId: string, path: string, hunkId: string, baseVersionId?: string) =>
+    request<{ ok: boolean }>(`/diff/${sessionId}/reject-hunk`, { method: 'POST', body: JSON.stringify({ path, hunkId, baseVersionId }) }),
+
+  getPreviewPorts: (sessionId: string) => request<{ ports: number[] }>(`/preview/${sessionId}/ports`),
+
+  forwardPreviewPort: (sessionId: string, port: number) =>
+    request<{ containerPort: number; hostPort: number; url: string; proxyUrl: string }>(`/preview/${sessionId}/forward`, {
+      method: 'POST',
+      body: JSON.stringify({ port }),
+    }),
+
+  capturePreviewScreenshot: (sessionId: string, url: string) =>
+    request<{ image: string; capturedAt: number }>(`/preview/${sessionId}/screenshot`, {
+      method: 'POST',
+      body: JSON.stringify({ url }),
+    }),
+
+  generateDeployConfig: (sessionId: string, body: { appName?: string; buildCommand?: string; startCommand?: string; env?: string[] }) =>
+    request<{ files: string[] }>(`/deploy/${sessionId}/config`, { method: 'POST', body: JSON.stringify(body) }),
+
+  deployToPlatform: (sessionId: string, body: { target: 'docker' | 'vercel' | 'cloudflare'; production?: boolean; confirmPhrase?: string }) =>
+    request<{ deploymentId: string; status: string }>(`/deploy/${sessionId}/run`, { method: 'POST', body: JSON.stringify(body) }),
+
+  rollbackDeployment: (sessionId: string) =>
+    request<{ ok: boolean; output: string }>(`/deploy/${sessionId}/rollback`, { method: 'POST' }),
+
+  runTests: (sessionId: string, command?: string) =>
+    request<{ report: any; exitCode: number }>(`/test/${sessionId}/run`, { method: 'POST', body: JSON.stringify({ command }) }),
+
+  generateTestPrompt: (sessionId: string, target?: string) =>
+    request<{ prompt: string }>(`/test/${sessionId}/generate`, { method: 'POST', body: JSON.stringify({ target }) }),
+
+  runSecurityAudit: (sessionId: string) =>
+    request<{ report: any; exitCode: number }>(`/security/${sessionId}/audit`, { method: 'POST' }),
+
+  upgradeDependencies: (sessionId: string, packageName?: string) =>
+    request<{ output: string; exitCode: number }>(`/security/${sessionId}/upgrade`, { method: 'POST', body: JSON.stringify({ packageName }) }),
+
+  createReviewReport: (sessionId: string, content: string) =>
+    request<{ report: any }>(`/review/${sessionId}/report`, { method: 'POST', body: JSON.stringify({ content }) }),
 };

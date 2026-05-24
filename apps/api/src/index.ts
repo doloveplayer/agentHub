@@ -15,6 +15,12 @@ import sessionRoutes from './routes/sessions.js';
 import chatRoutes from './routes/chat.js';
 import agentRoutes from './routes/agents.js';
 import workspaceRoutes from './routes/workspace.js';
+import diffRoutes from './routes/diff.js';
+import previewRoutes from './routes/preview.js';
+import deployRoutes from './routes/deploy.js';
+import testRoutes from './routes/test.js';
+import securityRoutes from './routes/security.js';
+import reviewRoutes from './routes/review.js';
 
 // Startup cleanup: remove orphaned sandbox containers and directories
 // from previous backend runs
@@ -79,6 +85,12 @@ app.route('/api/sessions', sessionRoutes);
 app.route('/api/chat', chatRoutes);
 app.route('/api/agents', agentRoutes);
 app.route('/api/workspace', workspaceRoutes);
+app.route('/api/diff', diffRoutes);
+app.route('/api/preview', previewRoutes);
+app.route('/api/deploy', deployRoutes);
+app.route('/api/test', testRoutes);
+app.route('/api/security', securityRoutes);
+app.route('/api/review', reviewRoutes);
 
 // Health check
 app.get('/api/health', (c) => {

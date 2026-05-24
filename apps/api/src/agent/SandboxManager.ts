@@ -1,4 +1,6 @@
 import { mkdirSync, existsSync, rmSync } from 'fs';
+import http from 'http';
+import net from 'net';
 import { resolve } from 'path';
 import Docker from 'dockerode';
 import type { Duplex } from 'stream';
@@ -12,6 +14,15 @@ export interface SandboxInfo {
   workDir: string;       // container path (/workspace)
   hostWorkDir: string;   // host path
 }
+
+export interface PortForwardInfo {
+  containerId: string;
+  containerPort: number;
+  hostPort: number;
+  url: string;
+}
+
+const portForwards = new Map<string, { server: http.Server; info: PortForwardInfo }>();
 
 export class SandboxManager {
   static async create(sessionId: string): Promise<SandboxInfo> {
@@ -177,9 +188,91 @@ export class SandboxManager {
     return output.trim();
   }
 
+  static async detectPorts(containerId: string): Promise<number[]> {
+    const output = await this.execCapture(containerId, 'cat /proc/net/tcp /proc/net/tcp6 2>/dev/null || true');
+    return parseListeningPorts(output);
+  }
+
+  static async portForward(containerId: string, containerPort: number): Promise<PortForwardInfo> {
+    const key = `${containerId}:${containerPort}`;
+    const existing = portForwards.get(key);
+    if (existing) return existing.info;
+
+    const container = docker.getContainer(containerId);
+    const inspect = await container.inspect();
+    const containerHost = resolveContainerHost(inspect);
+    if (!containerHost) throw new Error('Unable to resolve sandbox container IP address');
+
+    const server = http.createServer((req, res) => {
+      const proxyReq = http.request({
+        hostname: containerHost,
+        port: containerPort,
+        path: req.url || '/',
+        method: req.method,
+        headers: req.headers,
+      }, (proxyRes) => {
+        res.writeHead(proxyRes.statusCode ?? 502, proxyRes.headers);
+        proxyRes.pipe(res);
+      });
+      proxyReq.on('error', (err) => {
+        res.writeHead(502, { 'content-type': 'text/plain' });
+        res.end(`Preview proxy error: ${err.message}`);
+      });
+      req.pipe(proxyReq);
+    });
+
+    server.on('upgrade', (req, socket, head) => {
+      const upstream = net.connect(containerPort, containerHost, () => {
+        upstream.write(`${req.method} ${req.url || '/'} HTTP/${req.httpVersion}\r\n`);
+        for (const [name, value] of Object.entries(req.headers)) {
+          if (Array.isArray(value)) upstream.write(`${name}: ${value.join(', ')}\r\n`);
+          else if (value) upstream.write(`${name}: ${value}\r\n`);
+        }
+        upstream.write('\r\n');
+        if (head.length > 0) upstream.write(head);
+        socket.pipe(upstream);
+        upstream.pipe(socket);
+      });
+      upstream.on('error', () => socket.destroy());
+    });
+
+    await new Promise<void>((resolveListen, rejectListen) => {
+      server.once('error', rejectListen);
+      server.listen(0, '0.0.0.0', () => {
+        server.off('error', rejectListen);
+        resolveListen();
+      });
+    });
+
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      server.close();
+      throw new Error('Preview proxy did not bind to a TCP port');
+    }
+    const info: PortForwardInfo = {
+      containerId,
+      containerPort,
+      hostPort: address.port,
+      url: `http://localhost:${address.port}`,
+    };
+    portForwards.set(key, { server, info });
+    return info;
+  }
+
+  static async getContainerHost(containerId: string): Promise<string | null> {
+    const inspect = await docker.getContainer(containerId).inspect();
+    return resolveContainerHost(inspect);
+  }
+
   /** Destroy Docker container */
   static async destroy(containerId: string): Promise<void> {
     try {
+      for (const [key, forward] of [...portForwards]) {
+        if (forward.info.containerId === containerId) {
+          forward.server.close();
+          portForwards.delete(key);
+        }
+      }
       const container = docker.getContainer(containerId);
       try { await container.stop({ t: 5 }); } catch { /* ignore */ }
       await container.remove({ force: true });
@@ -211,4 +304,26 @@ export class SandboxManager {
       }
     } catch { /* best-effort */ }
   }
+}
+
+export function parseListeningPorts(procNetTcp: string): number[] {
+  const ports = new Set<number>();
+  for (const line of procNetTcp.split('\n')) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 4 || parts[3] !== '0A') continue;
+    const local = parts[1];
+    const hexPort = local?.split(':')[1];
+    if (!hexPort) continue;
+    const port = Number.parseInt(hexPort, 16);
+    if (Number.isFinite(port) && port > 0) ports.add(port);
+  }
+  return [...ports].sort((a, b) => a - b);
+}
+
+function resolveContainerHost(inspect: any): string | null {
+  const networks = inspect?.NetworkSettings?.Networks ?? {};
+  for (const network of Object.values<any>(networks)) {
+    if (network?.IPAddress) return network.IPAddress;
+  }
+  return inspect?.NetworkSettings?.IPAddress || null;
 }

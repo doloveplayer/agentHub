@@ -18,6 +18,18 @@ export const defaultAgents = [
     systemPrompt: 'You are DevOpsAgent, an infrastructure and deployment specialist. Handle Docker, CI/CD pipelines, environment configuration, and deployment scripts. Ensure production-readiness: health checks, graceful shutdown, logging, monitoring hooks.',
   },
   {
+    name: 'test-agent',
+    displayName: 'TestAgent',
+    description: 'Generates tests, runs test suites, and diagnoses failures',
+    systemPrompt: 'You are TestAgent, a test automation specialist. Analyze target files, generate focused unit/integration tests, run the project test command, and report pass/fail counts, duration, and failure stacks. Prefer minimal tests that cover observable behavior.',
+  },
+  {
+    name: 'deps-agent',
+    displayName: 'DepsAgent',
+    description: 'Audits dependencies, maps vulnerabilities to CVEs, and proposes safe upgrades',
+    systemPrompt: 'You are DepsAgent, a dependency security specialist. Run npm audit or the project equivalent, group findings by severity, identify CVEs and affected ranges, and propose the smallest safe upgrades. Avoid breaking upgrades unless explicitly requested.',
+  },
+  {
     name: 'planner',
     displayName: 'Planner',
     description: 'Task planning expert — breaks complex requirements into parallelizable subtask DAGs',
@@ -77,7 +89,7 @@ export const defaultAgents = [
 - 任务数控制在 3-8 个
 - dependsOn 引用已有任务的 id
 - 无依赖任务自动并行，有依赖的串行执行
-- agentType 必须是 CodeAgent / ReviewAgent / DevOpsAgent 之一
+- agentType 必须是 CodeAgent / ReviewAgent / DevOpsAgent / TestAgent / DepsAgent 之一
 - priority 标注 high/medium/low
 
 ## 重要提醒

@@ -8,6 +8,14 @@ import { AgentStatusPanel } from './AgentStatusPanel';
 import { agentColor } from './AgentMentionPopup';
 import { Wrench, FileText, GitBranch, CheckCircle, Shield, ChevronDown, ChevronUp } from 'lucide-react';
 import { ConfirmationPanel } from './ConfirmationPanel';
+import { DiffCard } from './DiffCard';
+import { PreviewFrame } from './PreviewFrame';
+import { PPTViewer } from './PPTViewer';
+import { DeployCard } from './DeployCard';
+import { TestReportCard } from './TestReportCard';
+import { SecurityCard } from './SecurityCard';
+import { ReviewCard } from './ReviewCard';
+import { DeploymentLauncher } from './DeploymentLauncher';
 import type { Message, AgentConfig } from '@agenthub/shared';
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -73,6 +81,11 @@ export function ChatView() {
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
   const bottomRef = useRef<HTMLDivElement>(null);
   const taskPlans = useAppStore((s) => s.taskPlans);
+  const diffCards = useAppStore((s) => activeSessionId ? (s.diffCards[activeSessionId] ?? []) : []);
+  const deploymentCards = useAppStore((s) => activeSessionId ? (s.deploymentCards[activeSessionId] ?? []) : []);
+  const testReports = useAppStore((s) => activeSessionId ? (s.testReports[activeSessionId] ?? []) : []);
+  const securityReports = useAppStore((s) => activeSessionId ? (s.securityReports[activeSessionId] ?? []) : []);
+  const reviewReports = useAppStore((s) => activeSessionId ? (s.reviewReports[activeSessionId] ?? []) : []);
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
   const { send, stopAgent, respondToPermission, confirmPlan } = useChat(activeSessionId ?? '');
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
@@ -253,6 +266,9 @@ export function ChatView() {
                 agentName={msg.agentId ? agentMap.get(msg.agentId)?.name : undefined}
               />
               {msg.senderType === 'agent' && renderAgentEvents(msg.id)}
+              {diffCards.filter((card) => card.agentMessageId === msg.id).map((card) => (
+                <DiffCard key={card.id} sessionId={activeSessionId} title={card.title} files={card.files} />
+              ))}
               {/* Planner task plan: render after the Planner agent's message */}
               {msg.senderType === 'agent' && msg.agentId && agentMap.get(msg.agentId)?.name === 'planner' && msg.status === 'done' && (
                 <PlanRenderer planFromMessage={msg} taskPlans={taskPlans} confirmedPlans={confirmedPlans}
@@ -260,7 +276,20 @@ export function ChatView() {
               )}
             </React.Fragment>
           ))}
+          {deploymentCards.map((card) => (
+            <DeployCard key={card.deploymentId} sessionId={activeSessionId} deployment={card} />
+          ))}
+          {testReports.map((item) => <TestReportCard key={item.id} report={item.report} />)}
+          {securityReports.map((item) => <SecurityCard key={item.id} sessionId={activeSessionId} report={item.report} />)}
+          {reviewReports.map((item) => <ReviewCard key={item.id} report={item.report} />)}
           <div ref={bottomRef} />
+        </div>
+        <PreviewFrame sessionId={activeSessionId} />
+        <div className="border-t border-white/10 px-4 py-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <PPTViewer />
+            <DeploymentLauncher sessionId={activeSessionId} />
+          </div>
         </div>
         <MessageInput onSend={send} disabled={hasRunningAgent} />
       </div>

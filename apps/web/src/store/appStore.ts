@@ -21,6 +21,53 @@ export interface AgentEvent {
   };
 }
 
+export interface DiffCardState {
+  id: string;
+  sessionId: string;
+  agentMessageId?: string;
+  title: string;
+  files: {
+    path: string;
+    diff: string;
+    hunks: { id: string; header: string; lines: string[]; oldStart?: number; oldLines?: number; newStart?: number; newLines?: number }[];
+    baseVersionId?: string;
+    conflict?: { filePath: string; agents: string[]; ranges: { start: number; end: number }[] };
+  }[];
+  createdAt: number;
+}
+
+export interface DeploymentCardState {
+  deploymentId: string;
+  target: string;
+  status: string;
+  logs: string[];
+  url?: string;
+  imageSha?: string;
+  buildTimeMs?: number;
+  error?: string;
+  updatedAt: number;
+}
+
+export interface TestReportState {
+  id: string;
+  report: any;
+  exitCode: number;
+  timestamp: number;
+}
+
+export interface SecurityReportState {
+  id: string;
+  report: any;
+  exitCode: number;
+  timestamp: number;
+}
+
+export interface ReviewReportState {
+  id: string;
+  report: any;
+  timestamp: number;
+}
+
 interface AppState {
   token: string | null;
   user: { id: string; login: string; avatarUrl: string } | null;
@@ -35,6 +82,11 @@ interface AppState {
   setOrchestrationMode: (mode: 'parallel' | 'sequential') => void;
   taskPlans: Record<string, TaskState[]>;
   planSummaries: Record<string, { total: number; completed: number; failed: number; fileChanges: string[]; timestamp: number }>;
+  diffCards: Record<string, DiffCardState[]>;
+  deploymentCards: Record<string, DeploymentCardState[]>;
+  testReports: Record<string, TestReportState[]>;
+  securityReports: Record<string, SecurityReportState[]>;
+  reviewReports: Record<string, ReviewReportState[]>;
   setPlanSummary: (planId: string, summary: { total: number; completed: number; failed: number; fileChanges: string[]; timestamp: number }) => void;
 
   setToken: (token: string | null) => void;
@@ -52,6 +104,11 @@ interface AppState {
   isSessionStreaming: (sessionId: string) => boolean;
   setTaskPlan: (planId: string, tasks: TaskState[]) => void;
   updateTaskStatus: (planId: string, taskId: string, status: TaskState['status']) => void;
+  addDiffCard: (sessionId: string, card: DiffCardState) => void;
+  upsertDeploymentCard: (sessionId: string, card: Omit<DeploymentCardState, 'logs' | 'updatedAt'> & { log?: string; timestamp?: number }) => void;
+  addTestReport: (sessionId: string, report: TestReportState) => void;
+  addSecurityReport: (sessionId: string, report: SecurityReportState) => void;
+  addReviewReport: (sessionId: string, report: ReviewReportState) => void;
   setTaskAgent: (planId: string, taskId: string, agentId: string, agentName: string) => void;
   agentCurrentTask: Record<string, { planId: string; taskId: string; title: string } | null>;
   agentTaskCounts: Record<string, number>;
@@ -88,6 +145,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   orchestrationMode: 'parallel' as const,
   taskPlans: {},
   planSummaries: {},
+  diffCards: {},
+  deploymentCards: {},
+  testReports: {},
+  securityReports: {},
+  reviewReports: {},
   agentCurrentTask: {},
   agentTaskCounts: {},
   unreadCounts: {},
@@ -176,6 +238,55 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       planSummaries: { ...state.planSummaries, [planId]: summary },
     })),
+
+  addDiffCard: (sessionId, card) =>
+    set((state) => ({
+      diffCards: {
+        ...state.diffCards,
+        [sessionId]: [...(state.diffCards[sessionId] ?? []), card],
+      },
+    })),
+
+  upsertDeploymentCard: (sessionId, card) =>
+    set((state) => {
+      const existing = state.deploymentCards[sessionId] ?? [];
+      const index = existing.findIndex((item) => item.deploymentId === card.deploymentId);
+      const nextCard: DeploymentCardState = index >= 0
+        ? {
+            ...existing[index],
+            ...card,
+            logs: card.log ? [...existing[index].logs, card.log] : existing[index].logs,
+            updatedAt: card.timestamp || Date.now(),
+          }
+        : {
+            deploymentId: card.deploymentId,
+            target: card.target,
+            status: card.status,
+            logs: card.log ? [card.log] : [],
+            url: card.url,
+            imageSha: card.imageSha,
+            buildTimeMs: card.buildTimeMs,
+            error: card.error,
+            updatedAt: card.timestamp || Date.now(),
+          };
+      return {
+        deploymentCards: {
+          ...state.deploymentCards,
+          [sessionId]: index >= 0
+            ? existing.map((item, itemIndex) => itemIndex === index ? nextCard : item)
+            : [...existing, nextCard],
+        },
+      };
+    }),
+
+  addTestReport: (sessionId, report) =>
+    set((state) => ({ testReports: { ...state.testReports, [sessionId]: [...(state.testReports[sessionId] ?? []), report] } })),
+
+  addSecurityReport: (sessionId, report) =>
+    set((state) => ({ securityReports: { ...state.securityReports, [sessionId]: [...(state.securityReports[sessionId] ?? []), report] } })),
+
+  addReviewReport: (sessionId, report) =>
+    set((state) => ({ reviewReports: { ...state.reviewReports, [sessionId]: [...(state.reviewReports[sessionId] ?? []), report] } })),
 
   updateTaskStatus: (planId, taskId, status) =>
     set((state) => {

@@ -1,6 +1,6 @@
-import { execSync } from 'child_process';
-import { existsSync } from 'fs';
-import { resolve } from 'path';
+import { execFileSync, execSync } from 'child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { dirname, relative, resolve } from 'path';
 
 export interface Snapshot {
   /** git stash ref or branch name */
@@ -11,6 +11,47 @@ export interface Snapshot {
   workspacePath: string;
   /** timestamp */
   createdAt: number;
+}
+
+export interface WorkspaceVersion {
+  id: string;
+  ref: string;
+  workspacePath: string;
+  sessionId: string;
+  agentName: string;
+  summary: string;
+  files: string[];
+  createdAt: number;
+}
+
+export interface DiffHunk {
+  id: string;
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  header: string;
+  lines: string[];
+}
+
+export interface FileDiff {
+  path: string;
+  baseRef?: string;
+  headRef?: string;
+  diff: string;
+  hunks: DiffHunk[];
+}
+
+export interface AgentFileDiff {
+  agentName: string;
+  filePath: string;
+  diff: string;
+}
+
+export interface FileConflict {
+  filePath: string;
+  agents: string[];
+  ranges: { start: number; end: number }[];
 }
 
 export class WorkspaceManager {
@@ -101,4 +142,371 @@ export class WorkspaceManager {
       return [];
     }
   }
+
+  static recordVersion(
+    workspacePath: string,
+    input: { sessionId: string; agentName: string; summary: string },
+  ): WorkspaceVersion {
+    const absPath = resolve(workspacePath);
+    ensureGitRepo(absPath);
+
+    const { ref, files } = createTreeRef(absPath);
+    const version: WorkspaceVersion = {
+      id: `ver-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ref,
+      workspacePath: absPath,
+      sessionId: input.sessionId,
+      agentName: input.agentName,
+      summary: input.summary,
+      files,
+      createdAt: Date.now(),
+    };
+
+    const versions = readVersions(absPath);
+    versions.push(version);
+    writeVersions(absPath, versions);
+    return version;
+  }
+
+  static listVersions(workspacePath: string): WorkspaceVersion[] {
+    return readVersions(resolve(workspacePath));
+  }
+
+  static getFileDiff(workspacePath: string, filePath: string, baseVersionId?: string): FileDiff {
+    const absPath = resolve(workspacePath);
+    assertGitRepo(absPath);
+    const normalizedPath = normalizeWorkspacePath(absPath, filePath);
+    const baseRef = baseVersionId
+      ? findVersion(absPath, baseVersionId).ref
+      : 'HEAD';
+    const diff = runGit(absPath, ['diff', '--no-ext-diff', '--unified=3', baseRef, '--', normalizedPath], false);
+    return {
+      path: normalizedPath,
+      baseRef,
+      diff,
+      hunks: parseDiffHunks(diff),
+    };
+  }
+
+  static getWorkspaceDiff(workspacePath: string, baseVersionId?: string): FileDiff[] {
+    const absPath = resolve(workspacePath);
+    assertGitRepo(absPath);
+    const baseRef = baseVersionId
+      ? findVersion(absPath, baseVersionId).ref
+      : 'HEAD';
+    const tracked = runGit(absPath, ['diff', '--name-only', baseRef], false).split('\n').filter(isUserWorkspacePath);
+    const untracked = runGit(absPath, ['ls-files', '--others', '--exclude-standard'], false).split('\n').filter(isUserWorkspacePath);
+    const files = [...new Set([...tracked, ...untracked])];
+    return files.map((filePath) => {
+      if (untracked.includes(filePath) && !tracked.includes(filePath)) {
+        return buildUntrackedFileDiff(absPath, filePath);
+      }
+      return this.getFileDiff(absPath, filePath, baseVersionId);
+    });
+  }
+
+  static diffVersions(workspacePath: string, fromVersionId: string, toVersionId: string, filePath?: string): FileDiff {
+    const absPath = resolve(workspacePath);
+    assertGitRepo(absPath);
+    const from = findVersion(absPath, fromVersionId);
+    const to = findVersion(absPath, toVersionId);
+    const args = ['diff', '--no-ext-diff', '--unified=3', from.ref, to.ref];
+    const normalizedPath = filePath ? normalizeWorkspacePath(absPath, filePath) : '';
+    if (normalizedPath) args.push('--', normalizedPath);
+    const diff = runGit(absPath, args, false);
+    return {
+      path: normalizedPath,
+      baseRef: from.ref,
+      headRef: to.ref,
+      diff,
+      hunks: parseDiffHunks(diff),
+    };
+  }
+
+  static restoreVersion(workspacePath: string, versionId: string): boolean {
+    const absPath = resolve(workspacePath);
+    assertGitRepo(absPath);
+    const version = findVersion(absPath, versionId);
+    try {
+      runGit(absPath, ['checkout', version.ref, '--', '.']);
+      return true;
+    } catch (err: any) {
+      console.error(`[workspace] restoreVersion failed: ${err.message?.slice(0, 120)}`);
+      return false;
+    }
+  }
+
+  static acceptFileChanges(workspacePath: string, filePath: string): boolean {
+    const absPath = resolve(workspacePath);
+    assertGitRepo(absPath);
+    const normalizedPath = normalizeWorkspacePath(absPath, filePath);
+    try {
+      runGit(absPath, ['add', '--', normalizedPath]);
+      return true;
+    } catch (err: any) {
+      console.error(`[workspace] acceptFileChanges failed: ${err.message?.slice(0, 120)}`);
+      return false;
+    }
+  }
+
+  static rejectFileChanges(workspacePath: string, filePath: string, baseVersionId?: string): boolean {
+    const absPath = resolve(workspacePath);
+    assertGitRepo(absPath);
+    const normalizedPath = normalizeWorkspacePath(absPath, filePath);
+    const baseRef = baseVersionId ? findVersion(absPath, baseVersionId).ref : 'HEAD';
+    try {
+      if (pathExistsInRef(absPath, baseRef, normalizedPath)) {
+        runGit(absPath, ['checkout', baseRef, '--', normalizedPath]);
+      } else if (existsSync(resolve(absPath, normalizedPath))) {
+        rmSync(resolve(absPath, normalizedPath), { recursive: true, force: true });
+      }
+      return true;
+    } catch (err: any) {
+      console.error(`[workspace] rejectFileChanges failed: ${err.message?.slice(0, 120)}`);
+      return false;
+    }
+  }
+
+  static acceptHunkChanges(workspacePath: string, filePath: string, baseVersionId: string | undefined, hunkId: string): boolean {
+    const absPath = resolve(workspacePath);
+    assertGitRepo(absPath);
+    try {
+      const diff = this.getFileDiff(absPath, filePath, baseVersionId);
+      const hunk = diff.hunks.find((item) => item.id === hunkId);
+      if (!hunk) return false;
+      const patch = buildSingleHunkPatch(diff.path, hunk);
+      runGitWithInput(absPath, ['apply', '--cached', '--whitespace=nowarn'], patch);
+      return true;
+    } catch (err: any) {
+      console.error(`[workspace] acceptHunkChanges failed: ${err.message?.slice(0, 120)}`);
+      return false;
+    }
+  }
+
+  static rejectHunkChanges(workspacePath: string, filePath: string, baseVersionId: string | undefined, hunkId: string): boolean {
+    const absPath = resolve(workspacePath);
+    assertGitRepo(absPath);
+    try {
+      const diff = this.getFileDiff(absPath, filePath, baseVersionId);
+      const hunk = diff.hunks.find((item) => item.id === hunkId);
+      if (!hunk) return false;
+      const patch = buildSingleHunkPatch(diff.path, hunk);
+      runGitWithInput(absPath, ['apply', '--reverse', '--whitespace=nowarn'], patch);
+      return true;
+    } catch (err: any) {
+      console.error(`[workspace] rejectHunkChanges failed: ${err.message?.slice(0, 120)}`);
+      return false;
+    }
+  }
+
+  static detectConflicts(diffs: AgentFileDiff[]): FileConflict[] {
+    const byFile = new Map<string, { agentName: string; ranges: { start: number; end: number }[] }[]>();
+    for (const item of diffs) {
+      const ranges = parseDiffHunks(item.diff).map((hunk) => ({
+        start: hunk.oldStart,
+        end: hunk.oldStart + Math.max(hunk.oldLines, 1) - 1,
+      }));
+      const existing = byFile.get(item.filePath) ?? [];
+      existing.push({ agentName: item.agentName, ranges });
+      byFile.set(item.filePath, existing);
+    }
+
+    const conflicts: FileConflict[] = [];
+    for (const [filePath, entries] of byFile) {
+      const agents = new Set<string>();
+      const ranges: { start: number; end: number }[] = [];
+      for (let i = 0; i < entries.length; i++) {
+        for (let j = i + 1; j < entries.length; j++) {
+          for (const left of entries[i].ranges) {
+            for (const right of entries[j].ranges) {
+              if (rangesOverlap(left, right)) {
+                agents.add(entries[i].agentName);
+                agents.add(entries[j].agentName);
+                ranges.push({
+                  start: Math.max(left.start, right.start),
+                  end: Math.min(left.end, right.end),
+                });
+              }
+            }
+          }
+        }
+      }
+      if (agents.size > 1) conflicts.push({ filePath, agents: [...agents], ranges });
+    }
+    return conflicts;
+  }
+}
+
+function assertGitRepo(absPath: string): void {
+  if (!existsSync(resolve(absPath, '.git'))) {
+    throw new Error(`No git repository at ${absPath}`);
+  }
+}
+
+function ensureGitRepo(absPath: string): void {
+  mkdirSync(absPath, { recursive: true });
+  if (existsSync(resolve(absPath, '.git'))) return;
+  execFileSync('git', ['init'], { cwd: absPath, stdio: 'ignore', timeout: 15000 });
+  execFileSync('git', ['config', 'user.email', 'agenthub@example.local'], { cwd: absPath, stdio: 'ignore', timeout: 15000 });
+  execFileSync('git', ['config', 'user.name', 'AgentHub'], { cwd: absPath, stdio: 'ignore', timeout: 15000 });
+  execFileSync('git', ['commit', '--allow-empty', '-m', 'AgentHub baseline'], { cwd: absPath, stdio: 'ignore', timeout: 15000 });
+}
+
+function createTreeRef(absPath: string): { ref: string; files: string[] } {
+  const files = listWorkspaceChanges(absPath);
+  if (files.length === 0) {
+    return { ref: runGit(absPath, ['rev-parse', 'HEAD']).trim(), files: [] };
+  }
+
+  const agentHubDir = resolve(absPath, '.agenthub');
+  mkdirSync(agentHubDir, { recursive: true });
+  const indexFile = resolve(agentHubDir, `index-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const env = { ...process.env, GIT_INDEX_FILE: indexFile };
+  try {
+    const head = runGit(absPath, ['rev-parse', 'HEAD']).trim();
+    runGit(absPath, ['read-tree', head], true, env);
+    for (const file of files) {
+      if (existsSync(resolve(absPath, file))) runGit(absPath, ['add', '--', file], true, env);
+      else runGit(absPath, ['rm', '--cached', '--ignore-unmatch', '--', file], true, env);
+    }
+    const tree = runGit(absPath, ['write-tree'], true, env).trim();
+    const ref = runGitWithInput(absPath, ['commit-tree', tree, '-p', head], 'AgentHub version snapshot\n', env).trim();
+    return { ref, files };
+  } finally {
+    rmSync(indexFile, { force: true });
+  }
+}
+
+function listChangedFiles(absPath: string, ref: string): string[] {
+  const parent = runGit(absPath, ['rev-list', '--parents', '-n', '1', ref], false).trim().split(/\s+/)[1];
+  if (!parent) return [];
+  return runGit(absPath, ['diff', '--name-only', parent, ref], false).split('\n').filter(isUserWorkspacePath);
+}
+
+function listWorkspaceChanges(absPath: string): string[] {
+  const unstaged = runGit(absPath, ['diff', '--name-only'], false).split('\n');
+  const staged = runGit(absPath, ['diff', '--cached', '--name-only'], false).split('\n');
+  const untracked = runGit(absPath, ['ls-files', '--others', '--exclude-standard'], false).split('\n');
+  return [...new Set([...unstaged, ...staged, ...untracked].filter(isUserWorkspacePath))];
+}
+
+function isUserWorkspacePath(filePath: string): boolean {
+  return Boolean(filePath) && !filePath.startsWith('.agenthub/');
+}
+
+function runGit(absPath: string, args: string[], throwOnError = true, env?: NodeJS.ProcessEnv): string {
+  try {
+    return execFileSync('git', args, { cwd: absPath, encoding: 'utf8', timeout: 15000, env });
+  } catch (err) {
+    if (throwOnError) throw err;
+    return '';
+  }
+}
+
+function runGitWithInput(absPath: string, args: string[], input: string, env?: NodeJS.ProcessEnv): string {
+  return execFileSync('git', args, { cwd: absPath, encoding: 'utf8', timeout: 15000, input, env });
+}
+
+function metadataPath(absPath: string): string {
+  return resolve(absPath, '.agenthub', 'versions.json');
+}
+
+function readVersions(absPath: string): WorkspaceVersion[] {
+  const file = metadataPath(absPath);
+  if (!existsSync(file)) return [];
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as WorkspaceVersion[];
+  } catch {
+    return [];
+  }
+}
+
+function writeVersions(absPath: string, versions: WorkspaceVersion[]): void {
+  const file = metadataPath(absPath);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(versions, null, 2), 'utf8');
+}
+
+function findVersion(absPath: string, versionId: string): WorkspaceVersion {
+  const version = readVersions(absPath).find((item) => item.id === versionId);
+  if (!version) throw new Error(`Version not found: ${versionId}`);
+  return version;
+}
+
+function normalizeWorkspacePath(workspacePath: string, filePath: string): string {
+  const withoutWorkspace = filePath.replace(/^\/workspace\/?/, '');
+  const absFile = resolve(workspacePath, withoutWorkspace);
+  const relPath = relative(workspacePath, absFile);
+  if (!relPath || relPath.startsWith('..') || relPath.startsWith('/')) {
+    throw new Error('Path traversal denied');
+  }
+  return relPath;
+}
+
+function parseDiffHunks(diff: string): DiffHunk[] {
+  const hunks: DiffHunk[] = [];
+  const lines = diff.split('\n');
+  let current: DiffHunk | null = null;
+  for (const line of lines) {
+    const match = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/);
+    if (match) {
+      const oldStart = Number(match[1]);
+      const oldLines = Number(match[2] ?? '1');
+      const newStart = Number(match[3]);
+      const newLines = Number(match[4] ?? '1');
+      current = {
+        id: `hunk-${oldStart}-${oldLines}-${newStart}-${newLines}`,
+        oldStart,
+        oldLines,
+        newStart,
+        newLines,
+        header: line,
+        lines: [],
+      };
+      hunks.push(current);
+      continue;
+    }
+    current?.lines.push(line);
+  }
+  return hunks;
+}
+
+function rangesOverlap(left: { start: number; end: number }, right: { start: number; end: number }): boolean {
+  return left.start <= right.end && right.start <= left.end;
+}
+
+function buildSingleHunkPatch(filePath: string, hunk: DiffHunk): string {
+  return [
+    `diff --git a/${filePath} b/${filePath}`,
+    `--- a/${filePath}`,
+    `+++ b/${filePath}`,
+    hunk.header,
+    ...hunk.lines,
+    '',
+  ].join('\n');
+}
+
+function pathExistsInRef(absPath: string, ref: string, filePath: string): boolean {
+  try {
+    runGit(absPath, ['cat-file', '-e', `${ref}:${filePath}`]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildUntrackedFileDiff(absPath: string, filePath: string): FileDiff {
+  const content = readFileSync(resolve(absPath, filePath), 'utf8');
+  const lines = content.split('\n');
+  const diffLines = [
+    `diff --git a/${filePath} b/${filePath}`,
+    'new file mode 100644',
+    'index 0000000..0000000',
+    '--- /dev/null',
+    `+++ b/${filePath}`,
+    `@@ -0,0 +1,${Math.max(lines.length, 1)} @@`,
+    ...lines.map((line) => `+${line}`),
+  ];
+  const diff = diffLines.join('\n');
+  return { path: filePath, diff, hunks: parseDiffHunks(diff) };
 }

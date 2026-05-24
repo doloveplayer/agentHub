@@ -164,7 +164,7 @@ function normalizeTask(task: Partial<TaskNode>, index: number): TaskNode {
 }
 
 function isKnownAgentType(value: unknown): value is TaskNode['agentType'] {
-  return value === 'CodeAgent' || value === 'ReviewAgent' || value === 'DevOpsAgent';
+  return value === 'CodeAgent' || value === 'ReviewAgent' || value === 'DevOpsAgent' || value === 'TestAgent' || value === 'DepsAgent';
 }
 
 function isKnownPriority(value: unknown): value is TaskNode['priority'] {
