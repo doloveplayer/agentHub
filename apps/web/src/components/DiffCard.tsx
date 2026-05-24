@@ -18,20 +18,21 @@ interface Props {
 }
 
 export function DiffCard({ sessionId, files, title = 'File changes' }: Props) {
-  const [expandedPath, setExpandedPath] = useState(files[0]?.path ?? '');
+  const [expandedPath, setExpandedPath] = useState<string | null>(null);
   const [busyPath, setBusyPath] = useState<string | null>(null);
-  const [busyHunk, setBusyHunk] = useState<string | null>(null);
-  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
-  const [dismissedHunks, setDismissedHunks] = useState<Set<string>>(() => new Set());
+  const [dismissedFiles, setDismissedFiles] = useState<Set<string>>(() => new Set());
+  const [dismissed, setDismissed] = useState(false);
 
-  const visibleFiles = files.filter((file) => !dismissed.has(file.path));
+  if (dismissed) return null;
+
+  const visibleFiles = files.filter((file) => !dismissedFiles.has(file.path));
   if (visibleFiles.length === 0) return null;
 
   const acceptFile = async (file: DiffFile) => {
     setBusyPath(file.path);
     try {
       await api.acceptDiffFile(sessionId, file.path);
-      setDismissed((prev) => new Set(prev).add(file.path));
+      setDismissedFiles((prev) => new Set(prev).add(file.path));
     } finally {
       setBusyPath(null);
     }
@@ -41,29 +42,9 @@ export function DiffCard({ sessionId, files, title = 'File changes' }: Props) {
     setBusyPath(file.path);
     try {
       await api.rejectDiffFile(sessionId, file.path, file.baseVersionId);
-      setDismissed((prev) => new Set(prev).add(file.path));
+      setDismissedFiles((prev) => new Set(prev).add(file.path));
     } finally {
       setBusyPath(null);
-    }
-  };
-
-  const acceptHunk = async (file: DiffFile, hunkId: string) => {
-    setBusyHunk(`${file.path}:${hunkId}`);
-    try {
-      await api.acceptDiffHunk(sessionId, file.path, hunkId, file.baseVersionId);
-      setDismissedHunks((prev) => new Set(prev).add(`${file.path}:${hunkId}`));
-    } finally {
-      setBusyHunk(null);
-    }
-  };
-
-  const rejectHunk = async (file: DiffFile, hunkId: string) => {
-    setBusyHunk(`${file.path}:${hunkId}`);
-    try {
-      await api.rejectDiffHunk(sessionId, file.path, hunkId, file.baseVersionId);
-      setDismissedHunks((prev) => new Set(prev).add(`${file.path}:${hunkId}`));
-    } finally {
-      setBusyHunk(null);
     }
   };
 
@@ -73,8 +54,15 @@ export function DiffCard({ sessionId, files, title = 'File changes' }: Props) {
         <GitPullRequest className="h-4 w-4 text-sky-300" />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-slate-100">{title}</div>
-          <div className="text-xs text-slate-500">{visibleFiles.length} changed files</div>
+          <div className="text-xs text-slate-500">{visibleFiles.length} changed file{visibleFiles.length === 1 ? '' : 's'}</div>
         </div>
+        <button
+          onClick={() => setDismissed(true)}
+          className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-500 hover:bg-white/10 hover:text-slate-300"
+          title="Dismiss"
+        >
+          <X className="h-4 w-4" />
+        </button>
       </div>
       <div className="divide-y divide-white/10">
         {visibleFiles.map((file) => {
@@ -83,7 +71,7 @@ export function DiffCard({ sessionId, files, title = 'File changes' }: Props) {
             <div key={file.path}>
               <div className={`flex items-center gap-2 px-4 py-2 ${file.conflict ? 'bg-amber-500/10' : ''}`}>
                 <button
-                  onClick={() => setExpandedPath(expanded ? '' : file.path)}
+                  onClick={() => setExpandedPath(expanded ? null : file.path)}
                   className="inline-flex h-6 w-6 items-center justify-center rounded hover:bg-white/10"
                   title={expanded ? 'Collapse diff' : 'Expand diff'}
                 >
@@ -95,7 +83,6 @@ export function DiffCard({ sessionId, files, title = 'File changes' }: Props) {
                     conflict: {file.conflict.agents.join(', ')}
                   </span>
                 )}
-                <span className="text-[11px] text-slate-500">{file.hunks.length} hunks</span>
                 <button
                   onClick={() => acceptFile(file)}
                   disabled={busyPath === file.path}
@@ -116,11 +103,8 @@ export function DiffCard({ sessionId, files, title = 'File changes' }: Props) {
                   <DiffViewer
                     path={file.path}
                     diff={file.diff}
-                    hunks={file.hunks.filter((hunk) => !dismissedHunks.has(`${file.path}:${hunk.id}`))}
+                    hunks={file.hunks}
                     conflictRanges={file.conflict?.ranges}
-                    busyHunkId={busyHunk?.startsWith(`${file.path}:`) ? busyHunk.slice(file.path.length + 1) : null}
-                    onAcceptHunk={(hunkId) => acceptHunk(file, hunkId)}
-                    onRejectHunk={(hunkId) => rejectHunk(file, hunkId)}
                   />
                 </div>
               )}

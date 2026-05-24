@@ -78,12 +78,6 @@ export const api = {
   rejectDiffFile: (sessionId: string, path: string, baseVersionId?: string) =>
     request<{ ok: boolean }>(`/diff/${sessionId}/reject`, { method: 'POST', body: JSON.stringify({ path, baseVersionId }) }),
 
-  acceptDiffHunk: (sessionId: string, path: string, hunkId: string, baseVersionId?: string) =>
-    request<{ ok: boolean }>(`/diff/${sessionId}/accept-hunk`, { method: 'POST', body: JSON.stringify({ path, hunkId, baseVersionId }) }),
-
-  rejectDiffHunk: (sessionId: string, path: string, hunkId: string, baseVersionId?: string) =>
-    request<{ ok: boolean }>(`/diff/${sessionId}/reject-hunk`, { method: 'POST', body: JSON.stringify({ path, hunkId, baseVersionId }) }),
-
   getPreviewPorts: (sessionId: string) => request<{ ports: number[] }>(`/preview/${sessionId}/ports`),
 
   forwardPreviewPort: (sessionId: string, port: number) =>

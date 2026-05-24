@@ -267,38 +267,6 @@ export class WorkspaceManager {
     }
   }
 
-  static acceptHunkChanges(workspacePath: string, filePath: string, baseVersionId: string | undefined, hunkId: string): boolean {
-    const absPath = resolve(workspacePath);
-    assertGitRepo(absPath);
-    try {
-      const diff = this.getFileDiff(absPath, filePath, baseVersionId);
-      const hunk = diff.hunks.find((item) => item.id === hunkId);
-      if (!hunk) return false;
-      const patch = buildSingleHunkPatch(diff.path, hunk);
-      runGitWithInput(absPath, ['apply', '--cached', '--whitespace=nowarn'], patch);
-      return true;
-    } catch (err: any) {
-      console.error(`[workspace] acceptHunkChanges failed: ${err.message?.slice(0, 120)}`);
-      return false;
-    }
-  }
-
-  static rejectHunkChanges(workspacePath: string, filePath: string, baseVersionId: string | undefined, hunkId: string): boolean {
-    const absPath = resolve(workspacePath);
-    assertGitRepo(absPath);
-    try {
-      const diff = this.getFileDiff(absPath, filePath, baseVersionId);
-      const hunk = diff.hunks.find((item) => item.id === hunkId);
-      if (!hunk) return false;
-      const patch = buildSingleHunkPatch(diff.path, hunk);
-      runGitWithInput(absPath, ['apply', '--reverse', '--whitespace=nowarn'], patch);
-      return true;
-    } catch (err: any) {
-      console.error(`[workspace] rejectHunkChanges failed: ${err.message?.slice(0, 120)}`);
-      return false;
-    }
-  }
-
   static detectConflicts(diffs: AgentFileDiff[]): FileConflict[] {
     const byFile = new Map<string, { agentName: string; ranges: { start: number; end: number }[] }[]>();
     for (const item of diffs) {
@@ -349,6 +317,19 @@ function ensureGitRepo(absPath: string): void {
   execFileSync('git', ['init'], { cwd: absPath, stdio: 'ignore', timeout: 15000 });
   execFileSync('git', ['config', 'user.email', 'agenthub@example.local'], { cwd: absPath, stdio: 'ignore', timeout: 15000 });
   execFileSync('git', ['config', 'user.name', 'AgentHub'], { cwd: absPath, stdio: 'ignore', timeout: 15000 });
+  // Write .gitignore to prevent agent-internal files from being tracked
+  writeFileSync(resolve(absPath, '.gitignore'), [
+    '# AgentHub — agent internal files (never track)',
+    '_agent_*/',
+    '_prompt_*',
+    '_repl_prompt_*',
+    '_env*',
+    '_inbox_*',
+    '.agenthub/',
+    '.claude/',
+    '',
+  ].join('\n'), 'utf8');
+  execFileSync('git', ['add', '.gitignore'], { cwd: absPath, stdio: 'ignore', timeout: 15000 });
   execFileSync('git', ['commit', '--allow-empty', '-m', 'AgentHub baseline'], { cwd: absPath, stdio: 'ignore', timeout: 15000 });
 }
 
@@ -390,8 +371,23 @@ function listWorkspaceChanges(absPath: string): string[] {
   return [...new Set([...unstaged, ...staged, ...untracked].filter(isUserWorkspacePath))];
 }
 
+/** Directories whose contents are agent-internal and should never appear in diffs */
+const INTERNAL_DIRS = new Set(['.agenthub', '.git', 'node_modules', '.claude', '_agent_', '.sandboxes']);
+
+/** File prefixes that indicate agent-internal files (prompts, env, inter-agent comms) */
+const INTERNAL_PREFIXES = ['_prompt_', '_repl_prompt_', '_env', '_inbox_'];
+
 function isUserWorkspacePath(filePath: string): boolean {
-  return Boolean(filePath) && !filePath.startsWith('.agenthub/');
+  if (!filePath) return false;
+  // Exclude entire directories of agent-internal files
+  const topDir = filePath.split('/')[0];
+  if (INTERNAL_DIRS.has(topDir)) return false;
+  // Exclude per-agent working directories (_agent_code-agent/, _agent_planner/, etc.)
+  if (topDir.startsWith('_agent_')) return false;
+  // Exclude agent-internal file prefixes
+  const fileName = filePath.split('/').pop() ?? '';
+  if (INTERNAL_PREFIXES.some((prefix) => fileName.startsWith(prefix))) return false;
+  return true;
 }
 
 function runGit(absPath: string, args: string[], throwOnError = true, env?: NodeJS.ProcessEnv): string {
@@ -473,17 +469,6 @@ function parseDiffHunks(diff: string): DiffHunk[] {
 
 function rangesOverlap(left: { start: number; end: number }, right: { start: number; end: number }): boolean {
   return left.start <= right.end && right.start <= left.end;
-}
-
-function buildSingleHunkPatch(filePath: string, hunk: DiffHunk): string {
-  return [
-    `diff --git a/${filePath} b/${filePath}`,
-    `--- a/${filePath}`,
-    `+++ b/${filePath}`,
-    hunk.header,
-    ...hunk.lines,
-    '',
-  ].join('\n');
 }
 
 function pathExistsInRef(absPath: string, ref: string, filePath: string): boolean {

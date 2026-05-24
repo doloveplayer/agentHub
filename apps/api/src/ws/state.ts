@@ -77,7 +77,7 @@ export function setTaskQueueManager(tqm: any): void { taskQueueManager = tqm; }
 /** Plan confirmation: planId:taskId → modified description */
 export const taskModifications = new Map<string, string>();
 
-/** agentName → Claude Code session ID (for --resume across one-shot turns) */
+/** sessionId:agentName → Claude Code session ID (for --resume across one-shot turns within the same AgentHub session) */
 export const agentClaudeSessions = new Map<string, string>();
 
 // ---- Conflict detection ----
@@ -148,8 +148,10 @@ export function cleanupSessionResources(sessionId: string): void {
   sessionsWithMilestones.delete(sessionId);
   clearFileMods(sessionId);
 
-  // Clean up Claude session IDs for agents in this session
-  if (procMap) { for (const [agentName] of procMap) agentClaudeSessions.delete(agentName); }
+  // Clean up Claude session IDs for all agents in this session (both REPL and one-shot)
+  for (const key of agentClaudeSessions.keys()) {
+    if (key.startsWith(`${sessionId}:`)) agentClaudeSessions.delete(key);
+  }
 
   const stateMap = agentStates.get(sessionId);
   if (stateMap) {

@@ -49,7 +49,23 @@ export function PreviewFrame({ sessionId }: Props) {
   };
 
   useEffect(() => {
-    refreshPorts().catch(() => {});
+    let cancelled = false;
+    const tryPorts = async (attempt: number) => {
+      try {
+        const result = await api.getPreviewPorts(sessionId);
+        if (cancelled) return;
+        setPorts(result.ports);
+        if (result.ports[0]) setPort(result.ports[0]);
+      } catch {
+        if (cancelled) return;
+        // Sandbox may not be ready yet — retry with backoff (1s, 2s, then give up)
+        if (attempt < 2) {
+          setTimeout(() => tryPorts(attempt + 1), (attempt + 1) * 1000);
+        }
+      }
+    };
+    tryPorts(0);
+    return () => { cancelled = true; };
   }, [sessionId]);
 
   const frame = (

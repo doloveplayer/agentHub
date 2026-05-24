@@ -453,7 +453,7 @@ async function handleChatMessage(
     // Fallback: one-shot ClaudeCodeProcess with --resume for persistent memory
     const agent = new ClaudeCodeProcess();
     if (agentNameForProc) {
-      agent.onClaudeSession = (sid: string) => { agentClaudeSessions.set(agentNameForProc, sid); };
+      agent.onClaudeSession = (sid: string) => { agentClaudeSessions.set(`${sessionId}:${agentNameForProc}`, sid); };
     }
     agent.onEvent((event) => {
       switch (event.type) {
@@ -564,7 +564,7 @@ async function handleChatMessage(
 
     try {
       console.log(`[ws] Starting agent: session=${sessionId} agentMsg=${mention.messageId} prompt="${agentPrompt.slice(0, 80)}..."`);
-      agent.start(sessionId, agentPrompt, sandbox.containerId, sandbox.workDir, data.trustMode ?? true, sandbox.hostWorkDir, mention.messageId, agentNameForProc ? agentClaudeSessions.get(agentNameForProc) : undefined)
+      agent.start(sessionId, agentPrompt, sandbox.containerId, sandbox.workDir, data.trustMode ?? true, sandbox.hostWorkDir, mention.messageId, agentNameForProc ? agentClaudeSessions.get(`${sessionId}:${agentNameForProc}`) : undefined)
         .catch((err) => {
           console.error(`[ws] Agent start failed: session=${sessionId} agentMsg=${mention.messageId} error=${err.message}`);
           broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed to start agent: ${err.message}` });

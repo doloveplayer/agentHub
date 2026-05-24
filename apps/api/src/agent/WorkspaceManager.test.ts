@@ -81,7 +81,7 @@ test('WorkspaceManager marks overlapping changed lines as conflicts', () => {
   }
 });
 
-test('WorkspaceManager accepts and rejects diff hunks', () => {
+test('WorkspaceManager accepts and rejects file changes', () => {
   const dir = createRepo();
   try {
     mkdirSync(join(dir, 'src'));
@@ -103,40 +103,6 @@ test('WorkspaceManager accepts and rejects diff hunks', () => {
     assert.equal(WorkspaceManager.acceptFileChanges(dir, 'src/one.txt'), true);
     const status = execFileSync('git', ['status', '--short'], { cwd: dir, encoding: 'utf8' });
     assert.match(status, /M  src\/one.txt/);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test('WorkspaceManager accepts and rejects individual hunks without affecting other hunks', () => {
-  const dir = createRepo();
-  try {
-    writeFileSync(join(dir, 'app.txt'), 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\n');
-    execFileSync('git', ['add', '.'], { cwd: dir });
-    execFileSync('git', ['commit', '-m', 'multi hunk base'], { cwd: dir });
-
-    const base = WorkspaceManager.recordVersion(dir, {
-      sessionId: 'session-1',
-      agentName: 'CodeAgent',
-      summary: 'before multi hunk edit',
-    });
-
-    writeFileSync(join(dir, 'app.txt'), 'line 1 edited\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10 edited\n');
-    const diff = WorkspaceManager.getFileDiff(dir, 'app.txt', base.id);
-    assert.equal(diff.hunks.length, 2);
-    const firstHunkId = diff.hunks[0]!.id;
-    const secondHunkId = diff.hunks[1]!.id;
-
-    assert.equal(WorkspaceManager.rejectHunkChanges(dir, 'app.txt', base.id, firstHunkId), true);
-    assert.equal(
-      readFileSync(join(dir, 'app.txt'), 'utf8'),
-      'line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10 edited\n',
-    );
-
-    assert.equal(WorkspaceManager.acceptHunkChanges(dir, 'app.txt', base.id, secondHunkId), true);
-    const staged = execFileSync('git', ['diff', '--cached', '--', 'app.txt'], { cwd: dir, encoding: 'utf8' });
-    assert.match(staged, /line 10 edited/);
-    assert.doesNotMatch(staged, /line 1 edited/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

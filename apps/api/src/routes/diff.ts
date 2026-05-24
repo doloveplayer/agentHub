@@ -98,38 +98,4 @@ diff.post('/:sessionId/reject', async (c) => {
   return c.json({ ok: WorkspaceManager.rejectFileChanges(workDir, String(body.path), body.baseVersionId ? String(body.baseVersionId) : undefined) });
 });
 
-diff.post('/:sessionId/accept-hunk', async (c) => {
-  const { userId } = c.get('user');
-  const sessionId = c.req.param('sessionId');
-  const workDir = await getSessionWorkspace(sessionId, userId);
-  if (!workDir) return c.json({ error: 'Forbidden' }, 403);
-  const body = await c.req.json().catch(() => ({}));
-  if (!body.path || !body.hunkId) return c.json({ error: 'Missing path or hunkId' }, 400);
-  return c.json({
-    ok: WorkspaceManager.acceptHunkChanges(
-      workDir,
-      String(body.path),
-      body.baseVersionId ? String(body.baseVersionId) : undefined,
-      String(body.hunkId),
-    ),
-  });
-});
-
-diff.post('/:sessionId/reject-hunk', async (c) => {
-  const { userId } = c.get('user');
-  const sessionId = c.req.param('sessionId');
-  const workDir = await getSessionWorkspace(sessionId, userId);
-  if (!workDir) return c.json({ error: 'Forbidden' }, 403);
-  const body = await c.req.json().catch(() => ({}));
-  if (!body.path || !body.hunkId) return c.json({ error: 'Missing path or hunkId' }, 400);
-  return c.json({
-    ok: WorkspaceManager.rejectHunkChanges(
-      workDir,
-      String(body.path),
-      body.baseVersionId ? String(body.baseVersionId) : undefined,
-      String(body.hunkId),
-    ),
-  });
-});
-
 export default diff;

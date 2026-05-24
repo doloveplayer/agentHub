@@ -29,10 +29,14 @@
   - 文件：`apps/api/src/agent/WorkspaceManager.ts` (已有 snapshot 方法)
 - [x] **Diff 生成 API**：对比快照与当前文件，生成 diff 内容
   - 文件：新建 `apps/api/src/routes/diff.ts`
-- [x] **Monaco DiffEditor**：并排对比视图，**以 Hunk 为单位** accept/reject（参考 GitHub PR review 范式），可展开到逐行精细控制，快捷键 `Alt+A`/`Alt+R`
+- [x] **Monaco DiffEditor**：并排对比视图，展开查看 hunk 内容
   - 文件：新建 `apps/web/src/components/DiffViewer.tsx`
-- [x] **Diff 消息卡片**：Agent 完成后自动在聊天流推送文件变更清单，每个文件显示 hunk 数量和可采纳/拒绝的操作
+- [x] **Diff 消息卡片（通知型）**：仅当有用户项目文件变更时推送；默认折叠显示摘要，展开后文件级 accept/reject；可关闭忽略
   - 文件：新建 `apps/web/src/components/DiffCard.tsx`
+- [x] **Agent 内部文件过滤**：`_prompt_*`、`_env*`、`_inbox_*`、`_agent_*/`、`.claude/`、`.agenthub/` 等自动排除，不生成 diff
+  - 文件：`apps/api/src/agent/WorkspaceManager.ts` (扩展 `isUserWorkspacePath`)
+- [x] **沙箱 .gitignore 初始化**：`ensureGitRepo()` 时自动写入，防止 agent 内部文件被 git 追踪
+  - 文件：`apps/api/src/agent/WorkspaceManager.ts`
 - [x] **多 Agent 冲突高亮**：同一文件被多 Agent 修改时，冲突区域橙色标记，用户手动选择版本
 
 ### 0.2 版本历史
@@ -56,8 +60,8 @@
   - 文件：`docker/nginx.conf`
 - [x] **iframe 内嵌预览**：聊天窗口底部可拖拽高度 iframe，支持固定/取消固定到右侧面板
   - 文件：新建 `apps/web/src/components/PreviewFrame.tsx`
-- [x] **HMR 自动刷新**：Vite HMR WebSocket 通过反向代理链路
-- [x] **截图对比卡片**：自动截取修改前后页面，以对比卡片发送
+- [ ] **HMR 自动刷新**：Vite HMR WebSocket 通过反向代理链路（待后续实现）
+- [x] **截图对比卡片**：手动截取修改前后页面，以对比卡片发送
 
 ### 1.2 文档渲染
 
@@ -139,11 +143,11 @@
 ### Tier 0
 | 文件 | 改动 |
 |------|------|
-| `apps/api/src/agent/WorkspaceManager.ts` | 扩展：getFileDiff, 版本记录 |
+| `apps/api/src/agent/WorkspaceManager.ts` | 扩展：getFileDiff, 版本记录, 文件过滤(isUserWorkspacePath), .gitignore 初始化 |
 | `apps/api/src/ws/diffBroadcast.ts` | **新建** — Agent 完成后广播 diff/version/冲突 |
-| `apps/api/src/routes/diff.ts` | **新建** — diff API |
-| `apps/web/src/components/DiffViewer.tsx` | **新建** — Monaco DiffEditor |
-| `apps/web/src/components/DiffCard.tsx` | **新建** — Diff 消息卡片 |
+| `apps/api/src/routes/diff.ts` | **新建** — diff API（文件级 accept/reject；hunk 端点已移除） |
+| `apps/web/src/components/DiffViewer.tsx` | **新建** — Monaco DiffEditor 并排对比 |
+| `apps/web/src/components/DiffCard.tsx` | **新建** — 通知型 Diff 卡片（默认折叠、可关闭、文件级操作） |
 | `apps/web/src/components/VersionTimeline.tsx` | **新建** — 版本时间线 |
 
 ### Tier 1
@@ -182,8 +186,8 @@
 
 ## 验证方案
 
-1. **Diff**：Agent 修改文件后 → 自动出现 Diff 卡片 → Monaco 并排对比 → accept/reject 生效
-2. **网页预览**：Agent 启动 dev server → iframe 内嵌预览 → HMR 自动刷新
+1. **Diff**：Agent 仅修改内部文件时 → 不显示 diff 卡片；Agent 修改用户项目文件时 → 通知型卡片默认折叠，展开后 Monaco 并排对比，文件级 accept/reject 可选，关闭按钮忽略
+2. **网页预览**：Agent 启动 dev server → iframe 内嵌预览 → 手动截图对比
 3. **文档渲染**：Agent 输出 Markdown → 消息气泡内表格/代码块正确渲染 → 段落引用 → Agent 增量修改
 4. **PPT 浏览**：上传 PPTX → 聊天窗口内翻页浏览 → 导出 PDF
 5. **代码编辑**：代码块内联编辑 → 交给 Agent 修改 → 结果展示
