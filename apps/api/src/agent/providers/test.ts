@@ -56,7 +56,7 @@ export class TestAgentProvider implements AbstractProvider {
   }
 
   isAlive(): boolean {
-    return this.alive;
+    return this.alive && this.process.isAlive();
   }
 
   getAgentHome(): string {
