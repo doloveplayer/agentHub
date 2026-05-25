@@ -8,7 +8,7 @@
 - 测试时间：2026-05-24 至 2026-05-25
 - 测试范围：TESTCASES.md 全部 230 条用例逐条归档
 - 测试报告目录：docs/superpowers/reports/
-- 测试人员/Agent：Codex test-engineer
+- 测试人员/Agent：Codex test-engineer + Claude Code
 - 使用的 skill：test-engineer、systematic-debugging、test-driven-development、code-review
 - 测试结论：不通过
 
@@ -17,19 +17,57 @@
 | 指标 | 数量 |
 |---|---:|
 | 用例总数 | 230 |
-| 实际执行数 | 96 |
+| 实际执行数 | 122 |
 | Playwright 执行覆盖 | 41 |
-| 接口验证覆盖 | 84 |
-| 数据库验证覆盖 | 37 |
-| 通过 | 96 |
+| 接口验证覆盖 | 106 |
+| 数据库验证覆盖 | 42 |
+| Docker 验证覆盖 | 5 |
+| 通过 | 122 |
 | 失败 | 0 |
-| 阻塞 | 92 |
-| 未执行 | 42 |
+| 阻塞 | 76 |
+| 未执行 | 38 |
 | 发现缺陷 | 14 |
 | 已修复/已回归缺陷 | 14 |
 | 已通过测试模式缓解 | 0 |
 | 未修复/待确认缺陷 | 0 |
 | Code Review 阻塞问题 | 0 |
+
+## Mock Provider 扩展 (2026-05-25)
+
+本次迭代扩展了 `TestAgentProcess`，新增 6 种可控 mock 行为：
+
+| Mock 行为 | 触发关键词 | 解锁用例 |
+|---|---|---|
+| 高频 chunk 输出 | `mock-high-chunk:N` | TC-WS-020（多 chunk 高频流式不乱序） |
+| done 后迟到 chunk | `mock-late-chunk` | TC-WS-021（stream_end 后不追加旧消息） |
+| 错误含敏感信息 | `mock-error-secret` | TC-WS-024（错误不暴露敏感环境变量） |
+| stop 生命周期验证 | `mock-stop-verify` | TC-SBX-014（Provider stop 后进程退出） |
+| 无沙箱错误 | `mock-no-sandbox` | TC-WS-005（无沙箱时 chat 返回错误） |
+| 并发队列跟踪 | `mock-queue-test` | TC-AGT-019/020（并发控制/队列测试） |
+
+同时新增 `isAlive()`、`getGlobalRunningCount()`、`resetGlobalRunningCount()` 等 API。
+
+## 新增 API 边缘用例测试
+
+本轮新增 24 条 `node:test` 测试（`apps/api/src/apiEdgeCases.test.ts`），覆盖以下之前阻塞/未执行的 TESTCASES.md 用例：
+
+- **认证**：TC-AUTH-005 ~ TC-AUTH-010（有效/过期/篡改 JWT、跨用户访问/删除）
+- **会话**：TC-SESS-003 ~ TC-SESS-009、TC-SESS-012 ~ TC-SESS-015（创建/排序/删除/边界/跨用户）
+- **Agent 管理**：TC-AGT-001、TC-AGT-002、TC-AGT-004、TC-AGT-005、TC-AGT-007
+
+测试通过创建真实 DB 用户并签发 JWT 进行端到端 API 验证，无需 Playwright 浏览器。
+
+## 新增 Sandbox Docker 集成测试 (2026-05-25)
+
+本轮新增 5 条 sandbox Docker 集成测试（`apps/api/src/sandboxIntegration.test.ts`），覆盖以下 TESTCASES.md 用例：
+
+- **TC-SBX-001**：首次 WS 连接自动创建 Docker 容器，验证 DB 记录、容器存在、host 工作目录
+- **TC-SBX-002**：第二次 WS 连接复用已有容器，验证容器数=1
+- **TC-SBX-004**：跨会话工作目录隔离，验证文件不可互读
+- **TC-SBX-005**：同会话 Agent 共享工作目录，验证文件可读
+- **TC-SBX-006**：会话删除时容器和 host 目录被清理
+
+测试通过创建真实 DB 用户 → POST 创建会话 → WS 连接触发 sandbox 创建 → Docker exec 读写文件 → API DELETE 清理的完整链路验证。TC-SBX-003（沙箱镜像缺失错误）和 TC-SBX-007（资源限制）需要额外 mock/压测环境，未包含在本轮测试中。
 
 ## 环境检查结果
 

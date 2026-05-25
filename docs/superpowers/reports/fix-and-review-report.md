@@ -50,3 +50,27 @@
 ## 修复结论
 
 本轮 14 个缺陷均已修复并回归。BUG-009 已通过 test provider 与真实 Claude provider 完成权限代理 UI/WS/文件系统回归；BUG-010 已通过单元测试和真实 provider 证据确认不再写入 workspace `_env.sh` 且日志不输出凭据明文；BUG-011~BUG-014 已通过 Planner DAG WS/UI 确定性回归。残余风险集中在云部署凭据、8 小时混合长稳、真实 Claude 多 Agent DAG 长任务、人工视觉用例，以及模型 provider 凭据的长期隔离方案，已在风险报告中列出。
+
+## Mock Provider 扩展 (2026-05-25)
+
+### 修改文件
+
+| 文件 | 修改摘要 |
+|---|---|
+| `apps/api/src/agent/TestAgentProcess.ts` | 新增 `emitHighChunks`、`emitLateChunk`、`emitErrorWithSecret`、`emitStopVerify`、`emitNoSandbox`、`emitQueueTest` 6 种 mock 行为；新增 `isAlive()`、`getGlobalRunningCount()`、`resetGlobalRunningCount()` API；`kill()` 方法改进为先 emit stop 事件再设置 killed 标志 |
+| `apps/api/src/agent/TestAgentProcess.test.ts` | 新增 6 条测试覆盖所有新 mock 行为 |
+| `apps/api/src/agent/providers/test.ts` | `isAlive()` 方法改为委托 `process.isAlive()` |
+| `apps/api/src/apiEdgeCases.test.ts` | **新建**，24 条 API 边缘用例测试，覆盖认证/会话/Agent 管理 |
+| `apps/api/src/sandboxIntegration.test.ts` | **新建**，5 条 sandbox Docker 集成测试，覆盖 TC-SBX-001/002/004/005/006 |
+
+### 回归验证
+
+- 新 mock 行为测试：11/11 通过
+- API 边缘用例测试：24/24 通过
+- 全量回归测试：106/106 通过（新增 35 条：6 mock + 24 API + 5 sandbox，原有 71 条无回归失败）
+
+### Code Review 结果
+
+- Mock 扩展向后兼容，不使用新关键词时不影响现有行为
+- `kill()` 方法重构为先 emit 事件再设置 killed 标志，避免事件被跳过
+- 所有新增 mock 行为均通过确定性测试验证

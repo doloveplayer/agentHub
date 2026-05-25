@@ -14,7 +14,14 @@ const DAG_TASK_HINT_RE = /mock-dag-(?:success|fail|fail-once|delay)/i;
 const DAG_DELAY_RE = /mock-dag-delay:(\d+)/i;
 const DAG_FAIL_RE = /mock-dag-fail(?!-once)/i;
 const DAG_FAIL_ONCE_RE = /mock-dag-fail-once/i;
+const HIGH_CHUNK_HINT_RE = /mock-high-chunk:(\d+)/i;
+const LATE_CHUNK_HINT_RE = /mock-late-chunk/i;
+const ERROR_SECRET_HINT_RE = /mock-error-secret/i;
+const STOP_VERIFY_HINT_RE = /mock-stop-verify/i;
+const NO_SANDBOX_HINT_RE = /mock-no-sandbox/i;
+const QUEUE_HINT_RE = /mock-queue-test/i;
 const dagTaskAttempts = new Map<string, number>();
+let globalRunningCount = 0;
 
 export class TestAgentProcess {
   private handlers: TestAgentEventHandler[] = [];
@@ -65,6 +72,36 @@ export class TestAgentProcess {
 
     if (DAG_TASK_HINT_RE.test(focusedPrompt)) {
       this.emitDagTask(focusedPrompt, promptFileId);
+      return;
+    }
+
+    if (HIGH_CHUNK_HINT_RE.test(focusedPrompt)) {
+      this.emitHighChunks(focusedPrompt);
+      return;
+    }
+
+    if (LATE_CHUNK_HINT_RE.test(focusedPrompt)) {
+      this.emitLateChunk();
+      return;
+    }
+
+    if (ERROR_SECRET_HINT_RE.test(focusedPrompt)) {
+      this.emitErrorWithSecret();
+      return;
+    }
+
+    if (STOP_VERIFY_HINT_RE.test(focusedPrompt)) {
+      this.emitStopVerify();
+      return;
+    }
+
+    if (NO_SANDBOX_HINT_RE.test(focusedPrompt)) {
+      this.emitNoSandbox();
+      return;
+    }
+
+    if (QUEUE_HINT_RE.test(focusedPrompt)) {
+      this.emitQueueTest();
       return;
     }
 
@@ -119,10 +156,12 @@ export class TestAgentProcess {
   }
 
   kill(): void {
-    this.killed = true;
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();
     this.pendingPermission = null;
+    this.emit({ type: 'text', content: 'Process stopped by user.\n' });
+    this.emit({ type: 'done', exitCode: 0 });
+    this.killed = true;
   }
 
   private reset(): void {
@@ -220,7 +259,70 @@ export class TestAgentProcess {
       this.emit({ type: 'done', exitCode: shouldFail ? 1 : 0 });
     });
   }
-}
+
+  private emitHighChunks(prompt: string): void {
+      const match = prompt.match(HIGH_CHUNK_HINT_RE);
+      const count = Math.min(Math.max(Number(match?.[1]) || 10, 1), 500);
+      for (let i = 0; i < count; i++) {
+        this.schedule(i * 3, () => this.emit({ type: 'text', content: `Chunk ${i + 1}/${count}: Mock streaming data block.\n` }));
+      }
+      this.schedule(count * 3 + 5, () => this.emit({ type: 'done', exitCode: 0 }));
+    }
+
+    private emitLateChunk(): void {
+      this.schedule(10, () => this.emit({ type: 'text', content: 'Normal output before done.\n' }));
+      this.schedule(20, () => this.emit({ type: 'done', exitCode: 0 }));
+      this.schedule(50, () => this.emit({ type: 'text', content: 'LATE CHUNK AFTER DONE - SHOULD BE IGNORED.\n' }));
+    }
+
+    private emitErrorWithSecret(): void {
+      globalRunningCount = Math.max(0, globalRunningCount - 1);
+      this.schedule(5, () => this.emit({ type: 'error', message: 'Internal error: API_KEY=sk-live-mock-secret-12345, DATABASE_URL=postgresql://admin:secret@localhost/db, JWT_SECRET=super-secret-jwt-key' }));
+      this.schedule(10, () => this.emit({ type: 'done', exitCode: 1 }));
+    }
+
+    private emitStopVerify(): void {
+      this.schedule(10, () => this.emit({ type: 'text', content: 'Running long verification task.\n' }));
+      const interval = setInterval(() => {
+        if (this.killed) {
+          clearInterval(interval);
+          this.emit({ type: 'text', content: 'Process stopped by user.\n' });
+          this.emit({ type: 'done', exitCode: 0 });
+          return;
+        }
+        this.emit({ type: 'text', content: 'Still running...\n' });
+      }, 200);
+      this.timers.add(interval);
+    }
+
+    private emitNoSandbox(): void {
+      this.schedule(5, () => this.emit({ type: 'error', message: 'No active sandbox for this session. Create a session first.' }));
+      this.schedule(10, () => this.emit({ type: 'done', exitCode: 1 }));
+    }
+
+    private emitQueueTest(): void {
+      globalRunningCount += 1;
+      const currentCount = globalRunningCount;
+      this.schedule(10, () => this.emit({ type: 'text', content: `Queue test: running count = ${currentCount}\n` }));
+      this.schedule(50, () => {
+        this.emit({ type: 'text', content: `Queue test: completed as #${currentCount}\n` });
+        this.emit({ type: 'done', exitCode: 0 });
+        globalRunningCount = Math.max(0, globalRunningCount - 1);
+      });
+    }
+
+    isAlive(): boolean {
+      return !this.killed;
+    }
+
+    static getGlobalRunningCount(): number {
+      return globalRunningCount;
+    }
+
+    static resetGlobalRunningCount(): void {
+      globalRunningCount = 0;
+    }
+  }
 
 function extractUserRequest(prompt: string): string {
   const marker = 'User request:';
