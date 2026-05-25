@@ -39,11 +39,11 @@ export function SlashCommandPopup({ query, focusedIndex, onSelect, onClose, posi
   return (
     <div
       ref={ref}
-      className="absolute z-50 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl w-56 overflow-hidden"
+      className="absolute z-50 bg-hub-raised border border-hub rounded-hub-lg shadow-2xl w-56 overflow-hidden"
       style={{ bottom: '100%', left: position.left, marginBottom: 8 }}
     >
-      <div className="px-3 py-1.5 border-b border-slate-700/50">
-        <span className="text-[10px] text-slate-500 font-medium">Commands</span>
+      <div className="px-3 py-1.5 border-b border-hub">
+        <span className="text-[10px] text-hub-muted font-medium">Commands</span>
       </div>
       <div className="max-h-56 overflow-y-auto">
         {filtered.map((cmd, i) => (
@@ -51,12 +51,12 @@ export function SlashCommandPopup({ query, focusedIndex, onSelect, onClose, posi
             key={cmd.name}
             onClick={() => onSelect(cmd.name)}
             className={`px-3 py-2 flex items-center gap-2.5 cursor-pointer transition text-sm ${
-              i === focusedIndex ? 'bg-slate-700 text-white' : 'text-slate-400 hover:bg-slate-700/50 hover:text-slate-200'
+              i === focusedIndex ? 'bg-hub-active text-hub-primary' : 'text-hub-tertiary hover:bg-hub-hover hover:text-hub-secondary'
             }`}
           >
             <span className="text-xs w-5 text-center">{cmd.icon}</span>
             <span className="font-medium font-mono text-xs">{cmd.name}</span>
-            <span className="text-[11px] text-slate-500 flex-1 truncate">{cmd.description}</span>
+            <span className="text-[11px] text-hub-muted flex-1 truncate">{cmd.description}</span>
           </div>
         ))}
       </div>

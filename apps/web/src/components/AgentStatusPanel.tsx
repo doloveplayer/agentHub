@@ -76,16 +76,16 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
   ];
 
   return (
-    <div className="w-full apple-panel border-l border-white/[0.06] flex flex-col h-full">
-      <div className="flex border-b border-white/[0.06]">
+    <div className="w-full border-l border-hub flex flex-col h-full">
+      <div className="flex border-b border-hub">
         {tabs.map((tab) => (
           <div
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`flex-1 text-center py-2.5 text-footnote cursor-pointer border-b-2 font-medium select-none ${
               activeTab === tab
-                ? 'text-white/85 border-accent'
-                : 'text-white/25 border-transparent hover:text-white/50 hover:bg-white/[0.04]'
+                ? 'text-hub-primary border-b-2 border-hub-accent'
+                : 'text-hub-muted border-transparent hover:text-hub-secondary hover:bg-hub-hover'
             }`}
           >
             {tab}
@@ -95,7 +95,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
       {activeTab === 'Agents' && (
         <>
           {/* View mode toggle + overview */}
-          <div className="flex items-center gap-1 px-2 py-1.5 border-b border-white/[0.04] bg-white/[0.02]">
+          <div className="flex items-center gap-1 px-2 py-1.5 border-b border-hub bg-hub-surface">
             <div className="flex gap-0.5 mr-auto">
               {modes.map((m) => (
                 <button
@@ -103,21 +103,21 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
                   onClick={() => setViewMode(m.key)}
                   className={`px-2 py-0.5 text-[10px] rounded font-medium transition ${
                     viewMode === m.key
-                      ? 'bg-accent/20 text-accent'
-                      : 'text-white/25 hover:text-white/50'
+                      ? 'bg-hub-accent/20 text-hub-accent'
+                      : 'text-hub-muted hover:text-hub-secondary'
                   }`}
                 >
                   {m.label}
                 </button>
               ))}
             </div>
-            <span className="text-[10px] text-white/30 ml-auto flex-shrink-0">
+            <span className="text-[10px] text-hub-muted ml-auto flex-shrink-0">
               {runningCount}/{sortedAgents.length} 运行 · {idleCount} 空闲
             </span>
           </div>
           {/* Overview bar */}
           {viewMode === 'aggregated' && overviewText && (
-            <div className="px-3 py-1.5 text-[10px] text-white/35 italic border-b border-white/[0.04] truncate">
+            <div className="px-3 py-1.5 text-[10px] text-hub-muted italic border-b border-hub truncate">
               {overviewText}
             </div>
           )}
@@ -127,7 +127,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent }: Props) {
         {activeTab === 'Agents' && (
           <>
             {filteredAgents.length === 0 && (
-              <p className="text-footnote text-white/25 text-center py-4">
+              <p className="text-footnote text-hub-muted text-center py-4">
                 {viewMode === 'errors' ? 'No errors or active agents' : 'No agents in this session'}
               </p>
             )}
@@ -182,15 +182,15 @@ function ActivePlanView() {
           <TaskCard planId={planId}
             planTitle="Active Plan" summary={`${tasks.length} tasks`} tasks={tasks} />
           {planSummaries[planId] && (
-            <div className="mt-1 px-3 py-2 rounded-md bg-white/[0.04] text-caption">
-              <div className="text-white/60 font-medium mb-1">Plan Summary</div>
-              <div className="flex gap-3 text-white/40">
-                <span className="text-[#30D158]">{planSummaries[planId].completed} done</span>
-                {planSummaries[planId].failed > 0 && <span className="text-[#FF453A]">{planSummaries[planId].failed} failed</span>}
+            <div className="mt-1 px-3 py-2 rounded-md bg-hub-surface text-caption">
+              <div className="text-hub-secondary font-medium mb-1">Plan Summary</div>
+              <div className="flex gap-3 text-hub-tertiary">
+                <span className="text-hub-success">{planSummaries[planId].completed} done</span>
+                {planSummaries[planId].failed > 0 && <span className="text-hub-danger">{planSummaries[planId].failed} failed</span>}
                 <span>{planSummaries[planId].total - planSummaries[planId].completed - planSummaries[planId].failed} remaining</span>
               </div>
               {planSummaries[planId].fileChanges.length > 0 && (
-                <div className="mt-1 text-white/25 truncate">
+                <div className="mt-1 text-hub-muted truncate">
                   Files: {planSummaries[planId].fileChanges.join(', ')}
                 </div>
               )}

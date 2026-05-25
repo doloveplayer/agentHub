@@ -50,26 +50,26 @@ export function DiffViewer({ path, diff, hunks = [], conflictRanges = [], busyHu
   }, [selectedHunkId, onAcceptHunk, onRejectHunk]);
 
   return (
-    <div className="overflow-hidden rounded-md border border-white/10 bg-slate-950/60">
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+    <div className="overflow-hidden rounded-md border border-hub bg-hub-code/60">
+      <div className="flex items-center justify-between border-b border-hub px-3 py-2">
         <div className="min-w-0">
-          <div className="truncate font-mono text-xs text-slate-300">{path}</div>
-          <div className="text-[11px] text-slate-500">{hunks.length} hunks</div>
+          <div className="truncate font-mono text-xs text-hub-secondary">{path}</div>
+          <div className="text-[11px] text-hub-muted">{hunks.length} hunks</div>
         </div>
       </div>
       {hunks.length > 0 && (
-        <div className="max-h-28 overflow-y-auto border-b border-white/10 px-2 py-1">
+        <div className="max-h-28 overflow-y-auto border-b border-hub px-2 py-1">
           {hunks.map((hunk) => {
             const conflicts = hunkConflicts(hunk, conflictRanges);
             return (
               <div
                 key={hunk.id}
                 onClick={() => setSelectedHunkId(hunk.id)}
-                className={`flex items-center gap-2 rounded px-2 py-1 text-[11px] hover:bg-white/[0.04] ${
+                className={`flex items-center gap-2 rounded px-2 py-1 text-[11px] hover:bg-hub-hover ${
                   selectedHunkId === hunk.id ? 'bg-sky-500/10 ring-1 ring-sky-500/30' : ''
                 } ${conflicts ? 'bg-amber-500/10 text-amber-100' : ''}`}
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-slate-500">{hunk.header}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-hub-muted">{hunk.header}</span>
                 {onAcceptHunk && (
                   <button
                     onClick={() => onAcceptHunk(hunk.id)}

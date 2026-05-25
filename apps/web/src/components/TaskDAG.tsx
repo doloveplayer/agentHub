@@ -5,11 +5,11 @@ import type { TaskState } from '../store/appStore';
 import { Pencil, Trash2, ArrowRight, GripVertical } from 'lucide-react';
 
 const STATUS_STYLES: Record<string, { bg: string; border: string; text: string }> = {
-  waiting: { bg: '#1e293b', border: '#475569', text: '#94a3b8' },
-  queued:  { bg: '#1e2a3a', border: '#5E5CE6', text: '#a5b4fc' },
-  running: { bg: '#1e3a5f', border: '#3b82f6', text: '#93c5fd' },
-  done:    { bg: '#1e3a3a', border: '#22c55e', text: '#86efac' },
-  failed:  { bg: '#3a1e1e', border: '#ef4444', text: '#fca5a5' },
+  waiting: { bg: '#1e1e1e', border: '#3a3a3a', text: '#94a3b8' },
+  queued:  { bg: '#1a2a2a', border: '#4fd1c5', text: '#99f6e4' },
+  running: { bg: '#1a2a2a', border: '#4fd1c5', text: '#99f6e4' },
+  done:    { bg: '#1a2e1a', border: '#38a169', text: '#86efac' },
+  failed:  { bg: '#3a1e1e', border: '#e53e3e', text: '#fca5a5' },
 };
 
 function CustomTaskNode({ data }: { data: Record<string, unknown> }) {
@@ -29,14 +29,14 @@ function CustomTaskNode({ data }: { data: Record<string, unknown> }) {
       <div style={{ fontWeight: 600, marginBottom: 2 }}>{t.title}</div>
       <div style={{ fontSize: 10, opacity: 0.7 }}>{t.agentType}</div>
       {t.assignedAgentName && (
-        <div style={{ fontSize: 10, color: '#5E5CE6', marginTop: 2 }}>
+        <div style={{ fontSize: 10, color: 'var(--accent-primary)', marginTop: 2 }}>
           ↳ {t.assignedAgentName}
         </div>
       )}
       {t.status === 'running' && pct !== null && (
-        <div style={{ marginTop: 6, height: 3, background: '#1e293b', borderRadius: 2 }}>
+        <div style={{ marginTop: 6, height: 3, background: '#1e1e1e', borderRadius: 2 }}>
           <div style={{
-            width: `${pct}%`, height: '100%', background: '#3b82f6',
+            width: `${pct}%`, height: '100%', background: 'var(--accent-primary)',
             borderRadius: 2, transition: 'width 0.3s',
           }} />
         </div>
@@ -119,7 +119,7 @@ export function TaskDAG({ tasks, onTaskClick, onConnectDep, onEditTask, onDelete
           es.push({
             id: `${depId}->${t.taskId}`,
             source: depId, target: t.taskId,
-            style: { stroke: '#475569', strokeWidth: 1.5 },
+            style: { stroke: 'var(--border-default)', strokeWidth: 1.5 },
             animated: nodeMap.get(t.taskId)?.status === 'running',
           });
         }
@@ -158,28 +158,28 @@ export function TaskDAG({ tasks, onTaskClick, onConnectDep, onEditTask, onDelete
         onNodeContextMenu={onNodeContextMenu}
         onConnect={onConnect}
         onPaneClick={onPaneClick}
-        connectionLineStyle={{ stroke: '#5E5CE6', strokeWidth: 2 }}
-        defaultEdgeOptions={{ style: { stroke: '#475569', strokeWidth: 1.5 } }}
+        connectionLineStyle={{ stroke: 'var(--accent-primary)', strokeWidth: 2 }}
+        defaultEdgeOptions={{ style: { stroke: 'var(--border-default)', strokeWidth: 1.5 } }}
       >
-        <Background color="#ffffff10" gap={20} />
+        <Background color="#ffffff08" gap={20} />
       </ReactFlow>
 
       {/* Right-click context menu */}
       {contextMenu && (
         <div
           style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 100 }}
-          className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl py-1 min-w-[160px] text-caption"
+          className="bg-hub-raised border border-hub rounded-hub-lg shadow-xl py-1 min-w-[160px] text-caption"
           onClick={(e) => e.stopPropagation()}
         >
           <button
             onClick={() => { onEditTask?.(contextMenu.taskId); closeMenu(); }}
-            className="w-full text-left px-3 py-1.5 hover:bg-white/[0.08] text-white/70 flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 hover:bg-hub-hover text-hub-secondary flex items-center gap-2"
           >
             <Pencil className="w-3 h-3" /> 编辑描述
           </button>
           <button
             onClick={() => { onDeleteTask?.(contextMenu.taskId); closeMenu(); }}
-            className="w-full text-left px-3 py-1.5 hover:bg-[#FF453A]/10 text-[#FF453A]/80 flex items-center gap-2"
+            className="w-full text-left px-3 py-1.5 hover:bg-hub-danger/10 text-hub-danger/80 flex items-center gap-2"
           >
             <Trash2 className="w-3 h-3" /> 删除任务
           </button>

@@ -4,7 +4,7 @@
 
 ## Key Decisions
 
-1. **React Flow for DAG visualization**: Use @xyflow/react library for node graph rendering. Custom node component with status-colored borders (gray/blue/green/red) and progress bar for running tasks.
+1. **React Flow for DAG visualization**: Use @xyflow/react library for node graph rendering. Custom node component with status-colored borders (gray/teal/green/red, per project design tokens) and progress bar for running tasks.
 2. **TaskCard as message bubble subtype**: DAG visualization rendered inline in chat stream, not as a separate panel. Confirmation panel appears below the DAG card before execution begins.
 3. **WebSocket-driven status updates**: Worker task lifecycle events (start/progress/complete/fail) pushed to frontend via new WS message types. Frontend updates individual node states reactively.
 
@@ -59,10 +59,12 @@ TaskState { taskId, planId, title, agentType, status: 'waiting'|'running'|'done'
 
 | Status | Border | Background | Indicator |
 |--------|--------|------------|-----------|
-| waiting | #475569 (slate-600) | #1e293b (slate-800) | ⏸ gray text |
-| running | #3b82f6 (blue-500) | #1e3a5f | 🔄 blue progress bar |
-| done | #22c55e (green-500) | #1e3a3a | ✅ green |
-| failed | #ef4444 (red-500) | #3a1e1e | ❌ red + Retry button |
+| waiting | #3a3a3a (border-default) | #1e1e1e (bg-root) | ⏸ muted text |
+| running/queued | #4fd1c5 (accent-primary) | #1a2a2a | 🔄 teal progress bar |
+| done | #38a169 (accent-success) | #1a2e1a | ✅ green |
+| failed | #e53e3e (accent-danger) | #3a1e1e | ❌ red + Retry button |
+
+> Note: Color values updated 2026-05-25 to match the Understand Anything dashboard redesign. All status colors now use CSS custom properties defined in `apps/web/src/index.css`.
 
 ## Verification
 

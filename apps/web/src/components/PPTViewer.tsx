@@ -42,7 +42,7 @@ export function PPTViewer() {
 
   if (slides.length === 0) {
     return (
-      <label className="flex cursor-pointer items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-slate-400 hover:bg-white/[0.06]">
+      <label className="flex cursor-pointer items-center gap-2 rounded-md border border-hub bg-hub-hover px-3 py-2 text-xs text-hub-tertiary hover:bg-hub-raised">
         <Upload className="h-4 w-4" />
         PPT/PPTX
         <input
@@ -61,25 +61,25 @@ export function PPTViewer() {
   const slide = slides[active];
 
   return (
-    <div className="overflow-hidden rounded-md border border-white/10 bg-slate-950/80">
-      <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
-        <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{fileName}</span>
+    <div className="overflow-hidden rounded-md border border-hub bg-hub-code/80">
+      <div className="flex items-center gap-2 border-b border-hub px-3 py-2">
+        <span className="min-w-0 flex-1 truncate text-xs text-hub-secondary">{fileName}</span>
         <button
           onClick={() => window.print()}
-          className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-300 hover:bg-white/10"
+          className="inline-flex h-7 w-7 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
           title="Export PDF"
         >
           <FileDown className="h-4 w-4" />
         </button>
       </div>
       <div className="flex">
-        <div className="w-24 shrink-0 space-y-1 border-r border-white/10 p-2">
+        <div className="w-24 shrink-0 space-y-1 border-r border-hub p-2">
           {slides.map((item, index) => (
             <button
               key={item.index}
               onClick={() => setActive(index)}
               className={`block aspect-video w-full rounded border px-1 text-[10px] ${
-                active === index ? 'border-sky-400 bg-sky-500/15 text-sky-100' : 'border-white/10 bg-white/[0.03] text-slate-500'
+                active === index ? 'border-sky-400 bg-sky-500/15 text-sky-100' : 'border-hub bg-hub-hover text-hub-muted'
               }`}
               title={item.title}
             >
@@ -91,21 +91,21 @@ export function PPTViewer() {
           <div className="mb-4 flex items-center gap-2">
             <button
               onClick={() => setActive((value) => Math.max(0, value - 1))}
-              className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-300 hover:bg-white/10"
+              className="inline-flex h-8 w-8 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
               title="Previous slide"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
-            <span className="text-xs text-slate-500">{slide.index} / {slides.length}</span>
+            <span className="text-xs text-hub-muted">{slide.index} / {slides.length}</span>
             <button
               onClick={() => setActive((value) => Math.min(slides.length - 1, value + 1))}
-              className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-300 hover:bg-white/10"
+              className="inline-flex h-8 w-8 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
               title="Next slide"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
-          <div className="aspect-video rounded bg-white p-6 text-slate-950 shadow">
+          <div className="aspect-video rounded bg-[#e8e8e8] p-6 text-gray-900 shadow">
             <h3 className="mb-4 text-xl font-semibold">{slide.title}</h3>
             <ul className="space-y-2 text-sm">
               {slide.lines.slice(1).map((line, index) => <li key={index}>{line}</li>)}

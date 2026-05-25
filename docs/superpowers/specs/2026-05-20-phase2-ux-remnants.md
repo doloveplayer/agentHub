@@ -1,6 +1,8 @@
 # AgentHub Phase 2 UX Remnants — Polish Design (Tier 3)
 
-> Status: Draft · Date: 2026-05-20
+> Status: **Complete** (all 5 verifications pass) · Date: 2026-05-20 · Updated: 2026-05-25
+
+> Note 2026-05-25: UI colors aligned to Understand Anything dashboard redesign. Component styling now uses CSS custom properties from `apps/web/src/index.css` `:root` block (teal accent `#4fd1c5`, layered dark backgrounds). SlashCommandPopup and AgentMentionPopup use `bg-hub-raised border-hub` pattern.
 
 ## Key Decisions
 

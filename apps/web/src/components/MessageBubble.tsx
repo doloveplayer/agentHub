@@ -49,28 +49,28 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
     <div className={`flex gap-3 px-4 py-2.5 group ${isHuman ? 'flex-row-reverse' : ''}`}>
       <div
         className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-xs font-semibold shadow-sm"
-        style={{ backgroundColor: isHuman ? '#3b82f6' : (color ?? '#475569'), color: '#fff' }}
+        style={{ backgroundColor: isHuman ? 'var(--accent-primary)' : (color ?? 'var(--bg-raised)'), color: '#fff' }}
       >
         {isHuman ? <User className="w-4 h-4" /> : initial}
       </div>
       <div className={`max-w-[72%] ${isHuman ? 'items-end' : 'items-start'}`}>
         <div className={`flex items-center gap-2 mb-1 ${isHuman ? 'flex-row-reverse' : ''}`}>
-          <span className="text-xs text-gray-400 font-medium">{label}</span>
-          {time && <span className="text-[10px] text-gray-600">{time}</span>}
+          <span className="text-xs text-hub-tertiary font-medium">{label}</span>
+          {time && <span className="text-[10px] text-hub-muted">{time}</span>}
           {message.content && message.status === 'done' && (
             <button
               onClick={handleCopy}
-              className="opacity-0 group-hover:opacity-100 transition p-0.5 rounded hover:bg-white/10"
+              className="opacity-0 group-hover:opacity-100 transition p-0.5 rounded hover:bg-hub-hover"
               title="复制"
             >
-              {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3 text-gray-500" />}
+              {copied ? <Check className="w-3 h-3 text-hub-success" /> : <Copy className="w-3 h-3 text-hub-tertiary" />}
             </button>
           )}
         </div>
-        <div className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+        <div className={`rounded-hub-2xl px-4 py-2.5 text-sm leading-relaxed ${
           isHuman
-            ? 'bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-tr-md'
-            : 'bg-slate-800/80 border border-slate-700/50 text-slate-200 rounded-tl-md'
+            ? 'bg-hub-accent text-white rounded-tr-hub-md'
+            : 'bg-hub-raised border border-hub text-hub-primary rounded-tl-hub-md'
         }`}>
           {message.content ? (
             <div className="markdown-content">
@@ -86,12 +86,12 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
             </div>
           ) : isStreaming ? (
             <span className="inline-flex items-center gap-1">
-              <span className="w-1.5 h-4 bg-gray-400 rounded-full streaming-cursor" />
-              <span className="w-1.5 h-3 bg-gray-400/60 rounded-full streaming-cursor" style={{ animationDelay: '0.15s' }} />
-              <span className="w-1.5 h-2 bg-gray-400/30 rounded-full streaming-cursor" style={{ animationDelay: '0.3s' }} />
+              <span className="w-1.5 h-4 bg-hub-tertiary rounded-full streaming-cursor" />
+              <span className="w-1.5 h-3 bg-hub-tertiary/60 rounded-full streaming-cursor" style={{ animationDelay: '0.15s' }} />
+              <span className="w-1.5 h-2 bg-hub-tertiary/30 rounded-full streaming-cursor" style={{ animationDelay: '0.3s' }} />
             </span>
           ) : (
-            <span className="text-gray-500 italic text-xs">{message.status === 'error' ? '[Agent stopped]' : '[No output]'}</span>
+            <span className="text-hub-muted italic text-xs">{message.status === 'error' ? '[Agent stopped]' : '[No output]'}</span>
           )}
         </div>
       </div>
@@ -121,7 +121,7 @@ const markdownComponents: Components = {
         {text && (
           <button
             onClick={() => insertPrompt(`请基于以下引用继续处理：\n\n> ${text.replace(/\n/g, '\n> ')}`)}
-            className="absolute right-0 top-0 hidden h-6 w-6 items-center justify-center rounded text-slate-400 hover:bg-white/10 group-hover/paragraph:inline-flex"
+            className="absolute right-0 top-0 hidden h-6 w-6 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover group-hover/paragraph:inline-flex"
             title="引用并交给 Agent"
           >
             <Quote className="h-3.5 w-3.5" />
@@ -142,12 +142,12 @@ function InlineCodeEditor({ code, language }: { code: string; language: string }
   const [value, setValue] = useState(code);
   const height = Math.min(420, Math.max(120, code.split('\n').length * 20 + 44));
   return (
-    <div className="my-3 overflow-hidden rounded-md border border-white/10 bg-slate-950">
-      <div className="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-        <span className="font-mono text-[11px] text-slate-500">{language}</span>
+    <div className="my-3 overflow-hidden rounded-md border border-hub bg-hub-code">
+      <div className="flex items-center justify-between border-b border-hub px-3 py-1.5">
+        <span className="font-mono text-[11px] text-hub-tertiary">{language}</span>
         <button
           onClick={() => insertPrompt(`请修改并应用这段代码：\n\n\`\`\`${language}\n${value}\n\`\`\``)}
-          className="inline-flex h-7 w-7 items-center justify-center rounded text-slate-300 hover:bg-white/10"
+          className="inline-flex h-7 w-7 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
           title="让 Agent 修改这段代码"
         >
           <Wand2 className="h-3.5 w-3.5" />

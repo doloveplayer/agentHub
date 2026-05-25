@@ -20,17 +20,17 @@ export function DeploymentLauncher({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Rocket className="h-4 w-4 text-slate-500" />
+      <Rocket className="h-4 w-4 text-hub-muted" />
       <select
         value={target}
         onChange={(event) => setTarget(event.target.value as 'docker' | 'vercel' | 'cloudflare')}
-        className="h-8 rounded border border-white/10 bg-slate-900 px-2 text-xs text-slate-200"
+        className="h-8 rounded border border-hub bg-hub-input px-2 text-xs text-hub-primary"
       >
         <option value="docker">Docker</option>
         <option value="vercel">Vercel</option>
         <option value="cloudflare">Cloudflare</option>
       </select>
-      <label className="flex items-center gap-1 text-xs text-slate-400">
+      <label className="flex items-center gap-1 text-xs text-hub-tertiary">
         <input type="checkbox" checked={production} onChange={(event) => setProduction(event.target.checked)} />
         Production
       </label>
@@ -39,13 +39,13 @@ export function DeploymentLauncher({ sessionId }: { sessionId: string }) {
           value={confirmPhrase}
           onChange={(event) => setConfirmPhrase(event.target.value)}
           placeholder={`DEPLOY ${target.toUpperCase()}`}
-          className="h-8 rounded border border-white/10 bg-slate-900 px-2 text-xs text-slate-200"
+          className="h-8 rounded border border-hub bg-hub-input px-2 text-xs text-hub-primary"
         />
       )}
       <button
         onClick={deploy}
         disabled={busy || (production && confirmPhrase !== `DEPLOY ${target.toUpperCase()}`)}
-        className="h-8 rounded bg-sky-600 px-3 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+        className="h-8 rounded bg-sky-600 px-3 text-xs font-medium text-hub-primary hover:bg-sky-500 disabled:opacity-50"
       >
         Deploy
       </button>

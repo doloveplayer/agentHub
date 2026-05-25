@@ -1,6 +1,11 @@
 # AgentHub — Agent 协作协议、生产项目集成、多厂商适配设计规格
 
-> Status: Draft · Date: 2026-05-21 · Updated: 2026-05-21
+> Status: Partial Implementation · Date: 2026-05-21 · Updated: 2026-05-25
+> 
+> Implementation status (2026-05-25):
+> - **§1 Collaboration Protocol**: Backend done (InboxManager, MilestoneBroadcaster exist); frontend UI NOT implemented (no MilestoneBubble, InboxIndicator)
+> - **§2 Workspace Integration**: **Fully implemented** (WorkspaceManager, routes, FileTree, VersionTimeline all exist)
+> - **§3 Provider Adapter**: Backend abstraction layer done (Claude Code only); Codex/OpenCode providers NOT implemented; ProviderSettings/AgentProviderBadge UI NOT implemented
 
 ## §1 Agent 协作协议（Agent Collaboration Protocol）
 

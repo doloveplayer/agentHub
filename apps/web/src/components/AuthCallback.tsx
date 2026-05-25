@@ -12,7 +12,7 @@ export function AuthCallback() {
   if (token) return <Navigate to="/" />;
 
   return (
-    <div className="flex items-center justify-center min-h-screen text-gray-400">
+    <div className="flex items-center justify-center min-h-screen text-hub-tertiary">
       Authenticating...
     </div>
   );

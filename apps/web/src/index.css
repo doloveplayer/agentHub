@@ -1,5 +1,68 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
+/* ===== Design Tokens ===== */
+:root {
+  /* Background layers */
+  --bg-root:         #121212;
+  --bg-surface:      #1e1e1e;
+  --bg-raised:       #252526;
+  --bg-hover:        #2a2d2e;
+  --bg-active:       #1a3a3a;
+  --bg-input:        #1e1e1e;
+  --bg-code:         #0d1117;
+
+  /* Borders */
+  --border-subtle:    #333333;
+  --border-default:   #3a3a3a;
+  --border-emphasis:  #555555;
+
+  /* Accent / Semantic */
+  --accent-primary:   #4fd1c5;
+  --accent-hover:     #38b2a0;
+  --accent-warning:   #d69e2e;
+  --accent-danger:    #e53e3e;
+  --accent-success:   #38a169;
+  --accent-link:      #569cd6;
+  --accent-purple:    #8b5cf6;
+
+  /* Agent identity colors */
+  --agent-code:       #8b5cf6;
+  --agent-review:     #38a169;
+  --agent-devops:     #ea580c;
+  --agent-planner:    #4fd1c5;
+  --agent-test:       #569cd6;
+  --agent-security:   #d69e2e;
+
+  /* Text */
+  --text-primary:     rgba(248, 250, 252, 0.94);
+  --text-secondary:   rgba(203, 213, 225, 0.82);
+  --text-tertiary:    rgba(148, 163, 184, 0.55);
+  --text-muted:       rgba(148, 163, 184, 0.30);
+
+  /* Spacing */
+  --space-xs:         4px;
+  --space-sm:         8px;
+  --space-md:         12px;
+  --space-lg:         16px;
+  --space-xl:         24px;
+
+  /* Radii */
+  --radius-sm:        4px;
+  --radius-md:        6px;
+  --radius-lg:        8px;
+  --radius-xl:        12px;
+  --radius-2xl:       16px;
+
+  /* Transitions */
+  --transition-fast:  120ms ease-out;
+  --transition-base:  180ms ease-out;
+  --transition-slow:  250ms ease-in-out;
+
+  /* Scrollbar */
+  --scrollbar-thumb:  #3a3a3a;
+  --scrollbar-track:  transparent;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -14,13 +77,13 @@
   /* Smooth transitions on all interactive elements */
   a, button, input, textarea, select, [tabindex] {
     transition-property: color, background-color, border-color, opacity, box-shadow;
-    transition-duration: 150ms;
+    transition-duration: var(--transition-base);
     transition-timing-function: ease-out;
   }
 
   /* Focus ring */
   *:focus-visible {
-    outline: 2px solid #6c47ff;
+    outline: 2px solid var(--accent-primary);
     outline-offset: 2px;
     border-radius: 4px;
   }
@@ -32,14 +95,14 @@
     width: 6px;
   }
   .chat-scroll::-webkit-scrollbar-thumb {
-    background: #334155;
+    background: var(--scrollbar-thumb);
     border-radius: 3px;
   }
   .chat-scroll::-webkit-scrollbar-thumb:hover {
-    background: #475569;
+    background: var(--border-emphasis);
   }
   .chat-scroll::-webkit-scrollbar-track {
-    background: transparent;
+    background: var(--scrollbar-track);
   }
 
   /* Panel scrollbar */
@@ -47,17 +110,17 @@
     width: 4px;
   }
   .panel-scroll::-webkit-scrollbar-thumb {
-    background: #334155;
+    background: var(--scrollbar-thumb);
     border-radius: 2px;
   }
   .panel-scroll::-webkit-scrollbar-track {
-    background: transparent;
+    background: var(--scrollbar-track);
   }
 
   /* Agent status pulse */
   @keyframes agent-pulse {
-    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
-    50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent-success) 40%, transparent); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-success) 0%, transparent); }
   }
   .agent-pulse {
     animation: agent-pulse 2s ease-in-out infinite;
@@ -81,7 +144,7 @@
   .markdown-content h1,
   .markdown-content h2,
   .markdown-content h3 {
-    color: rgba(248, 250, 252, 0.94);
+    color: var(--text-primary);
     font-weight: 650;
     line-height: 1.25;
   }
@@ -92,9 +155,9 @@
     white-space: pre-wrap;
   }
   .markdown-content a {
-    color: #93c5fd;
+    color: var(--accent-link);
     text-decoration-line: underline;
-    text-decoration-color: rgba(147, 197, 253, 0.45);
+    text-decoration-color: color-mix(in srgb, var(--accent-link) 45%, transparent);
     text-underline-offset: 2px;
   }
   .markdown-content ul,
@@ -107,8 +170,8 @@
     margin-top: 0.25rem;
   }
   .markdown-content blockquote {
-    border-left: 2px solid rgba(148, 163, 184, 0.45);
-    color: rgba(203, 213, 225, 0.82);
+    border-left: 2px solid var(--border-default);
+    color: var(--text-secondary);
     padding-left: 0.75rem;
   }
   .markdown-content img {
@@ -120,7 +183,7 @@
   }
   .markdown-content code {
     border-radius: 0.25rem;
-    background: rgba(15, 23, 42, 0.82);
+    background: var(--bg-code);
     color: #a7f3d0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.86em;
@@ -130,23 +193,30 @@
     max-width: 100%;
     overflow-x: auto;
     border-radius: 0.5rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(2, 6, 23, 0.84);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-code);
     padding: 0.75rem;
   }
   .markdown-content pre code {
     display: block;
     background: transparent;
-    color: rgba(226, 232, 240, 0.95);
+    color: var(--text-primary);
     line-height: 1.55;
     padding: 0;
     white-space: pre;
+  }
+  .markdown-content img {
+    max-height: 20rem;
+    max-width: 100%;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--border-subtle);
+    object-fit: contain;
   }
   .markdown-table-wrap {
     max-width: 100%;
     overflow-x: auto;
     border-radius: 0.5rem;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border-subtle);
   }
   .markdown-content table {
     min-width: 100%;
@@ -156,7 +226,7 @@
   }
   .markdown-content th,
   .markdown-content td {
-    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    border-right: 1px solid var(--border-subtle);
     padding: 0.5rem 0.75rem;
   }
   .markdown-content th:last-child,
@@ -165,13 +235,13 @@
   }
   .markdown-content thead {
     background: rgba(255, 255, 255, 0.06);
-    color: rgba(226, 232, 240, 0.92);
+    color: var(--text-primary);
   }
   .markdown-content tbody tr {
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--border-subtle);
   }
   .markdown-content tbody td {
-    color: rgba(203, 213, 225, 0.86);
+    color: var(--text-secondary);
   }
   .markdown-content .hljs-keyword,
   .markdown-content .hljs-built_in,

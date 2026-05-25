@@ -6,13 +6,13 @@ export function LoginPage() {
   if (isLoggedIn) return null; // Will redirect
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-950">
+    <div className="flex items-center justify-center min-h-screen bg-hub-root">
       <div className="text-center">
-        <h1 className="text-4xl font-bold text-white mb-2">AgentHub</h1>
-        <p className="text-gray-400 mb-8">IM-powered AI agent collaboration</p>
+        <h1 className="text-4xl font-bold text-hub-primary mb-2">AgentHub</h1>
+        <p className="text-hub-tertiary mb-8">IM-powered AI agent collaboration</p>
         <button
           onClick={login}
-          className="inline-flex items-center gap-2 px-6 py-3 bg-white text-black rounded-lg hover:bg-gray-200 transition font-medium"
+          className="inline-flex items-center gap-2 px-6 py-3 bg-hub-accent text-white rounded-lg hover:bg-hub-accent-hover transition font-medium"
         >
           <Github className="w-5 h-5" />
           Sign in with GitHub

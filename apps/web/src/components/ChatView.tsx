@@ -123,7 +123,7 @@ export function ChatView() {
       <div className="mx-4 my-1 space-y-1">
         {/* Token usage bar */}
         {(inputTokens > 0 || outputTokens > 0) && (
-          <div className="flex items-center gap-3 text-[11px] text-gray-500 px-1">
+          <div className="flex items-center gap-3 text-[11px] text-hub-tertiary px-1">
             <span title="Input tokens">↑ {formatTokens(inputTokens)}</span>
             <span title="Output tokens">↓ {formatTokens(outputTokens)}</span>
             <span title="Total tokens">Σ {formatTokens(inputTokens + outputTokens)}</span>
@@ -135,32 +135,32 @@ export function ChatView() {
           const pid = ev.details.permissionId ?? ev.id;
           const resolved = resolvedPermissions.has(pid);
           return (
-            <div key={ev.id} className="bg-amber-950/30 border border-amber-700/50 rounded-lg px-4 py-3 my-2">
+            <div key={ev.id} className="bg-hub-warning/10 border border-hub-warning/30 rounded-hub-lg px-4 py-3 my-2">
               <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-4 h-4 text-amber-400" />
-                <span className="text-sm font-medium text-amber-300">Permission Request</span>
+                <Shield className="w-4 h-4 text-hub-warning" />
+                <span className="text-sm font-medium text-hub-warning">Permission Request</span>
               </div>
-              <div className="text-xs text-gray-400 space-y-1 mb-3">
-                <div>Tool: <span className="text-gray-300 font-mono">{ev.details.tool ?? 'unknown'}</span></div>
-                {ev.details.path && <div>Path: <span className="text-gray-300 font-mono">{ev.details.path}</span></div>}
+              <div className="text-xs text-hub-tertiary space-y-1 mb-3">
+                <div>Tool: <span className="text-hub-secondary font-mono">{ev.details.tool ?? 'unknown'}</span></div>
+                {ev.details.path && <div>Path: <span className="text-hub-secondary font-mono">{ev.details.path}</span></div>}
               </div>
               {!resolved ? (
                 <div className="flex gap-2">
                   <button
                     onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, true); }}
-                    className="px-4 py-1.5 bg-green-700 hover:bg-green-600 text-white text-xs rounded-md font-medium transition"
+                    className="px-4 py-1.5 bg-hub-success hover:bg-hub-success/80 text-white text-xs rounded-md font-medium transition"
                   >
                     Allow
                   </button>
                   <button
                     onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, false); }}
-                    className="px-4 py-1.5 bg-red-700 hover:bg-red-600 text-white text-xs rounded-md font-medium transition"
+                    className="px-4 py-1.5 bg-hub-danger hover:bg-hub-danger/80 text-white text-xs rounded-md font-medium transition"
                   >
                     Deny
                   </button>
                 </div>
               ) : (
-                <span className="text-xs text-gray-500 italic">Response sent</span>
+                <span className="text-xs text-hub-muted italic">Response sent</span>
               )}
             </div>
           );
@@ -177,10 +177,10 @@ export function ChatView() {
 
   if (!activeSessionId) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-600">
+      <div className="flex-1 flex items-center justify-center text-hub-muted">
         <div className="text-center">
-          <p className="text-slate-500 text-lg font-medium mb-1">Select or create a session</p>
-          <p className="text-slate-600 text-sm">Choose an existing session or start a new one to begin</p>
+          <p className="text-hub-tertiary text-lg font-medium mb-1">Select or create a session</p>
+          <p className="text-hub-muted text-sm">Choose an existing session or start a new one to begin</p>
         </div>
       </div>
     );
@@ -194,12 +194,12 @@ export function ChatView() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Session header — show participants for group sessions */}
         {activeSession?.type === 'group' && (
-          <div className="px-4 py-2 border-b border-slate-800/60 flex items-center gap-2 bg-slate-900/40">
-            <span className="text-[11px] text-slate-500 mr-1 font-medium">Participants</span>
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-900/40 border border-blue-700/50 text-blue-300 font-medium">You</span>
+          <div className="px-4 py-2 border-b border-hub flex items-center gap-2 bg-hub-surface">
+            <span className="text-[11px] text-hub-tertiary mr-1 font-medium">Participants</span>
+            <span className="text-[11px] px-2 py-0.5 rounded-full bg-hub-accent/10 border border-hub-accent/30 text-hub-accent font-medium">You</span>
             {sessionAgents.map((a) => (
               <span key={a.id}
-                className="text-xs px-2 py-0.5 rounded-full border text-gray-300"
+                className="text-xs px-2 py-0.5 rounded-full border text-hub-secondary"
                 style={{ borderColor: agentColor(a.name), backgroundColor: agentColor(a.name) + '20' }}
               >
                 {a.displayName}

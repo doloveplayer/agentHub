@@ -1,6 +1,8 @@
 # AgentHub Phase 3 — Enhancement & Polish Design (Tier 2)
 
-> Status: Draft · Date: 2026-05-20
+> Status: Implemented (backend) / Partial (frontend) · Last updated: 2026-05-25
+
+> Note 2026-05-25: Frontend UI colors updated to match Understand Anything dashboard redesign (teal accent `#4fd1c5`, semantic tokens). See `apps/web/src/index.css` `:root` block for current design tokens.
 
 ## Key Decisions
 
@@ -36,8 +38,20 @@ apps/api/src/agent/
   SandboxManager.ts        # [modified] PTY mode support
 
 apps/web/src/components/
-  AgentCard.tsx            # [modified] token bar, thinking level display
+  AgentCard.tsx            # [modified] event stream rendering, token bar, task banner
   ChatView.tsx             # [modified] summary report bubble rendering
+
+## Design Token Reference (2026-05-25 redesign)
+
+AgentCard event colors now use CSS custom properties:
+- thinking: `var(--text-muted)` italic on `var(--bg-hover)`
+- tool_use: `var(--accent-primary)` on `var(--accent-primary)`/10
+- tool_result: `var(--accent-success)` on `var(--accent-success)`/10
+- subagent_start: `var(--accent-link)` on `var(--accent-link)`/10
+- permission_request: `var(--accent-warning)` on `var(--accent-warning)`/10
+- Task banner: `var(--accent-primary)`/10 bg, `var(--accent-primary)` text
+- Stop button: `var(--accent-danger)`/15 hover, `var(--accent-danger)` text
+- Status dots: `var(--accent-success)` for running/done, `var(--text-muted)` for idle
 ```
 
 ## Key Interfaces

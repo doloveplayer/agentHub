@@ -68,11 +68,11 @@ export function PreviewFrame({ sessionId }: Props) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2">
+      <div className="flex items-center gap-2 border-b border-hub px-3 py-2">
         <select
           value={port}
           onChange={(event) => setPort(Number(event.target.value))}
-          className="h-8 rounded border border-white/10 bg-slate-900 px-2 text-xs text-slate-200"
+          className="h-8 rounded border border-hub bg-hub-input px-2 text-xs text-hub-primary"
         >
           {[...new Set([port, ...ports])].map((item) => (
             <option key={item} value={item}>:{item}</option>
@@ -81,7 +81,7 @@ export function PreviewFrame({ sessionId }: Props) {
         <button
           onClick={refreshPorts}
           disabled={loading}
-          className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-300 hover:bg-white/10 disabled:opacity-50"
+          className="inline-flex h-8 w-8 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover disabled:opacity-50"
           title="Detect ports"
         >
           <RefreshCcw className="h-4 w-4" />
@@ -89,7 +89,7 @@ export function PreviewFrame({ sessionId }: Props) {
         <button
           onClick={openPreview}
           disabled={loading}
-          className="rounded bg-sky-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-sky-500 disabled:opacity-50"
+          className="rounded bg-sky-600 px-3 py-1.5 text-xs font-medium text-hub-primary hover:bg-sky-500 disabled:opacity-50"
         >
           Open
         </button>
@@ -98,7 +98,7 @@ export function PreviewFrame({ sessionId }: Props) {
             href={url}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-8 w-8 items-center justify-center rounded text-slate-300 hover:bg-white/10"
+            className="inline-flex h-8 w-8 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
             title="Open in new tab"
           >
             <ExternalLink className="h-4 w-4" />
@@ -106,8 +106,8 @@ export function PreviewFrame({ sessionId }: Props) {
         )}
         {url && (
           <>
-            <button onClick={() => capture('before')} className="rounded px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10">Before</button>
-            <button onClick={() => capture('after')} className="rounded px-2 py-1 text-[11px] text-slate-300 hover:bg-white/10">After</button>
+            <button onClick={() => capture('before')} className="rounded px-2 py-1 text-[11px] text-hub-secondary hover:bg-hub-hover">Before</button>
+            <button onClick={() => capture('after')} className="rounded px-2 py-1 text-[11px] text-hub-secondary hover:bg-hub-hover">After</button>
           </>
         )}
       </div>
@@ -119,14 +119,14 @@ export function PreviewFrame({ sessionId }: Props) {
           sandbox="allow-scripts allow-forms allow-same-origin allow-popups allow-downloads"
         />
       ) : (
-        <div className="flex flex-1 items-center justify-center text-xs text-slate-500 px-4 text-center">
+        <div className="flex flex-1 items-center justify-center text-xs text-hub-muted px-4 text-center">
           Select a port and click Open to preview.
         </div>
       )}
       {url && (
         <button
           onClick={() => setRefreshKey((value) => value + 1)}
-          className="border-t border-white/10 py-1 text-[11px] text-slate-400 hover:bg-white/5"
+          className="border-t border-hub py-1 text-[11px] text-hub-tertiary hover:bg-hub-hover"
         >
           Reload preview
         </button>

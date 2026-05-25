@@ -198,12 +198,12 @@ export function MessageInput({ onSend, disabled }: Props) {
   };
 
   return (
-    <div className="border-t border-white/[0.06] p-4">
+    <div className="border-t border-hub p-4">
       {tags.length > 0 && (
         <div className="flex gap-1.5 mb-2 flex-wrap">
           {tags.map((tag) => (
             <span key={tag.agentId}
-              className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-accent/15 border border-accent/30 rounded-sm text-footnote text-accent/90"
+              className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-hub-accent/10 border border-hub-accent/30 rounded-sm text-footnote text-hub-accent"
             >
               @{tag.displayName}
               <button onClick={() => removeTag(tag.agentId)} className="ml-0.5 hover:text-white transition">&times;</button>
@@ -220,7 +220,7 @@ export function MessageInput({ onSend, disabled }: Props) {
           onKeyDown={handleKeyDown}
           placeholder="Type a message... @ to mention an agent"
           rows={1}
-          className="flex-1 bg-white/[0.06] text-white/85 rounded-md px-4 py-3 resize-none focus:outline-none focus:ring-1 focus:ring-accent text-body placeholder:text-white/20"
+          className="flex-1 bg-hub-input text-hub-primary rounded-hub-lg px-4 py-3 resize-none focus:outline-none focus:ring-1 focus:ring-hub-accent text-body placeholder:text-hub-muted"
           disabled={disabled}
         />
 
@@ -248,19 +248,19 @@ export function MessageInput({ onSend, disabled }: Props) {
         <select
           value={orchestrationMode}
           onChange={(e) => setOrchestrationMode(e.target.value as 'parallel' | 'sequential')}
-          className="text-footnote bg-white/[0.06] text-white/50 rounded-sm px-1.5 py-1 border border-white/[0.08] focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer shrink-0"
+          className="text-footnote bg-hub-input text-hub-tertiary rounded-sm px-1.5 py-1 border border-hub focus:outline-none focus:ring-1 focus:ring-hub-accent cursor-pointer shrink-0"
           title="Orchestration mode: parallel runs all @mentioned agents at once, sequential runs them one after another"
         >
           <option value="parallel">∥</option>
           <option value="sequential">→</option>
         </select>
 
-        <label className="flex items-center gap-1.5 text-footnote text-white/30 cursor-pointer select-none shrink-0" title="When off, permission requests are sent to you for approval">
+        <label className="flex items-center gap-1.5 text-footnote text-hub-tertiary cursor-pointer select-none shrink-0" title="When off, permission requests are sent to you for approval">
           <input
             type="checkbox"
             checked={trustMode}
             onChange={(e) => setTrustMode(e.target.checked)}
-            className="rounded-sm border-white/[0.12] bg-white/[0.06] text-accent focus:ring-accent"
+            className="rounded-sm border-hub bg-hub-input text-hub-accent focus:ring-hub-accent"
           />
           Trust
         </label>
@@ -281,7 +281,7 @@ export function MessageInput({ onSend, disabled }: Props) {
         />
         <button
           onClick={() => fileRef.current?.click()}
-          className="p-3 text-white/40 hover:text-white/70 rounded-md hover:bg-white/[0.06] transition"
+          className="p-3 text-hub-tertiary hover:text-hub-secondary rounded-md hover:bg-hub-hover transition"
           title="Attach file"
         >
           <Paperclip className="w-4 h-4" />
@@ -290,7 +290,7 @@ export function MessageInput({ onSend, disabled }: Props) {
         <button
           onClick={handleSend}
           disabled={disabled || !value.trim()}
-          className="p-3 bg-accent text-white rounded-md hover:bg-accent-hover active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed transition"
+          className="p-3 bg-hub-accent text-white rounded-md hover:bg-hub-accent-hover active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed transition"
         >
           <Send className="w-4 h-4" />
         </button>

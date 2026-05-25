@@ -12,11 +12,14 @@ interface Props {
 
 export function agentColor(name: string): string {
   const colors: Record<string, string> = {
-    'code-agent': '#7c3aed',
-    'review-agent': '#059669',
+    'code-agent': '#8b5cf6',
+    'review-agent': '#38a169',
     'devops-agent': '#ea580c',
+    'planner': '#4fd1c5',
+    'test-agent': '#569cd6',
+    'security-agent': '#d69e2e',
   };
-  return colors[name] ?? '#6b7280';
+  return colors[name] ?? '#4fd1c5';
 }
 
 export function AgentMentionPopup({ agents, query, focusedIndex, onSelect, onClose, position }: Props) {
@@ -37,14 +40,14 @@ export function AgentMentionPopup({ agents, query, focusedIndex, onSelect, onClo
   return (
     <div
       ref={popupRef}
-      className="absolute z-50 bg-gray-800 border border-gray-600 rounded-lg shadow-xl w-56 overflow-hidden"
+      className="absolute z-50 bg-hub-raised border border-hub rounded-hub-lg shadow-xl w-56 overflow-hidden"
       style={{ bottom: '100%', left: position.left, marginBottom: 4 }}
     >
       {agents.map((agent, i) => (
         <div
           key={agent.id}
           className={`px-3 py-2 cursor-pointer flex items-center gap-2 text-sm ${
-            i === focusedIndex ? 'bg-gray-700 text-white' : 'text-gray-300 hover:bg-gray-700'
+            i === focusedIndex ? 'bg-hub-active text-hub-primary' : 'text-hub-secondary hover:bg-hub-hover'
           }`}
           onMouseDown={(e) => { e.preventDefault(); onSelect(agent); }}
         >
@@ -55,9 +58,9 @@ export function AgentMentionPopup({ agents, query, focusedIndex, onSelect, onClo
           </span>
           <div className="min-w-0 flex-1">
             <div className="text-xs font-medium truncate">{agent.displayName}</div>
-            <div className="text-[10px] text-gray-500 truncate">{agent.description}</div>
+            <div className="text-[10px] text-hub-muted truncate">{agent.description}</div>
           </div>
-          <span className="text-[10px] text-gray-500 ml-auto">@{agent.name.charAt(0)}</span>
+          <span className="text-[10px] text-hub-muted ml-auto">@{agent.name.charAt(0)}</span>
         </div>
       ))}
     </div>

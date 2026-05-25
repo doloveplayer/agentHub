@@ -22,7 +22,7 @@ function TreeNode({ node, depth, onSelect }: { node: FileNode; depth: number; on
   return (
     <div>
       <div
-        className="flex items-center gap-1 px-2 py-0.5 hover:bg-slate-700/50 cursor-pointer text-xs"
+        className="flex items-center gap-1 px-2 py-0.5 hover:bg-hub-hover/50 cursor-pointer text-xs"
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
         onClick={() => {
           if (node.type === 'directory') setExpanded(!expanded);
@@ -37,11 +37,11 @@ function TreeNode({ node, depth, onSelect }: { node: FileNode; depth: number; on
         {node.type === 'directory' ? (
           <Folder size={12} className="text-yellow-500 shrink-0" />
         ) : (
-          <File size={12} className="text-slate-400 shrink-0" />
+          <File size={12} className="text-hub-tertiary shrink-0" />
         )}
-        <span className="truncate text-slate-300">{node.name}</span>
+        <span className="truncate text-hub-secondary">{node.name}</span>
         {node.size !== undefined && (
-          <span className="text-slate-500 ml-auto shrink-0">
+          <span className="text-hub-muted ml-auto shrink-0">
             {node.size < 1024 ? `${node.size}B` : node.size < 1048576 ? `${(node.size / 1024).toFixed(1)}KB` : `${(node.size / 1048576).toFixed(1)}MB`}
           </span>
         )}
@@ -77,21 +77,21 @@ export function FileTree({ sessionId, onSelectFile }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700">
-        <span className="text-xs font-medium text-slate-400 uppercase tracking-wide">Files</span>
-        <button onClick={fetchTree} className="p-1 hover:bg-slate-700 rounded" title="Refresh">
-          <RefreshCw size={12} className={loading ? 'animate-spin text-green-400' : 'text-slate-500'} />
+      <div className="flex items-center justify-between px-3 py-2 border-b border-hub">
+        <span className="text-xs font-medium text-hub-tertiary uppercase tracking-wide">Files</span>
+        <button onClick={fetchTree} className="p-1 hover:bg-hub-hover rounded" title="Refresh">
+          <RefreshCw size={12} className={loading ? 'animate-spin text-green-400' : 'text-hub-muted'} />
         </button>
       </div>
       <div className="flex-1 overflow-auto py-1 font-mono">
         {loading && tree.length === 0 && (
-          <div className="text-xs text-slate-500 px-3 py-2">Loading...</div>
+          <div className="text-xs text-hub-muted px-3 py-2">Loading...</div>
         )}
         {error && (
           <div className="text-xs text-red-400 px-3 py-2">{error}</div>
         )}
         {!loading && tree.length === 0 && !error && (
-          <div className="text-xs text-slate-500 px-3 py-2">No files yet</div>
+          <div className="text-xs text-hub-muted px-3 py-2">No files yet</div>
         )}
         {tree.map((node, i) => (
           <TreeNode key={node.path || i} node={node} depth={0} onSelect={onSelectFile} />
