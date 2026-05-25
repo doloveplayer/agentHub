@@ -58,8 +58,8 @@ export function VersionTimeline({ sessionId }: Props) {
       {versions.length === 0 && (
         <div className="rounded-md border border-hub px-3 py-2 text-xs text-hub-muted">No versions recorded yet</div>
       )}
-      <div className="space-y-2">
-        {versions.map((version) => (
+      <div className="space-y-2 max-h-64 overflow-y-auto">
+        {versions.slice(0, 20).map((version) => (
           <div key={version.id} className="rounded-md border border-hub bg-hub-hover px-3 py-2">
             <div className="flex items-start gap-2">
               <Clock className="mt-0.5 h-3.5 w-3.5 text-hub-muted" />

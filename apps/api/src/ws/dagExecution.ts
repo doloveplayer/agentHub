@@ -48,8 +48,13 @@ export function consumeReadyTasks(state: DagExecutionState): DagTaskAssignment[]
   const ready: DagTaskAssignment[] = [];
   for (const item of state.tasks.values()) {
     if (item.status !== 'waiting') continue;
-    if (!item.task.dependsOn.every((depId) => state.tasks.get(depId)?.status === 'done')) continue;
+    const unmet = item.task.dependsOn.filter((depId) => state.tasks.get(depId)?.status !== 'done');
+    if (unmet.length > 0) {
+      console.log(`[dag] Task ${item.task.id} waiting for: ${unmet.join(', ')} (statuses: ${unmet.map(d => d + '=' + state.tasks.get(d)?.status).join(', ')})`);
+      continue;
+    }
     item.status = 'queued';
+    console.log(`[dag] Task ${item.task.id} ready (dependsOn=[${item.task.dependsOn.join(',')}])`);
     ready.push(toAssignment(item));
   }
   return ready;

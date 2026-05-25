@@ -10,7 +10,7 @@ interface Props {
 /** Inline preview component for embedding inside panel tabs or message cards */
 export function PreviewFrame({ sessionId }: Props) {
   const [ports, setPorts] = useState<number[]>([]);
-  const [port, setPort] = useState<number>(5173);
+  const [port, setPort] = useState<number>(5175);
   const [url, setUrl] = useState('');
   const [directUrl, setDirectUrl] = useState('');
   const [beforeShot, setBeforeShot] = useState('');

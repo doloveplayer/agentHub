@@ -267,6 +267,13 @@ export class ClaudeCodeProcess {
     proc.on('close', (code) => {
       if (runId !== this.runSeq) return;
       if (runId === this.runSeq) this.childProc = null;
+
+      // Clean up prompt file to prevent sandbox clutter
+      const { hostWorkDir, promptFile } = this.runOptions || {};
+      if (hostWorkDir && promptFile) {
+        try { require('fs').unlinkSync(resolve(hostWorkDir, promptFile)); } catch {}
+      }
+
       if (this.suppressCloseDone || this.pendingPermission) return;
       if (!this.killed) {
         // Flush remaining partial line if any
