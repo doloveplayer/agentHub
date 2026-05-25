@@ -67,7 +67,7 @@ export const config = {
     root: optional('SANDBOXES_ROOT', resolve(PROJECT_ROOT, '.sandboxes')),
   },
 
-  frontendUrl: optional('FRONTEND_URL', 'http://localhost:5174'),
+  frontendUrl: optional('FRONTEND_URL', 'http://localhost:5175'),
 
   agent: {
     timeoutMs: optionalInt('AGENT_TIMEOUT_MS', 300_000),  // 5 min default
