@@ -97,6 +97,10 @@ export function buildDockerEnvArgs(env: Record<string, string>): string[] {
     if (DOCKER_ENV_NAMES.has(key)) {
       const value = rewriteLocalhost(env[key]);
       args.push('-e', `${key}=${value}`);
+      // Log key API-related env vars (mask sensitive values)
+      if (key === 'ANTHROPIC_BASE_URL' || key === 'HTTPS_PROXY' || key === 'https_proxy') {
+        console.log(`[agent:env] Docker -e ${key}=${value}`);
+      }
     }
   }
   return args;
