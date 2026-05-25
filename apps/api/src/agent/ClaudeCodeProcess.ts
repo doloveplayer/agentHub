@@ -19,19 +19,15 @@ const SAFE_ENV_PREFIXES = [
 ];
 
 const ENV_BLOCKLIST_SUFFIXES = ['_TOKEN', '_SECRET', '_KEY', '_PASSWORD'];
+// Only pass Anthropic API credentials to the sandbox.
+// Proxy vars are intentionally excluded — the container uses --network host
+// and reaches api.deepseek.com directly via the host's internet connection.
+// GitHub OAuth proxy is handled by the backend, not the sandbox.
 const DOCKER_ENV_NAMES = new Set([
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN',
   'ANTHROPIC_BASE_URL',
   'ANTHROPIC_MODEL',
-  'HTTPS_PROXY',
-  'https_proxy',
-  'HTTP_PROXY',
-  'http_proxy',
-  'ALL_PROXY',
-  'all_proxy',
-  'NO_PROXY',
-  'no_proxy',
   'TZ',
   'LANG',
   'LC_ALL',
@@ -81,25 +77,13 @@ console.log('[agent:env] Host ANTHROPIC_* vars:', Object.keys(process.env).filte
 
 export { buildSafeEnv };
 
-/** Rewrite localhost → host.docker.internal in any env var value.
- *  Inside a Docker container, localhost points to the container itself,
- *  not the host. This rewrites URLs so the container can reach host services. */
-function rewriteLocalhost(value: string): string {
-  if (!value) return value;
-  return value
-    .replace(/(https?:\/\/)localhost\b/gi, '$1host.docker.internal')
-    .replace(/(https?:\/\/)127\.0\.0\.1\b/gi, '$1host.docker.internal');
-}
-
 export function buildDockerEnvArgs(env: Record<string, string>): string[] {
   const args: string[] = [];
   for (const key of Object.keys(env)) {
     if (DOCKER_ENV_NAMES.has(key)) {
-      const value = rewriteLocalhost(env[key]);
-      args.push('-e', `${key}=${value}`);
-      // Log key API-related env vars (mask sensitive values)
-      if (key === 'ANTHROPIC_BASE_URL' || key === 'HTTPS_PROXY' || key === 'https_proxy') {
-        console.log(`[agent:env] Docker -e ${key}=${value}`);
+      args.push('-e', key);
+      if (key === 'ANTHROPIC_BASE_URL') {
+        console.log(`[agent:env] Docker -e ${key}=${env[key]}`);
       }
     }
   }
