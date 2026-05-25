@@ -51,7 +51,7 @@ export $(grep -v '^#' .env | grep -v '^$' | xargs) && cd apps/api && npx prisma 
 # Backend (port 3000)
 cd apps/api && npx tsx src/index.ts
 
-# Frontend (port 5173, proxies /api and /ws to backend)
+# Frontend (port 5174, proxies /api and /ws to backend)
 cd apps/web && npx vite
 
 # TypeScript check
@@ -60,7 +60,7 @@ npx tsc --noEmit -p apps/web/tsconfig.json
 
 # Force stop
 fuser -k 3000/tcp  # backend
-fuser -k 5173/tcp  # frontend
+fuser -k 5174/tcp  # frontend
 
 # Cleanup orphaned sandboxes
 docker rm -f $(docker ps -aq --filter name=agenthub-sandbox) 2>/dev/null

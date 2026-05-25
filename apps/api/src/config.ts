@@ -8,10 +8,14 @@ const PROJECT_ROOT = resolve(__dirname, '../../..');
 dotenvConfig({ path: resolve(PROJECT_ROOT, '.env') });
 
 // Apply HTTPS proxy for external API calls (e.g., GitHub OAuth behind GFW).
-// undici's native fetch() respects https_proxy when set in process.env.
+// Node 18+ native fetch (undici) respects https_proxy when set in process.env.
 const httpsProxy = process.env.HTTPS_PROXY || '';
 if (httpsProxy) {
   process.env.https_proxy = httpsProxy;
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // tolerate proxy cert issues
+  console.log(`[config] HTTPS proxy configured: ${httpsProxy.replace(/\/\/.*@/, '//***@')}`);
+} else {
+  console.warn('[config] No HTTPS_PROXY set — GitHub OAuth will fail behind GFW');
 }
 
 function required(key: string): string {
@@ -62,6 +66,8 @@ export const config = {
     image: optional('SANDBOX_IMAGE', 'agenthub-sandbox:latest'),
     root: optional('SANDBOXES_ROOT', resolve(PROJECT_ROOT, '.sandboxes')),
   },
+
+  frontendUrl: optional('FRONTEND_URL', 'http://localhost:5174'),
 
   agent: {
     timeoutMs: optionalInt('AGENT_TIMEOUT_MS', 300_000),  // 5 min default

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { ProxyAgent } from 'undici';
 import { config } from '../config.js';
 import { prisma } from '../db/prisma.js';
 import { signToken } from '../lib/jwt.js';
@@ -7,11 +8,14 @@ import { authMiddleware } from '../middleware/auth.js';
 
 const auth = new Hono();
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 10_000): Promise<Response> {
+const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy || '';
+const proxyDispatcher = httpsProxy ? new ProxyAgent({ uri: httpsProxy }) : undefined;
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 30_000): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...init, signal: controller.signal });
+    return await fetch(url, { ...init, signal: controller.signal, ...(proxyDispatcher ? { dispatcher: proxyDispatcher } : {}) } as RequestInit & { dispatcher?: typeof proxyDispatcher });
   } finally {
     clearTimeout(timeout);
   }
@@ -49,8 +53,9 @@ auth.get('/github/callback', async (c) => {
         redirect_uri: config.github.callbackUrl,
       }),
     });
-  } catch {
-    return c.json({ error: 'GitHub token exchange failed' }, 500);
+  } catch (err) {
+    console.error('[auth] GitHub token exchange failed:', (err as Error).message);
+    return c.json({ error: `GitHub token exchange failed: ${(err as Error).message}` }, 500);
   }
 
   const tokenData = (await tokenRes.json()) as {
@@ -73,8 +78,9 @@ auth.get('/github/callback', async (c) => {
         Authorization: `Bearer ${tokenData.access_token}`,
       },
     });
-  } catch {
-    return c.json({ error: 'Failed to fetch GitHub user' }, 500);
+  } catch (err) {
+    console.error('[auth] Failed to fetch GitHub user:', (err as Error).message);
+    return c.json({ error: `Failed to fetch GitHub user: ${(err as Error).message}` }, 500);
   }
   const githubUser = (await userRes.json()) as {
     id: number;
@@ -108,7 +114,7 @@ auth.get('/github/callback', async (c) => {
   const token = signToken({ userId: user.id, githubLogin: user.login });
 
   // Redirect to frontend
-  const frontendUrl = new URL('http://localhost:5173/auth/callback');
+  const frontendUrl = new URL(`${config.frontendUrl}/auth/callback`);
   frontendUrl.searchParams.set('token', token);
   return c.redirect(frontendUrl.toString());
 });
