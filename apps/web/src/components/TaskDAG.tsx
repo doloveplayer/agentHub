@@ -10,6 +10,7 @@ const STATUS_STYLES: Record<string, { bg: string; border: string; text: string }
   running: { bg: '#1a2a2a', border: '#4fd1c5', text: '#99f6e4' },
   done:    { bg: '#1a2e1a', border: '#38a169', text: '#86efac' },
   failed:  { bg: '#3a1e1e', border: '#e53e3e', text: '#fca5a5' },
+  blocked: { bg: '#33260f', border: '#d69e2e', text: '#fbd38d' },
 };
 
 function CustomTaskNode({ data }: { data: Record<string, unknown> }) {

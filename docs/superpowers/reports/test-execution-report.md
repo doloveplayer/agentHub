@@ -17,18 +17,18 @@
 | 指标 | 数量 |
 |---|---:|
 | 用例总数 | 230 |
-| 实际执行数 | 81 |
-| Playwright 执行覆盖 | 39 |
-| 接口验证覆盖 | 71 |
+| 实际执行数 | 96 |
+| Playwright 执行覆盖 | 41 |
+| 接口验证覆盖 | 84 |
 | 数据库验证覆盖 | 37 |
-| 通过 | 81 |
+| 通过 | 96 |
 | 失败 | 0 |
-| 阻塞 | 106 |
-| 未执行 | 43 |
-| 发现缺陷 | 10 |
-| 已修复/已回归缺陷 | 8 |
-| 已通过测试模式缓解 | 1 |
-| 未修复/待确认缺陷 | 2 |
+| 阻塞 | 92 |
+| 未执行 | 42 |
+| 发现缺陷 | 14 |
+| 已修复/已回归缺陷 | 14 |
+| 已通过测试模式缓解 | 0 |
+| 未修复/待确认缺陷 | 0 |
 | Code Review 阻塞问题 | 0 |
 
 ## 环境检查结果
@@ -50,9 +50,11 @@
 - 验证删除当前会话、空状态相关页面路径。
 - 使用真实 Agent CLI 验证 SmartSupport 长流式输出、读文件、stop、Planner plan_result、多 Agent 并行和基础浏览器 UI。
 - 新增默认关闭的 `AGENTHUB_AGENT_PROVIDER=test` mock/test provider 后，复测权限卡片、permission allow/deny、tool_use/tool_result、subagent_start/result、Planner plan_result、无效 permissionId、并行冲突和 UI 权限卡片；WS 6/6 通过，Playwright 权限卡片通过。
-- 使用 Playwright 可见浏览器执行 `JohnSiegfried` 真实 GitHub OAuth 白名单授权；后端回调后 DB 出现 `JohnSiegfried` 用户记录，证据见 `oauth-live-evidence.json`。
-- 使用独立 Playwright 可见浏览器执行 `XTC2233` 真实 GitHub OAuth 非白名单授权；后端 callback 返回 403 `User not in allowed list`，DB 未创建 `XTC2233`/`xtc2233` 用户，证据见 `oauth-nonwhitelist-evidence.json`。
-- 使用 `AGENTHUB_AGENT_PROVIDER=test` 执行 31 分 31 秒长稳压测：空库/1w/10w 会话列表、50 会话沙箱创建删除、100 并发 WS、30 分钟空闲 WS 续发均通过，证据见 `long-stability-report.md` 与 `long-stability-evidence.json`。
+- 使用真实 `claude-code` provider 复测 Trust OFF 权限代理：Allow、Deny、Timeout 三态均通过；真实 Playwright 权限卡 2332ms 可见并可 Allow 后写入文件，证据见 `evidence/real-provider-permission-evidence.json`、`evidence/real-provider-ui-evidence.json` 和 `evidence/real-provider-ui-permission.png`。
+- 使用 Playwright 可见浏览器执行 `JohnSiegfried` 真实 GitHub OAuth 白名单授权；后端回调后 DB 出现 `JohnSiegfried` 用户记录，证据见 `evidence/oauth-live-evidence.json`。
+- 使用独立 Playwright 可见浏览器执行 `XTC2233` 真实 GitHub OAuth 非白名单授权；后端 callback 返回 403 `User not in allowed list`，DB 未创建 `XTC2233`/`xtc2233` 用户，证据见 `evidence/oauth-nonwhitelist-evidence.json`。
+- 使用 `AGENTHUB_AGENT_PROVIDER=test` 执行 31 分 31 秒长稳压测：空库/1w/10w 会话列表、50 会话沙箱创建删除、100 并发 WS、30 分钟空闲 WS 续发均通过，证据见 `long-stability-report.md` 与 `evidence/long-stability-evidence.json`。
+- 使用 `AGENTHUB_AGENT_PROVIDER=test` 执行 Planner DAG 确认执行回归：WS 覆盖依赖等待、独立兄弟并行、失败阻塞、modify_task、retry_task、失败根任务重试后释放依赖、重复 confirm 去重、循环依赖拒绝；Playwright 覆盖 `/plan` 生成确认面板、点击 Confirm All、Tasks DAG/Plan Summary 最终 `2/2 done`，证据见 `evidence/planner-dag-ws-evidence.json`、`evidence/planner-dag-ui-evidence.json`、`evidence/planner-dag-ui-plan.png`、`evidence/planner-dag-ui-done.png`。
 
 ## 用例执行摘要
 
@@ -63,10 +65,10 @@
 | 严重级别 | 数量 |
 |---|---:|
 | 阻塞 | 0 |
-| 严重 | 6 |
+| 严重 | 10 |
 | 一般 | 4 |
 | 轻微 | 0 |
-| 未修复/阻塞风险 | 2 |
+| 未修复/阻塞风险 | 0 |
 
 ## 已发现问题清单
 
@@ -78,12 +80,16 @@
 - BUG-006 (TC-SESS-006) 会话列表 lastMessage 未按约定截断
 - BUG-007 (TC-SBX-013 / TC-AGT-009) 同一 Agent 第二次调用因 message-scoped CLAUDE_CONFIG_DIR 导致 Claude --resume 立即失败
 - BUG-008 (TC-SESS-020 / LIVE-READ) stream_end 早于 DB 内容更新，结束后立即查询可能读到空 agent 消息
-- BUG-009 (TC-WS-010 / TC-WS-011 / TC-NFR-006) Trust OFF 写文件任务未产生可响应的 permission_request 事件；已通过 test provider 缓解并完成 UI/WS 回归，真实 Claude Code provider 限制仍列为风险
-- BUG-010 (TC-SBX-008) Agent 可在工作区读取 provider 环境文件，服务日志也可能出现工具结果中的凭据内容
+- BUG-009 (TC-WS-010 / TC-WS-011 / TC-WS-012 / TC-WS-013 / TC-NFR-006) Trust OFF 写文件任务权限代理；已通过 test provider 和真实 Claude provider 回归，Allow/Deny/Timeout 与 3 秒内权限卡均通过
+- BUG-010 (TC-SBX-008) Agent 可在工作区读取 provider 环境文件，服务日志也可能出现工具结果中的凭据内容；已改为 Docker env name 注入并验证 workspace 不再生成 `_env.sh`，日志不输出凭据明文
+- BUG-011 (TC-HUB-010/011/028/029) Planner DAG 调度只排序不等待依赖，且前端 `plan_executing` 将全部节点提前置 running；已新增 DAG execution state，按 ready task 调度，失败后阻塞后继。
+- BUG-012 (TC-HUB-011) `/plan` slash command 后端忽略前端 agentMessageId，导致 Planner stream_end/plan_result 写不到 UI 占位消息，确认面板不渲染；已复用前端 messageId。
+- BUG-013 (TC-HUB-011/019) 任务消息 ID 仅使用 `task-${taskId}`，跨 session/plan 撞库后新任务会被误判为已完成并跳过；已改为包含 planId 的任务消息 ID。
+- BUG-014 (TC-HUB-015/027/029) 失败任务重试后 DAG execution state 已删除，依赖 blocked 子树和 Plan Summary 不能恢复；已保留 plan 状态并在 retry 时重置可恢复 blocked 子树。
 
 ## 主要风险
 
-权限代理和 30 分钟长稳基线在 test provider 下已可回归，真实 OAuth 白名单/非白名单链路已完成；真实 Claude Code provider 的 permission_request 能力、凭据文件/日志脱敏、Planner DAG 完整确认执行、云部署、8 小时混合长稳和人工视觉类用例仍是主要未覆盖风险。
+权限代理、30 分钟长稳基线和 Planner DAG 确认执行在 test provider 下已可回归，真实 OAuth 白名单/非白名单链路已完成；真实 Claude Code provider 的权限请求、Allow/Deny/Timeout、UI 权限卡和 `_env.sh` 移除已完成回归。云部署、8 小时混合长稳、真实 Claude 多 Agent DAG 长任务、人工视觉类用例，以及模型 provider 凭据的长期隔离方案仍是主要未覆盖风险。
 
 ## 上线建议
 

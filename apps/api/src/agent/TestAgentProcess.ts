@@ -10,6 +10,11 @@ const SUBAGENT_HINT_RE = /subagent|子agent|子 agent|并行分析|复杂分析/
 const LONG_TASK_HINT_RE = /long|timeout|stop|长任务|持续输出|不要停止/i;
 const START_ERROR_HINT_RE = /mock-start-error|start error|启动失败/i;
 const PLANNER_HINT_RE = /planner|\/plan|任务拆解|生成计划|task dag|dag/i;
+const DAG_TASK_HINT_RE = /mock-dag-(?:success|fail|fail-once|delay)/i;
+const DAG_DELAY_RE = /mock-dag-delay:(\d+)/i;
+const DAG_FAIL_RE = /mock-dag-fail(?!-once)/i;
+const DAG_FAIL_ONCE_RE = /mock-dag-fail-once/i;
+const dagTaskAttempts = new Map<string, number>();
 
 export class TestAgentProcess {
   private handlers: TestAgentEventHandler[] = [];
@@ -55,6 +60,11 @@ export class TestAgentProcess {
         this.emit({ type: 'text', content: 'Mock long task heartbeat.\n' });
       }, 250);
       this.timers.add(interval);
+      return;
+    }
+
+    if (DAG_TASK_HINT_RE.test(focusedPrompt)) {
+      this.emitDagTask(focusedPrompt, promptFileId);
       return;
     }
 
@@ -158,7 +168,7 @@ export class TestAgentProcess {
         {
           id: 'task-1',
           title: 'Implement chat API',
-          description: 'Create or update /api/chat for SmartSupport.',
+          description: 'mock-dag-success Create or update /api/chat for SmartSupport.',
           agentType: 'CodeAgent',
           dependsOn: [],
           expectedOutput: 'Working chat API',
@@ -167,7 +177,7 @@ export class TestAgentProcess {
         {
           id: 'task-2',
           title: 'Review chat behavior',
-          description: 'Review implementation and edge cases.',
+          description: 'mock-dag-success Review implementation and edge cases.',
           agentType: 'ReviewAgent',
           dependsOn: ['task-1'],
           expectedOutput: 'Review report',
@@ -181,6 +191,34 @@ export class TestAgentProcess {
     this.schedule(20, () => this.emit({ type: 'text', content: `${JSON.stringify(plan, null, 2)}\n` }));
     this.schedule(30, () => this.emit({ type: 'text', content: '```\n' }));
     this.schedule(40, () => this.emit({ type: 'done', exitCode: 0 }));
+  }
+
+  private emitDagTask(prompt: string, promptFileId?: string): void {
+    const key = promptFileId || prompt.slice(0, 120);
+    const attempts = (dagTaskAttempts.get(key) || 0) + 1;
+    dagTaskAttempts.set(key, attempts);
+
+    const title = extractPromptField(prompt, 'Task') || 'Untitled task';
+    const description = extractPromptField(prompt, 'Description') || '';
+    const delayMatch = prompt.match(DAG_DELAY_RE);
+    const delayMs = delayMatch?.[1]
+      ? Math.max(10, Math.min(Number.parseInt(delayMatch[1], 10), 2_000))
+      : 40;
+    const shouldFail =
+      DAG_FAIL_RE.test(prompt) ||
+      (DAG_FAIL_ONCE_RE.test(prompt) && attempts === 1);
+
+    this.schedule(10, () => this.emit({
+      type: 'text',
+      content: `Mock DAG task executing: ${title}\nDescription: ${description}\n`,
+    }));
+    this.schedule(delayMs, () => {
+      this.emit({
+        type: 'text',
+        content: shouldFail ? 'Mock DAG task failed deterministically.\n' : 'Mock DAG task completed successfully.\n',
+      });
+      this.emit({ type: 'done', exitCode: shouldFail ? 1 : 0 });
+    });
   }
 }
 
@@ -198,6 +236,12 @@ function extractFilePath(prompt: string): string | null {
   if (!match?.[1]) return null;
   const normalized = normalize(match[1]).replace(/^(\.\.[/\\])+/, '');
   return normalized || null;
+}
+
+function extractPromptField(prompt: string, field: string): string | null {
+  const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = prompt.match(new RegExp(`^${escaped}:\\s*(.*)$`, 'im'));
+  return match?.[1]?.trim() || null;
 }
 
 function writeSafeWorkspaceFile(hostWorkDir: string, filePath: string, content: string): void {
