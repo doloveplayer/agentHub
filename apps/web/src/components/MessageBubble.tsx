@@ -86,9 +86,9 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
             </div>
           ) : isStreaming ? (
             <span className="inline-flex items-center gap-1">
-              <span className="w-1.5 h-4 bg-hub-tertiary rounded-full streaming-cursor" />
-              <span className="w-1.5 h-3 bg-hub-tertiary/60 rounded-full streaming-cursor" style={{ animationDelay: '0.15s' }} />
-              <span className="w-1.5 h-2 bg-hub-tertiary/30 rounded-full streaming-cursor" style={{ animationDelay: '0.3s' }} />
+              <span className="w-1.5 h-4 rounded-full streaming-cursor" style={{ backgroundColor: 'var(--text-tertiary)' }} />
+              <span className="w-1.5 h-3 rounded-full streaming-cursor" style={{ backgroundColor: 'var(--text-tertiary)', opacity: 0.6, animationDelay: '0.15s' }} />
+              <span className="w-1.5 h-2 rounded-full streaming-cursor" style={{ backgroundColor: 'var(--text-tertiary)', opacity: 0.3, animationDelay: '0.3s' }} />
             </span>
           ) : (
             <span className="text-hub-muted italic text-xs">{message.status === 'error' ? '[Agent stopped]' : '[No output]'}</span>

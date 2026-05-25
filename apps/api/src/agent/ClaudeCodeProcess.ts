@@ -81,10 +81,24 @@ console.log('[agent:env] Host ANTHROPIC_* vars:', Object.keys(process.env).filte
 
 export { buildSafeEnv };
 
+const PROXY_VARS = new Set([
+  'HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy',
+]);
+
+/** Rewrite localhost → host.docker.internal so the container can reach host proxy. */
+function rewriteProxyValue(key: string, value: string): string {
+  if (!PROXY_VARS.has(key)) return value;
+  return value.replace(/(https?:\/\/)localhost\b/gi, (_, p) => `${p}host.docker.internal`).replace(/(https?:\/\/)127\.0\.0\.1\b/gi, (_, p) => `${p}host.docker.internal`);
+}
+
 export function buildDockerEnvArgs(env: Record<string, string>): string[] {
   const args: string[] = [];
   for (const key of Object.keys(env)) {
-    if (DOCKER_ENV_NAMES.has(key)) args.push('-e', key);
+    if (DOCKER_ENV_NAMES.has(key)) {
+      const raw = env[key];
+      const value = rewriteProxyValue(key, raw);
+      args.push('-e', `${key}=${value}`);
+    }
   }
   return args;
 }
@@ -192,6 +206,7 @@ export class ClaudeCodeProcess {
     const args: string[] = [
       'run', '--rm', '-i',
       '--name', containerName,
+      '--add-host', 'host.docker.internal:host-gateway',
       '-v', `${hwDir}:/workspace`,
       '-w', '/workspace',
       ...buildDockerEnvArgs(safeEnv),
