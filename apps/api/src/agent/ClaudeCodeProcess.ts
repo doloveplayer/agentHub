@@ -81,22 +81,21 @@ console.log('[agent:env] Host ANTHROPIC_* vars:', Object.keys(process.env).filte
 
 export { buildSafeEnv };
 
-const PROXY_VARS = new Set([
-  'HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy', 'ALL_PROXY', 'all_proxy', 'NO_PROXY', 'no_proxy',
-]);
-
-/** Rewrite localhost → host.docker.internal so the container can reach host proxy. */
-function rewriteProxyValue(key: string, value: string): string {
-  if (!PROXY_VARS.has(key)) return value;
-  return value.replace(/(https?:\/\/)localhost\b/gi, (_, p) => `${p}host.docker.internal`).replace(/(https?:\/\/)127\.0\.0\.1\b/gi, (_, p) => `${p}host.docker.internal`);
+/** Rewrite localhost → host.docker.internal in any env var value.
+ *  Inside a Docker container, localhost points to the container itself,
+ *  not the host. This rewrites URLs so the container can reach host services. */
+function rewriteLocalhost(value: string): string {
+  if (!value) return value;
+  return value
+    .replace(/(https?:\/\/)localhost\b/gi, '$1host.docker.internal')
+    .replace(/(https?:\/\/)127\.0\.0\.1\b/gi, '$1host.docker.internal');
 }
 
 export function buildDockerEnvArgs(env: Record<string, string>): string[] {
   const args: string[] = [];
   for (const key of Object.keys(env)) {
     if (DOCKER_ENV_NAMES.has(key)) {
-      const raw = env[key];
-      const value = rewriteProxyValue(key, raw);
+      const value = rewriteLocalhost(env[key]);
       args.push('-e', `${key}=${value}`);
     }
   }
