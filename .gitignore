@@ -44,3 +44,5 @@ docs/superpowers/plans/.archived
 apps/api/test_ws_direct.ts
 apps/api/test_claude_direct.ts
 screenTmp/
+
+memory.md
