@@ -122,7 +122,7 @@ export interface TaskState {
   planId: string;
   title: string;
   agentType: string;
-  status: 'waiting' | 'queued' | 'running' | 'done' | 'failed';
+  status: 'waiting' | 'queued' | 'running' | 'done' | 'failed' | 'blocked';
   dependsOn: string[];
   progress?: { completed: number; total: number };
   assignedAgentId?: string;

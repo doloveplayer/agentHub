@@ -100,3 +100,44 @@ test('TestAgentProcess emits deterministic planner JSON', async () => {
   assert.match(text, /"planTitle": "Mock SmartSupport DAG"/);
   assert.match(text, /"agentType": "CodeAgent"/);
 });
+
+test('TestAgentProcess supports deterministic DAG task success with description echo', async () => {
+  const proc = new TestAgentProcess();
+  const events: ParsedEvent[] = [];
+  proc.onEvent((event) => events.push(event));
+
+  await proc.start(
+    'session-1',
+    'Task: Review\nDescription: mock-dag-success edited task description\nExpected Output: report.md\nExecute this task now.',
+    'container',
+    '/workspace',
+    true,
+    undefined,
+    'task-review',
+  );
+  await waitForEvent(events, (event) => event.type === 'done' && event.exitCode === 0);
+
+  const text = events.filter((event) => event.type === 'text').map((event) => event.content).join('');
+  assert.match(text, /Mock DAG task executing: Review/);
+  assert.match(text, /edited task description/);
+});
+
+test('TestAgentProcess supports deterministic DAG task failure', async () => {
+  const proc = new TestAgentProcess();
+  const events: ParsedEvent[] = [];
+  proc.onEvent((event) => events.push(event));
+
+  await proc.start(
+    'session-1',
+    'Task: Broken task\nDescription: mock-dag-fail\nExpected Output: error.txt\nExecute this task now.',
+    'container',
+    '/workspace',
+    true,
+    undefined,
+    'task-broken',
+  );
+
+  const done = await waitForEvent(events, (event) => event.type === 'done');
+  assert.equal(done.type, 'done');
+  assert.equal(done.exitCode, 1);
+});

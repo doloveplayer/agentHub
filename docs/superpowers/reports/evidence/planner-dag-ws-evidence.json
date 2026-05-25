@@ -1,0 +1,630 @@
+{
+  "createdAt": "2026-05-25T08:04:22.797Z",
+  "provider": "test",
+  "deploymentScope": "excluded by request",
+  "api": "http://127.0.0.1:3000",
+  "sessionId": "4e1f1c3a-e0d3-4375-9443-e61ace24f93e",
+  "agents": [
+    {
+      "name": "code-agent",
+      "displayName": "CodeAgent"
+    },
+    {
+      "name": "deps-agent",
+      "displayName": "DepsAgent"
+    },
+    {
+      "name": "planner",
+      "displayName": "Planner"
+    },
+    {
+      "name": "review-agent",
+      "displayName": "ReviewAgent"
+    },
+    {
+      "name": "test-agent",
+      "displayName": "TestAgent"
+    }
+  ],
+  "checks": {
+    "order": {
+      "taskACompleted": 4,
+      "taskBAssigned": 5,
+      "taskCAssigned": 1
+    },
+    "failure": {
+      "failRootFailed": true,
+      "siblingCompleted": true,
+      "dependentBlocked": true,
+      "dependentAssigned": false
+    },
+    "modifyTask": {
+      "editedPromptSeen": true
+    },
+    "retry": {
+      "failedThenCompleted": true,
+      "assignedCount": 2
+    },
+    "retryDag": {
+      "failedSummarySeen": true,
+      "recoveredSummarySeen": true,
+      "dependentCompletedAfterRetry": true
+    },
+    "retryRequiresTaskData": true,
+    "duplicateConfirm": {
+      "assignedCount": 1
+    },
+    "cycleRejection": {
+      "streamError": true,
+      "assigned": false
+    }
+  },
+  "events": [
+    {
+      "at": 223,
+      "type": "connected"
+    },
+    {
+      "at": 251,
+      "type": "task_assigned",
+      "planId": "plan-dag-order-1779696260671",
+      "taskId": "task-a",
+      "agentName": "test-agent"
+    },
+    {
+      "at": 268,
+      "type": "agent_status",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-a"
+    },
+    {
+      "at": 268,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-a",
+      "content": "Mock DAG task executing: Root slow task\nDescription: mock-dag-delay:350 root must finish before review\n"
+    },
+    {
+      "at": 270,
+      "type": "task_assigned",
+      "planId": "plan-dag-order-1779696260671",
+      "taskId": "task-c",
+      "agentName": "deps-agent"
+    },
+    {
+      "at": 270,
+      "type": "plan_executing",
+      "planId": "plan-dag-order-1779696260671"
+    },
+    {
+      "at": 272,
+      "type": "agent_status",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-c"
+    },
+    {
+      "at": 280,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-c",
+      "content": "Mock DAG task executing: Independent dependency audit\nDescription: mock-dag-delay:80 sibling can run in parallel\n"
+    },
+    {
+      "at": 350,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-c",
+      "content": "Mock DAG task completed successfully.\n"
+    },
+    {
+      "at": 351,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-c"
+    },
+    {
+      "at": 367,
+      "type": "task_completed",
+      "planId": "plan-dag-order-1779696260671",
+      "taskId": "task-c",
+      "agentName": "deps-agent",
+      "output": "done"
+    },
+    {
+      "at": 602,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-a",
+      "content": "Mock DAG task completed successfully.\n"
+    },
+    {
+      "at": 603,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-a"
+    },
+    {
+      "at": 621,
+      "type": "task_completed",
+      "planId": "plan-dag-order-1779696260671",
+      "taskId": "task-a",
+      "agentName": "test-agent",
+      "output": "done"
+    },
+    {
+      "at": 631,
+      "type": "task_assigned",
+      "planId": "plan-dag-order-1779696260671",
+      "taskId": "task-b",
+      "agentName": "review-agent"
+    },
+    {
+      "at": 632,
+      "type": "agent_status",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-b"
+    },
+    {
+      "at": 641,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-b",
+      "content": "Mock DAG task executing: Dependent review task\nDescription: mock-dag-success must wait for task-a\n"
+    },
+    {
+      "at": 671,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-b",
+      "content": "Mock DAG task completed successfully.\n"
+    },
+    {
+      "at": 671,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-order-1779696260671-task-b"
+    },
+    {
+      "at": 701,
+      "type": "task_completed",
+      "planId": "plan-dag-order-1779696260671",
+      "taskId": "task-b",
+      "agentName": "review-agent",
+      "output": "done"
+    },
+    {
+      "at": 701,
+      "type": "plan_summary",
+      "planId": "plan-dag-order-1779696260671",
+      "total": 3,
+      "completed": 3,
+      "failed": 0
+    },
+    {
+      "at": 751,
+      "type": "task_assigned",
+      "planId": "plan-dag-failure-1779696260671",
+      "taskId": "fail-root",
+      "agentName": "test-agent"
+    },
+    {
+      "at": 759,
+      "type": "agent_status",
+      "agentMessageId": "task-plan-dag-failure-1779696260671-fail-root"
+    },
+    {
+      "at": 760,
+      "type": "task_assigned",
+      "planId": "plan-dag-failure-1779696260671",
+      "taskId": "sibling",
+      "agentName": "deps-agent"
+    },
+    {
+      "at": 760,
+      "type": "plan_executing",
+      "planId": "plan-dag-failure-1779696260671"
+    },
+    {
+      "at": 761,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-failure-1779696260671-fail-root",
+      "content": "Mock DAG task executing: Failing root task\nDescription: mock-dag-fail root failure\n"
+    },
+    {
+      "at": 761,
+      "type": "agent_status",
+      "agentMessageId": "task-plan-dag-failure-1779696260671-sibling"
+    },
+    {
+      "at": 771,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-failure-1779696260671-sibling",
+      "content": "Mock DAG task executing: Independent sibling task\nDescription: mock-dag-success sibling unaffected\n"
+    },
+    {
+      "at": 791,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-failure-1779696260671-fail-root",
+      "content": "Mock DAG task failed deterministically.\n"
+    },
+    {
+      "at": 792,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-failure-1779696260671-fail-root"
+    },
+    {
+      "at": 839,
+      "type": "task_failed",
+      "planId": "plan-dag-failure-1779696260671",
+      "taskId": "fail-root",
+      "agentName": "test-agent",
+      "output": "exit code 1"
+    },
+    {
+      "at": 839,
+      "type": "task_blocked",
+      "planId": "plan-dag-failure-1779696260671",
+      "taskId": "dependent",
+      "agentName": "review-agent",
+      "output": "Blocked because dependency fail-root failed",
+      "blockedBy": "fail-root"
+    },
+    {
+      "at": 839,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-failure-1779696260671-sibling",
+      "content": "Mock DAG task completed successfully.\n"
+    },
+    {
+      "at": 839,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-failure-1779696260671-sibling"
+    },
+    {
+      "at": 877,
+      "type": "task_completed",
+      "planId": "plan-dag-failure-1779696260671",
+      "taskId": "sibling",
+      "agentName": "deps-agent",
+      "output": "done"
+    },
+    {
+      "at": 877,
+      "type": "plan_summary",
+      "planId": "plan-dag-failure-1779696260671",
+      "total": 3,
+      "completed": 1,
+      "failed": 2
+    },
+    {
+      "at": 880,
+      "type": "task_modified",
+      "planId": "plan-dag-modify-1779696260671",
+      "taskId": "task-edit"
+    },
+    {
+      "at": 924,
+      "type": "task_assigned",
+      "planId": "plan-dag-modify-1779696260671",
+      "taskId": "task-edit",
+      "agentName": "review-agent"
+    },
+    {
+      "at": 924,
+      "type": "plan_executing",
+      "planId": "plan-dag-modify-1779696260671"
+    },
+    {
+      "at": 926,
+      "type": "agent_status",
+      "agentMessageId": "task-plan-dag-modify-1779696260671-task-edit"
+    },
+    {
+      "at": 935,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-modify-1779696260671-task-edit",
+      "content": "Mock DAG task executing: Editable task\nDescription: mock-dag-success edited description from modify_task\n"
+    },
+    {
+      "at": 964,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-modify-1779696260671-task-edit",
+      "content": "Mock DAG task completed successfully.\n"
+    },
+    {
+      "at": 964,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-modify-1779696260671-task-edit"
+    },
+    {
+      "at": 981,
+      "type": "task_completed",
+      "planId": "plan-dag-modify-1779696260671",
+      "taskId": "task-edit",
+      "agentName": "review-agent",
+      "output": "done"
+    },
+    {
+      "at": 981,
+      "type": "plan_summary",
+      "planId": "plan-dag-modify-1779696260671",
+      "total": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "at": 1017,
+      "type": "task_assigned",
+      "planId": "plan-dag-retry-1779696260671",
+      "taskId": "retry-task",
+      "agentName": "review-agent"
+    },
+    {
+      "at": 1017,
+      "type": "plan_executing",
+      "planId": "plan-dag-retry-1779696260671"
+    },
+    {
+      "at": 1018,
+      "type": "agent_status",
+      "agentMessageId": "task-plan-dag-retry-1779696260671-retry-task"
+    },
+    {
+      "at": 1027,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-retry-1779696260671-retry-task",
+      "content": "Mock DAG task executing: Retry once task\nDescription: mock-dag-fail-once retry should pass on second attempt\n"
+    },
+    {
+      "at": 1057,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-retry-1779696260671-retry-task",
+      "content": "Mock DAG task failed deterministically.\n"
+    },
+    {
+      "at": 1057,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-retry-1779696260671-retry-task"
+    },
+    {
+      "at": 1104,
+      "type": "task_failed",
+      "planId": "plan-dag-retry-1779696260671",
+      "taskId": "retry-task",
+      "agentName": "review-agent",
+      "output": "exit code 1"
+    },
+    {
+      "at": 1104,
+      "type": "plan_summary",
+      "planId": "plan-dag-retry-1779696260671",
+      "total": 1,
+      "completed": 0,
+      "failed": 1
+    },
+    {
+      "at": 1126,
+      "type": "task_assigned",
+      "planId": "plan-dag-retry-1779696260671",
+      "taskId": "retry-task",
+      "agentName": "review-agent"
+    },
+    {
+      "at": 1136,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-retry-1779696260671-retry-task",
+      "content": "Mock DAG task executing: Retry once task\nDescription: mock-dag-fail-once retry should pass on second attempt\n"
+    },
+    {
+      "at": 1166,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-retry-1779696260671-retry-task",
+      "content": "Mock DAG task completed successfully.\n"
+    },
+    {
+      "at": 1166,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-retry-1779696260671-retry-task"
+    },
+    {
+      "at": 1166,
+      "type": "task_completed",
+      "planId": "plan-dag-retry-1779696260671",
+      "taskId": "retry-task",
+      "agentName": "review-agent",
+      "output": "Mock DAG task executing: Retry once task\nDescription: mock-dag-fail-once retry should pass on second attempt\nMock DAG task completed successfully.\n"
+    },
+    {
+      "at": 1166,
+      "type": "plan_summary",
+      "planId": "plan-dag-retry-1779696260671",
+      "total": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "at": 1223,
+      "type": "task_assigned",
+      "planId": "plan-dag-retry-dependent-1779696260671",
+      "taskId": "retry-root",
+      "agentName": "review-agent"
+    },
+    {
+      "at": 1223,
+      "type": "plan_executing",
+      "planId": "plan-dag-retry-dependent-1779696260671"
+    },
+    {
+      "at": 1224,
+      "type": "agent_status",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-root"
+    },
+    {
+      "at": 1233,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-root",
+      "content": "Mock DAG task executing: Retry root task\nDescription: mock-dag-fail-once root should release child after retry\n"
+    },
+    {
+      "at": 1263,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-root",
+      "content": "Mock DAG task failed deterministically.\n"
+    },
+    {
+      "at": 1263,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-root"
+    },
+    {
+      "at": 1296,
+      "type": "task_failed",
+      "planId": "plan-dag-retry-dependent-1779696260671",
+      "taskId": "retry-root",
+      "agentName": "review-agent",
+      "output": "exit code 1"
+    },
+    {
+      "at": 1296,
+      "type": "task_blocked",
+      "planId": "plan-dag-retry-dependent-1779696260671",
+      "taskId": "retry-child",
+      "agentName": "deps-agent",
+      "output": "Blocked because dependency retry-root failed",
+      "blockedBy": "retry-root"
+    },
+    {
+      "at": 1296,
+      "type": "plan_summary",
+      "planId": "plan-dag-retry-dependent-1779696260671",
+      "total": 2,
+      "completed": 0,
+      "failed": 2
+    },
+    {
+      "at": 1303,
+      "type": "task_assigned",
+      "planId": "plan-dag-retry-dependent-1779696260671",
+      "taskId": "retry-root",
+      "agentName": "review-agent"
+    },
+    {
+      "at": 1313,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-root",
+      "content": "Mock DAG task executing: Retry root task\nDescription: mock-dag-fail-once root should release child after retry\n"
+    },
+    {
+      "at": 1343,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-root",
+      "content": "Mock DAG task completed successfully.\n"
+    },
+    {
+      "at": 1344,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-root"
+    },
+    {
+      "at": 1344,
+      "type": "task_completed",
+      "planId": "plan-dag-retry-dependent-1779696260671",
+      "taskId": "retry-root",
+      "agentName": "review-agent",
+      "output": "Mock DAG task executing: Retry root task\nDescription: mock-dag-fail-once root should release child after retry\nMock DAG task completed successfully.\n"
+    },
+    {
+      "at": 1382,
+      "type": "task_assigned",
+      "planId": "plan-dag-retry-dependent-1779696260671",
+      "taskId": "retry-child",
+      "agentName": "deps-agent"
+    },
+    {
+      "at": 1382,
+      "type": "agent_status",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-child"
+    },
+    {
+      "at": 1391,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-child",
+      "content": "Mock DAG task executing: Retry child task\nDescription: mock-dag-success child waits for retry-root\n"
+    },
+    {
+      "at": 1421,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-child",
+      "content": "Mock DAG task completed successfully.\n"
+    },
+    {
+      "at": 1421,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-retry-dependent-1779696260671-retry-child"
+    },
+    {
+      "at": 1442,
+      "type": "task_completed",
+      "planId": "plan-dag-retry-dependent-1779696260671",
+      "taskId": "retry-child",
+      "agentName": "deps-agent",
+      "output": "done"
+    },
+    {
+      "at": 1442,
+      "type": "plan_summary",
+      "planId": "plan-dag-retry-dependent-1779696260671",
+      "total": 2,
+      "completed": 2,
+      "failed": 0
+    },
+    {
+      "at": 1464,
+      "type": "stream_error",
+      "error": "Retry requires full task data. Please re-run the Planner."
+    },
+    {
+      "at": 1526,
+      "type": "task_assigned",
+      "planId": "plan-dag-duplicate-1779696260671",
+      "taskId": "dupe-task",
+      "agentName": "deps-agent"
+    },
+    {
+      "at": 1526,
+      "type": "plan_executing",
+      "planId": "plan-dag-duplicate-1779696260671"
+    },
+    {
+      "at": 1527,
+      "type": "agent_status",
+      "agentMessageId": "task-plan-dag-duplicate-1779696260671-dupe-task"
+    },
+    {
+      "at": 1537,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-duplicate-1779696260671-dupe-task",
+      "content": "Mock DAG task executing: Duplicate confirm task\nDescription: mock-dag-success duplicate dispatch guard\n"
+    },
+    {
+      "at": 1566,
+      "type": "stream_chunk",
+      "agentMessageId": "task-plan-dag-duplicate-1779696260671-dupe-task",
+      "content": "Mock DAG task completed successfully.\n"
+    },
+    {
+      "at": 1566,
+      "type": "stream_end",
+      "agentMessageId": "task-plan-dag-duplicate-1779696260671-dupe-task"
+    },
+    {
+      "at": 1586,
+      "type": "task_completed",
+      "planId": "plan-dag-duplicate-1779696260671",
+      "taskId": "dupe-task",
+      "agentName": "deps-agent",
+      "output": "done"
+    },
+    {
+      "at": 1586,
+      "type": "plan_summary",
+      "planId": "plan-dag-duplicate-1779696260671",
+      "total": 1,
+      "completed": 1,
+      "failed": 0
+    },
+    {
+      "at": 1859,
+      "type": "stream_error",
+      "error": "Failed to dispatch tasks: Circular dependency in plan: cycle-a, cycle-b"
+    }
+  ]
+}

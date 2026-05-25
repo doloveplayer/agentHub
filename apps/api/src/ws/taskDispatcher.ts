@@ -3,11 +3,20 @@
 
 import { stateTracker } from '../agent/StateTracker.js';
 import { findClosestAgent } from '../agent/turns.js';
-import { topologicalSort } from '../agent/TaskQueue.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
 
 import { createOneShotAgentProcess } from '../agent/processFactory.js';
+import {
+  createDagExecutionState,
+  consumeReadyTasks,
+  markTaskDone,
+  markTaskFailed,
+  markTaskRetryQueued,
+  markTaskRunning,
+  type DagExecutionState,
+  type DagTaskAssignment,
+} from './dagExecution.js';
 import {
   broadcast, agentProcesses, agentStates, agentTaskQueues,
   agentCurrentTask, agentCurrentMessage, sandboxes,
@@ -22,12 +31,23 @@ import {
 
 export { type AgentTaskQueue, type TaskDispatchNode };
 
+const planExecutions = new Map<string, DagExecutionState>();
+const MAX_PLAN_EXECUTIONS = 500;
+
+function planKey(sessionId: string, planId: string): string {
+  return `${sessionId}:${planId}`;
+}
+
 function buildTaskPrompt(task: TaskDispatchNode): string {
   return `Task: ${task.title}
 Description: ${task.description}
 Expected Output: ${task.expectedOutput}
 ${task.dependsOn.length > 0 ? `\nDepends on: ${task.dependsOn.join(', ')}\n` : ''}
 Execute this task now. Output results to the specified files.`;
+}
+
+function buildTaskMessageId(planId: string, taskId: string): string {
+  return `task-${planId}-${taskId}`.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
 
 export async function processNextInQueue(
@@ -43,12 +63,13 @@ export async function processNextInQueue(
   const task = queue.tasks.shift()!;
   queue.current = task;
   agentCurrentTask.set(agentName, { planId: queue.planId, taskId: task.id });
+  markTaskRunningForPlan(sessionId, queue.planId, task.id);
 
   const procInfo = agentProcesses.get(sessionId)?.get(agentName);
 
   if (procInfo && procInfo.provider.isAlive()) {
     const taskPrompt = buildTaskPrompt(task);
-    const taskMessageId = `task-${task.id}`;
+    const taskMessageId = buildTaskMessageId(queue.planId, task.id);
     recordMessageBeforeVersion(
       taskMessageId,
       queue.sandbox.hostWorkDir,
@@ -87,7 +108,7 @@ async function dispatchTaskOneShot(
   if (!agent) { console.log(`[ws] Task dispatch: agent ${agentName} not found in DB`); return; }
   const fullPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}`;
   const proc = createOneShotAgentProcess();
-  const taskMsgId = `task-${task.id}`;
+  const taskMsgId = buildTaskMessageId(queue.planId, task.id);
   let output = '';
 
   proc.onEvent((event) => {
@@ -103,6 +124,7 @@ async function dispatchTaskOneShot(
         agentCurrentTask.delete(agentName);
         queue.current = null;
         processNextInQueue(sessionId, agentName, queue);
+        void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, event.exitCode === 0);
         break;
       case 'error':
         broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: event.message });
@@ -132,9 +154,10 @@ export async function startTaskAgent(
   const task = queue.tasks.shift()!;
   queue.current = task;
   agentCurrentTask.set(agent.name, { planId: queue.planId, taskId: task.id });
+  markTaskRunningForPlan(sessionId, queue.planId, task.id);
 
   const fullPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}`;
-  const taskMsgId = `task-${task.id}`;
+  const taskMsgId = buildTaskMessageId(queue.planId, task.id);
   let output = '';
 
   recordMessageBeforeVersion(
@@ -169,13 +192,15 @@ export async function startTaskAgent(
         );
         broadcast(sessionId, {
           type: event.exitCode === 0 ? 'task_completed' : 'task_failed',
-          planId: queue.planId, taskId: task.id, output: event.exitCode === 0 ? 'done' : `exit code ${event.exitCode}`,
+          planId: queue.planId, taskId: task.id, agentName: agent.name,
+          output: event.exitCode === 0 ? 'done' : `exit code ${event.exitCode}`,
         });
         stateTracker.setDone(taskMsgId);
         agentCurrentTask.delete(agent.name);
         agentCurrentMessage.delete(agent.name);
         queue.current = null;
         processNextInQueue(sessionId, agent.name, queue);
+        void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, event.exitCode === 0);
         break;
       }
       case 'error':
@@ -236,19 +261,11 @@ export async function dispatchTasksToAgents(
     agentsByType.set(sa.agent.displayName, list);
   }
 
-  // Flatten topological layers into a single ordered array for assignment
-  const flattened: TaskDispatchNode[] = [];
-  const sorted = topologicalSort(tasks as any);
-  for (const layer of sorted) {
-    for (const task of layer) {
-      flattened.push(task as unknown as TaskDispatchNode);
-    }
-  }
-
-  const assigned = new Map<string, AgentTaskQueue>();
+  const loadByAgent = new Map<string, number>();
   const missingTypes = new Set<string>();
+  const assignments: DagTaskAssignment[] = [];
 
-  for (const task of flattened) {
+  for (const task of tasks) {
     const candidates = agentsByType.get(task.agentType) || [];
     if (candidates.length === 0) {
       const suggested = findClosestAgent(task.agentType, sessionAgents.map(sa => sa.agent));
@@ -276,23 +293,133 @@ export async function dispatchTasksToAgents(
     let bestAgent = candidates[0];
     let bestLoad = Infinity;
     for (const a of candidates) {
-      const q = assigned.get(a.name) || agentTaskQueues.get(a.name);
-      const load = q ? q.tasks.length : 0;
+      const q = agentTaskQueues.get(a.name);
+      const load = (q ? q.tasks.length + (q.current ? 1 : 0) : 0) + (loadByAgent.get(a.name) || 0);
       if (load < bestLoad) { bestLoad = load; bestAgent = a; }
     }
-    const existing = assigned.get(bestAgent.name) || agentTaskQueues.get(bestAgent.name);
-    const queue: AgentTaskQueue = existing || { planId, sessionId, tasks: [], current: null, sandbox };
-    queue.tasks.push({
-      id: task.id, title: task.title, description: task.description,
-      agentType: task.agentType, dependsOn: task.dependsOn,
-      expectedOutput: task.expectedOutput, priority: task.priority || 'medium',
+    loadByAgent.set(bestAgent.name, (loadByAgent.get(bestAgent.name) || 0) + 1);
+    assignments.push({
+      task: {
+        id: task.id, title: task.title, description: task.description,
+        agentType: task.agentType, dependsOn: task.dependsOn,
+        expectedOutput: task.expectedOutput, priority: task.priority || 'medium',
+      },
+      agentName: bestAgent.name,
+      agentId: bestAgent.id,
     });
-    assigned.set(bestAgent.name, queue);
   }
 
-  for (const [agentName, queue] of assigned) {
-    agentTaskQueues.set(agentName, queue);
-    const agent = sessionAgents.find((sa) => sa.agent.name === agentName)?.agent;
+  if (assignments.length === 0 && missingTypes.size > 0) return;
+
+  const execution = createDagExecutionState(planId, assignments);
+  setPlanExecution(sessionId, planId, execution);
+  await enqueueTaskAssignments(sessionId, planId, consumeReadyTasks(execution), sandbox);
+}
+
+export function prepareDispatchedTaskRetry(
+  sessionId: string,
+  planId: string,
+  taskId: string,
+): boolean {
+  const execution = planExecutions.get(planKey(sessionId, planId));
+  if (!execution) return false;
+  return markTaskRetryQueued(execution, taskId) !== null;
+}
+
+export async function handleDispatchedTaskFinished(
+  sessionId: string,
+  planId: string,
+  taskId: string,
+  success: boolean,
+): Promise<void> {
+  const execution = planExecutions.get(planKey(sessionId, planId));
+  if (!execution) return;
+
+  if (success) {
+    const ready = markTaskDone(execution, taskId);
+    const sandbox = sandboxes.get(sessionId);
+    if (sandbox && ready.length > 0) {
+      await enqueueTaskAssignments(sessionId, planId, ready, sandbox);
+    }
+  } else {
+    const blocked = markTaskFailed(execution, taskId);
+    for (const item of blocked) {
+      broadcast(sessionId, {
+        type: 'task_blocked',
+        planId,
+        taskId: item.task.id,
+        blockedBy: taskId,
+        agentName: item.agentName,
+        output: `Blocked because dependency ${taskId} failed`,
+      });
+    }
+  }
+
+  maybeBroadcastPlanSummary(sessionId, execution);
+}
+
+async function enqueueTaskAssignments(
+  sessionId: string,
+  planId: string,
+  assignments: DagTaskAssignment[],
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+): Promise<void> {
+  if (assignments.length === 0) return;
+
+  const sessionAgents = await prisma.sessionAgent.findMany({
+    where: { sessionId },
+    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true } } },
+  });
+  const agentsByName = new Map(sessionAgents.map((sa) => [sa.agent.name, sa.agent]));
+  const touched = new Set<string>();
+
+  for (const assignment of assignments) {
+    const existing = agentTaskQueues.get(assignment.agentName);
+    const queue: AgentTaskQueue = existing || { planId, sessionId, tasks: [], current: null, sandbox };
+    queue.tasks.push(assignment.task);
+    agentTaskQueues.set(assignment.agentName, queue);
+    touched.add(assignment.agentName);
+  }
+
+  for (const agentName of touched) {
+    const queue = agentTaskQueues.get(agentName);
+    if (!queue || queue.current) continue;
+    const agent = agentsByName.get(agentName);
     if (agent) await startTaskAgent(sessionId, agent, sandbox);
   }
+}
+
+function markTaskRunningForPlan(sessionId: string, planId: string, taskId: string): void {
+  const execution = planExecutions.get(planKey(sessionId, planId));
+  if (execution) markTaskRunning(execution, taskId);
+}
+
+function setPlanExecution(sessionId: string, planId: string, execution: DagExecutionState): void {
+  planExecutions.set(planKey(sessionId, planId), execution);
+  while (planExecutions.size > MAX_PLAN_EXECUTIONS) {
+    const oldestKey = planExecutions.keys().next().value;
+    if (!oldestKey) break;
+    planExecutions.delete(oldestKey);
+  }
+}
+
+function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionState): void {
+  if (execution.summaryBroadcasted) return;
+
+  const items = [...execution.tasks.values()];
+  const completed = items.filter((item) => item.status === 'done').length;
+  const failed = items.filter((item) => item.status === 'failed' || item.status === 'blocked').length;
+  const finished = completed + failed;
+
+  if (finished !== items.length) return;
+
+  broadcast(sessionId, {
+    type: 'plan_summary',
+    planId: execution.planId,
+    total: items.length,
+    completed,
+    failed,
+    fileChanges: [],
+  });
+  execution.summaryBroadcasted = true;
 }

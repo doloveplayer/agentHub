@@ -7,8 +7,8 @@
 - Agent Provider：`AGENTHUB_AGENT_PROVIDER=test`
 - 测试范围：`TC-WS-025`、`TC-NFR-008`、`TC-NFR-009`、`TC-NFR-010`
 - 执行时长：31 分 31 秒
-- 原始证据：`docs/superpowers/reports/long-stability-evidence.json`
-- 页面健康截图：`docs/superpowers/reports/long-stability-login.png`
+- 原始证据：`docs/superpowers/reports/evidence/long-stability-evidence.json`
+- 页面健康截图：`docs/superpowers/reports/evidence/long-stability-login.png`
 
 ## 环境检查
 

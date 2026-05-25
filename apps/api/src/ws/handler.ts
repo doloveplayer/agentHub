@@ -28,7 +28,11 @@ import {
 } from './state.js';
 
 import {
-  dispatchTasksToAgents, processNextInQueue, startTaskAgent,
+  dispatchTasksToAgents,
+  processNextInQueue,
+  startTaskAgent,
+  handleDispatchedTaskFinished,
+  prepareDispatchedTaskRetry,
 } from './taskDispatcher.js';
 import {
   broadcastDiffSummary,
@@ -235,7 +239,11 @@ async function handleChatMessage(
   const isSlashCommand = prompt.startsWith('/');
 
   const mentions: { agentId: string; subPrompt: string; messageId: string }[] = isSlashCommand
-    ? [{ agentId: '', subPrompt: prompt, messageId: data.messageId || generateId() }]
+    ? [{
+        agentId: data.mentions?.[0]?.agentId || '',
+        subPrompt: prompt,
+        messageId: data.mentions?.[0]?.messageId || data.messageId || generateId(),
+      }]
     : (data.mentions && data.mentions.length > 0)
       ? data.mentions
       : [{ agentId: '', subPrompt: prompt, messageId: data.messageId || generateId() }];
@@ -423,6 +431,7 @@ async function handleChatMessage(
                 agentCurrentTask.delete(agentName);
                 const queue = agentTaskQueues.get(agentName);
                 if (queue) { queue.current = null; processNextInQueue(sessionId, agentName, queue); }
+                void handleDispatchedTaskFinished(sessionId, taskInfo.planId, taskInfo.taskId, ev.exitCode === 0);
               }
               agentCurrentMessage.delete(agentName);
               startNextSequential(sessionId);
@@ -716,6 +725,7 @@ async function handleRetryTask(sessionId: string, data: { planId: string; taskId
       agentType: taskNode.agentType || 'CodeAgent', dependsOn: [],
       expectedOutput: taskNode.expectedOutput || '', priority: (taskNode.priority as 'high' | 'medium' | 'low') || 'medium',
     };
+    prepareDispatchedTaskRetry(sessionId, data.planId, dispatchNode.id);
     if (queue) {
       queue.tasks.unshift(dispatchNode);
       if (!queue.current) processNextInQueue(sessionId, agentName, queue);

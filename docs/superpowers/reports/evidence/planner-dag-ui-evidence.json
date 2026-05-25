@@ -1,0 +1,25 @@
+{
+  "createdAt": "2026-05-25T08:04:33.442Z",
+  "provider": "test",
+  "deploymentScope": "excluded by request",
+  "screenshots": {
+    "plan": "evidence/planner-dag-ui-plan.png",
+    "done": "evidence/planner-dag-ui-done.png"
+  },
+  "assertions": {
+    "reviewPanelVisible": true,
+    "tasksTabActivePlanVisible": true,
+    "confirmAllClicked": true,
+    "completedTwoOfTwo": true,
+    "planSummaryVisible": true
+  },
+  "console": [
+    "[console:debug] [vite] connecting...",
+    "[console:debug] [vite] connected.",
+    "[console:info] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold",
+    "[console:warning] ⚠️ React Router Future Flag Warning: React Router will begin wrapping state updates in `React.startTransition` in v7. You can use the `v7_startTransition` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_starttransition.",
+    "[console:warning] ⚠️ React Router Future Flag Warning: Relative route resolution within Splat routes is changing in v7. You can use the `v7_relativeSplatPath` future flag to opt-in early. For more information, see https://reactrouter.com/v6/upgrading/future#v7_relativesplatpath.",
+    "[console:log] [WS] Connected to session a16db717-51af-43e3-8f80-fbfd51d9dd26",
+    "[console:log] [WS] Server confirmed connection for session a16db717-51af-43e3-8f80-fbfd51d9dd26"
+  ]
+}

@@ -24,7 +24,7 @@
   },
   "nonWhitelistOAuth": {
     "username": "XTC2233",
-    "status": "passed in docs/superpowers/reports/oauth-nonwhitelist-evidence.json",
+    "status": "passed in docs/superpowers/reports/evidence/oauth-nonwhitelist-evidence.json",
     "databaseUserCreatedAtLastCheck": false
   },
   "secrets": "No authorization code, JWT, GitHub access credential, app secret, or password recorded."

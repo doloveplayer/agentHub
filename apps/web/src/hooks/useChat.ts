@@ -7,6 +7,15 @@ import type { Message, AgentConfig } from '@agenthub/shared';
 
 const socketPool = new Map<string, WebSocket>();
 
+function findMessageSessionId(agentMessageId: string | undefined, fallback: string): string {
+  if (!agentMessageId) return fallback;
+  const messages = useAppStore.getState().messages;
+  for (const [candidateSessionId, sessionMessages] of Object.entries(messages)) {
+    if (sessionMessages.some((message) => message.id === agentMessageId)) return candidateSessionId;
+  }
+  return fallback;
+}
+
 interface MentionTag {
   agentId: string;
   agentName: string;
@@ -62,31 +71,36 @@ export function useChat(sessionId: string) {
           const data = JSON.parse(evt.data);
           switch (data.type) {
             case 'stream_chunk':
-              appendToMessage(sessionId, data.agentMessageId, data.content);
+              {
+                const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                appendToMessage(targetSessionId, data.agentMessageId, data.content);
               // Increment unread for inactive sessions (different tab)
-              if (useAppStore.getState().activeSessionId !== sessionId) {
-                incrementUnread(sessionId);
+                if (useAppStore.getState().activeSessionId !== targetSessionId) {
+                  incrementUnread(targetSessionId);
+                }
               }
               break;
             case 'stream_end': {
+              const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
               // Fallback: populate content from fullContent if no stream_chunks arrived.
               // The backend sends fullContent as accumulated text or a fallback placeholder.
               if (data.fullContent) {
                 const state = useAppStore.getState();
-                const msg = state.messages[sessionId]?.find(m => m.id === data.agentMessageId);
+                const msg = state.messages[targetSessionId]?.find(m => m.id === data.agentMessageId);
                 if (msg && !msg.content) {
-                  appendToMessage(sessionId, data.agentMessageId, data.fullContent);
+                  appendToMessage(targetSessionId, data.agentMessageId, data.fullContent);
                 }
               }
-              setMessageStatus(sessionId, data.agentMessageId, data.exitCode === 0 ? 'done' : 'error');
-              removeStreamingMessage(sessionId, data.agentMessageId);
+              setMessageStatus(targetSessionId, data.agentMessageId, data.exitCode === 0 ? 'done' : 'error');
+              removeStreamingMessage(targetSessionId, data.agentMessageId);
               break;
             }
             case 'stream_error':
               console.error('[WS] Agent error:', data.error || data.message);
               if (data.agentMessageId) {
-                setMessageStatus(sessionId, data.agentMessageId, 'error');
-                removeStreamingMessage(sessionId, data.agentMessageId);
+                const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                setMessageStatus(targetSessionId, data.agentMessageId, 'error');
+                removeStreamingMessage(targetSessionId, data.agentMessageId);
               }
               break;
             case 'connected':
@@ -124,12 +138,8 @@ export function useChat(sessionId: string) {
               }
               break;
             case 'plan_executing':
-              if (data.planId) {
-                const tasks = useAppStore.getState().taskPlans[data.planId];
-                if (tasks) {
-                  setTaskPlan(data.planId, tasks.map((t: any) => ({ ...t, status: 'running' as const })));
-                }
-              }
+              // Individual task_assigned/task_completed/task_failed events drive
+              // node status. Keep unresolved dependencies waiting here.
               break;
             case 'task_assigned':
               if (data.planId && data.taskId && data.agentName) {
@@ -190,6 +200,12 @@ export function useChat(sessionId: string) {
                     agentCurrentTask: { ...s.agentCurrentTask, [data.agentName]: null },
                   }));
                 }
+              }
+              break;
+            case 'task_blocked':
+              if (data.planId && data.taskId) {
+                const store = useAppStore.getState();
+                store.updateTaskStatus(data.planId, data.taskId, 'blocked');
               }
               break;
             case 'plan_summary': {
