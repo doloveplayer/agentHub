@@ -39,32 +39,21 @@ Use it to answer questions like "what files import X?", "which layer does Y belo
 ## Commands
 
 ```bash
-# Start PostgreSQL
-docker compose up -d postgres
+# One-click startup (postgres, migrate, backend, frontend)
+bash scripts/startup.sh          # logs → ./logs/
+
+# One-click cleanup (stop servers, containers, sandboxes)
+bash scripts/cleanup.sh
 
 # Build sandbox image (after Dockerfile changes)
 docker build -t agenthub-sandbox:latest -f docker/sandbox.Dockerfile .
 
-# Prisma migrate (project root — .env must export DATABASE_URL)
-export $(grep -v '^#' .env | grep -v '^$' | xargs) && cd apps/api && npx prisma migrate dev --name init
-
-# Backend (port 3000)
-cd apps/api && npx tsx src/index.ts
-
-# Frontend (port 5174, proxies /api and /ws to backend)
-cd apps/web && npx vite
-
-# TypeScript check
+# Manual TypeScript check
 npx tsc --noEmit -p apps/api/tsconfig.json
 npx tsc --noEmit -p apps/web/tsconfig.json
 
-# Force stop
-fuser -k 3000/tcp  # backend
-fuser -k 5174/tcp  # frontend
-
-# Cleanup orphaned sandboxes
-docker rm -f $(docker ps -aq --filter name=agenthub-sandbox) 2>/dev/null
-rm -rf .sandboxes/*
+# View latest logs (stored by timestamp: logs/YYYY-MM-DD_HH-MM-SS/)
+tail -f logs/$(ls -t logs/ | head -1)/*.log
 
 # Git push (HTTPS blocked by GFW — use SSH)
 git remote set-url origin git@github.com:doloveplayer/agentHub.git
@@ -80,7 +69,7 @@ git remote set-url origin git@github.com:doloveplayer/agentHub.git
 
 ## Multi-Agent Collaboration SOP
 
-Phase 3+ 开发启用多 Agent 协作模型。Agent 定义在 `.claude/agents/` 目录下。每次开发遵循标准工作流：
+复杂需求的开发应该启用多 Agent 协作模型。Agent 定义在 `.claude/agents/` 目录下。每次开发遵循标准工作流：
 
 **SOP 四步流程：**
 
@@ -107,9 +96,19 @@ Phase 3+ 开发启用多 Agent 协作模型。Agent 定义在 `.claude/agents/` 
 - 修复 Critical 和 Important 问题
 - 不要跳过审查认为"改动简单没必要"
 
+## Debugging SOP
+
+排查问题和 debug 时必须遵循：
+
+1. **检查日志**：优先查看 `logs/` 目录下的 `backend.log`、`frontend.log`
+2. **检查沙箱输出**：`.sandboxes/{sessionId}/` 下可能有 agent 的实际输出和错误日志
+3. **检查模型实际输出**：通过沙箱日志确认 Claude Code CLI 的真实 stdout/stderr
+4. **复现问题**：复现测试消息触发实际流程，从日志和截图中定位错误
+5. **复杂 bug**：启用 `/systematic-debugging` 技能进行系统化排查
+
 ## Visual Testing
 
-项目配置了可截图和图片理解的 MCP 服务，功能测试和 UI 审查时应主动使用：
+项目配置了可截图和图片理解的 MCP 服务，功能测试、debug和 UI 审查时应主动使用：
 
 **浏览器自动化**（`document-skills:webapp-testing`）：
 - 启动后端 `cd apps/api && npx tsx src/index.ts` + 前端 `cd apps/web && npx vite`
@@ -128,3 +127,6 @@ Phase 3+ 开发启用多 Agent 协作模型。Agent 定义在 `.claude/agents/` 
 2. `mcp__zai-mcp-server__analyze_image` 分析截图中的布局问题
 3. 对照 plan 文件验证功能完整性
 4. TypeScript 编译检查 `npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json`
+
+**中间结果保存**：
+产生的中间截图调试应该保存至screenTmp/AgentScreenshots目录下，并调用图片分析 MCP进行分析

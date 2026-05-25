@@ -4,10 +4,10 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
-LOG_DIR="$PROJECT_ROOT/logs"
+TIMESTAMP=$(date '+%Y-%m-%d_%H-%M-%S')
+LOG_DIR="$PROJECT_ROOT/logs/$TIMESTAMP"
 mkdir -p "$LOG_DIR"
 BACKEND_LOG="$LOG_DIR/backend.log"
-TIMESTAMP=$(date '+%Y-%m-%d_%H-%M-%S')
 
 echo "=== AgentHub Quick Restart ($TIMESTAMP) ==="
 echo ""

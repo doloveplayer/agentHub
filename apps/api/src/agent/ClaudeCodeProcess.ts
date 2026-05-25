@@ -202,10 +202,12 @@ export class ClaudeCodeProcess {
     if (approvedTool) claudeArgsParts.push('--allowedTools', approvedTool);
     if (claudeSessionId) claudeArgsParts.push('--resume', claudeSessionId);
     const claudeArgs = claudeArgsParts.join(' ');
+    // --network host: container shares host network, can access localhost services
+    // (proxy, API endpoints) directly without host.docker.internal rewriting.
     const args: string[] = [
       'run', '--rm', '-i',
+      '--network', 'host',
       '--name', containerName,
-      '--add-host', 'host.docker.internal:host-gateway',
       '-v', `${hwDir}:/workspace`,
       '-w', '/workspace',
       ...buildDockerEnvArgs(safeEnv),
