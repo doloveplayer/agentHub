@@ -24,7 +24,8 @@
 - GREEN：`AGENTHUB_AGENT_PROVIDER=test` 后端模式下，`npx tsx /tmp/agenthub_mock_provider_ws_tests.ts` 6/6 通过，覆盖 permission allow/deny、tool/subagent、Planner、无效 permissionId、冲突事件。
 - GREEN：`npx tsx /tmp/agenthub_mock_provider_ui_test.ts` 通过，Playwright 验证权限卡片出现、点击 Allow、页面消息和 DB 状态；权限卡片 224ms 可见。
 - GREEN：`TC-AUTH-001` 白名单 GitHub OAuth 已由用户在 Playwright 可见浏览器完成真实授权；DB 创建 `JohnSiegfried` 用户记录，`/api/auth/me` 对该用户 JWT 返回 200，证据见 `oauth-live-evidence.json`。
-- DEFERRED：`TC-AUTH-002` 非白名单账号 `hengming0820` 按用户最新要求暂不验证，保持阻塞/待执行。
+- GREEN：`TC-AUTH-002` 非白名单账号 `XTC2233` 已由用户在独立 Playwright 可见浏览器完成真实授权；OAuth callback 返回 403 `User not in allowed list`，DB 未创建 `XTC2233`/`xtc2233` 用户，证据见 `oauth-nonwhitelist-evidence.json`。
+- GREEN：`TC-WS-025`、`TC-NFR-008`、`TC-NFR-009`、`TC-NFR-010` 已完成 31 分 31 秒确定性长稳压测；100 并发 WS、30 分钟空闲续发、10w 会话列表和 50 会话沙箱清理均通过，证据见 `long-stability-report.md`。
 - TypeScript：API/Web `tsc --noEmit` 均通过。
 - 既有测试：`npx tsx --test apps/api/src/agent/*.test.ts apps/api/src/agent/providers/*.test.ts apps/api/src/artifacts/*.test.ts apps/api/src/ws/*.test.ts apps/web/src/lib/*.test.ts`，62/62 通过。
 - Playwright：登录页可访问，solo mention、非法 deploy target 可见错误完成回归。
@@ -38,4 +39,4 @@
 
 ## 修复结论
 
-本轮修复的 8 个缺陷均已回归，BUG-009 已通过 test provider 完成权限代理 UI/WS/DB 回归。真实 Claude provider 权限事件与 BUG-010 凭据暴露风险仍未修复；残余风险集中在真实 OAuth 非白名单拒绝验证、真实 provider 权限代理、云部署凭据、长时压测和人工视觉用例，已在风险报告中列出。
+本轮修复的 8 个缺陷均已回归，BUG-009 已通过 test provider 完成权限代理 UI/WS/DB 回归，且 30 分钟长稳基线、真实 OAuth 白名单/非白名单链路已通过。真实 Claude provider 权限事件与 BUG-010 凭据暴露风险仍未修复；残余风险集中在真实 provider 权限代理、云部署凭据、8 小时混合长稳和人工视觉用例，已在风险报告中列出。

@@ -19,6 +19,39 @@ const SAFE_ENV_PREFIXES = [
 ];
 
 const ENV_BLOCKLIST_SUFFIXES = ['_TOKEN', '_SECRET', '_KEY', '_PASSWORD'];
+const DOCKER_ENV_NAMES = new Set([
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_MODEL',
+  'HTTPS_PROXY',
+  'https_proxy',
+  'HTTP_PROXY',
+  'http_proxy',
+  'ALL_PROXY',
+  'all_proxy',
+  'NO_PROXY',
+  'no_proxy',
+  'TZ',
+  'LANG',
+  'LC_ALL',
+  'TERM',
+  'NO_COLOR',
+  'FORCE_COLOR',
+]);
+const MUTATING_PERMISSION_TOOLS = new Set(['Write', 'Edit', 'MultiEdit', 'NotebookEdit', 'Bash']);
+
+interface RunOptions {
+  sessionId: string;
+  workDir: string;
+  hostWorkDir?: string;
+  promptFile: string;
+  containerName: string;
+  agentConfigTag: string;
+  claudeSessionId?: string;
+  trustMode: boolean;
+  safeEnv: Record<string, string>;
+}
 
 function buildSafeEnv(): Record<string, string> {
   const safe: Record<string, string> = {};
@@ -48,6 +81,14 @@ console.log('[agent:env] Host ANTHROPIC_* vars:', Object.keys(process.env).filte
 
 export { buildSafeEnv };
 
+export function buildDockerEnvArgs(env: Record<string, string>): string[] {
+  const args: string[] = [];
+  for (const key of Object.keys(env)) {
+    if (DOCKER_ENV_NAMES.has(key)) args.push('-e', key);
+  }
+  return args;
+}
+
 export class ClaudeCodeProcess {
   private containerId: string | null = null;
   private handlers: EventHandler[] = [];
@@ -55,6 +96,12 @@ export class ClaudeCodeProcess {
   private killed = false;
   private partialLine = '';
   private childProc: ChildProcess | null = null;
+  private runOptions: RunOptions | null = null;
+  private runSeq = 0;
+  private suppressCloseDone = false;
+  private pendingPermission: { tool: string; path?: string } | null = null;
+  private currentTrustMode = true;
+  private approvedToolForRun: string | undefined;
   onClaudeSession?: (sessionId: string) => void;
 
   onEvent(handler: EventHandler): void { this.handlers.push(handler); }
@@ -93,24 +140,53 @@ export class ClaudeCodeProcess {
     this.containerId = containerName;
     const promptFile = `_prompt_${agentTag}.txt`;
 
-    // Write prompt + env files to bind-mounted hostWorkDir
+    // Write only prompt data to the bind-mounted workspace. Provider secrets are
+    // passed with docker -e so the agent cannot read a workspace _env.sh file.
     if (hostWorkDir) {
       writeFileSync(resolve(hostWorkDir, promptFile), prompt, 'utf-8');
-      const authKeys = ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'];
-      const envLines: string[] = [];
-      for (const k of authKeys) {
-        if (safeEnv[k]) {
-          envLines.push(`export ${k}='${String(safeEnv[k]).replace(/'/g, "'\\''")}'`);
-        }
-      }
-      writeFileSync(resolve(hostWorkDir, '_env.sh'), envLines.join('\n'), 'utf-8');
     }
+
+    this.runOptions = {
+      sessionId,
+      workDir,
+      hostWorkDir,
+      promptFile,
+      containerName,
+      agentConfigTag,
+      claudeSessionId,
+      trustMode: trustMode ?? true,
+      safeEnv,
+    };
+    this.pendingPermission = null;
+    this.suppressCloseDone = false;
+    this.startDockerRun();
+  }
+
+  private startDockerRun(approvedTool?: string): void {
+    if (!this.runOptions) return;
+    const {
+      sessionId,
+      workDir,
+      hostWorkDir,
+      promptFile,
+      containerName,
+      agentConfigTag,
+      claudeSessionId,
+      trustMode,
+      safeEnv,
+    } = this.runOptions;
+    const effectiveTrustMode = approvedTool ? false : trustMode;
+    this.currentTrustMode = effectiveTrustMode;
+    this.approvedToolForRun = approvedTool;
+    this.partialLine = '';
+    this.suppressCloseDone = false;
 
     // docker run -i: native stdin/stdout pipes, no Docker multiplex.
     // Container PID 1 = claude, dies when claude exits.
     // --rm auto-removes container on exit.
     const hwDir = hostWorkDir || workDir;
-    const claudeArgsParts = buildClaudePrintArgs(trustMode ?? true);
+    const claudeArgsParts = buildClaudePrintArgs(effectiveTrustMode);
+    if (approvedTool) claudeArgsParts.push('--allowedTools', approvedTool);
     if (claudeSessionId) claudeArgsParts.push('--resume', claudeSessionId);
     const claudeArgs = claudeArgsParts.join(' ');
     const args: string[] = [
@@ -118,9 +194,10 @@ export class ClaudeCodeProcess {
       '--name', containerName,
       '-v', `${hwDir}:/workspace`,
       '-w', '/workspace',
+      ...buildDockerEnvArgs(safeEnv),
       'agenthub-sandbox:latest',
       'sh', '-c',
-      `. /workspace/_env.sh && cat /workspace/${promptFile} | claude ${claudeArgs}`,
+      `cat /workspace/${promptFile} | claude ${claudeArgs}`,
     ];
 
     // Per-agent CLAUDE_CONFIG_DIR for independent memory/skills (only when hostWorkDir is set)
@@ -137,8 +214,9 @@ export class ClaudeCodeProcess {
 
     console.log(`[agent:spawn] docker ${args.slice(0, 6).join(' ')} ... container=${containerName}`);
     console.log(`[agent:spawn] Auth: API_KEY=${safeEnv['ANTHROPIC_API_KEY'] ? 'yes' : 'no'} BASE_URL=${safeEnv['ANTHROPIC_BASE_URL'] ? 'yes' : 'no'}`);
-    const proc = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...safeEnv } });
     this.childProc = proc;
+    const runId = ++this.runSeq;
 
     // Temporary: log unrecognized event types to diagnose output format issues.
     let unknownEventCount = 0;
@@ -158,6 +236,7 @@ export class ClaudeCodeProcess {
           if (event.type === 'system' && event.subtype === 'init' && event.sessionId && this.onClaudeSession) {
             this.onClaudeSession(event.sessionId);
           }
+          if (this.proxyPermissionIfNeeded(event)) continue;
           if (event.type === 'done') this.emitDone(event.exitCode);
           else this.emit(event);
         } else if (unknownEventCount < MAX_UNKNOWN_LOG) {
@@ -182,17 +261,21 @@ export class ClaudeCodeProcess {
     });
 
     proc.on('close', (code) => {
+      if (runId !== this.runSeq) return;
+      if (runId === this.runSeq) this.childProc = null;
+      if (this.suppressCloseDone || this.pendingPermission) return;
       if (!this.killed) {
         // Flush remaining partial line if any
         if (this.partialLine.trim()) {
           const event = EventParser.parseLine(this.partialLine);
-          if (event && event.type !== 'done') this.emit(event);
+          if (event && event.type !== 'done' && !this.proxyPermissionIfNeeded(event)) this.emit(event);
         }
         this.emitDone(code ?? 1);
       }
     });
 
     proc.on('error', (err) => {
+      if (runId !== this.runSeq) return;
       if (!this.killed) {
         this.emit({ type: 'error', message: `docker run error: ${err.message}` });
         this.emitDone(1);
@@ -200,20 +283,55 @@ export class ClaudeCodeProcess {
     });
   }
 
+  private proxyPermissionIfNeeded(event: ParsedEvent): boolean {
+    if (this.currentTrustMode || this.pendingPermission || event.type !== 'tool_use') return false;
+    if (this.approvedToolForRun === event.toolName) return false;
+    if (!MUTATING_PERMISSION_TOOLS.has(event.toolName)) return false;
+    const path = extractToolPath(event.input);
+    this.emit(event);
+    this.pendingPermission = { tool: event.toolName, path };
+    this.emit({ type: 'permission_request', tool: event.toolName, path });
+    this.suppressCloseDone = true;
+    this.stopCurrentProcess();
+    return true;
+  }
+
+  private stopCurrentProcess(): void {
+    const proc = this.childProc;
+    this.childProc = null;
+    if (proc) {
+      try { proc.stdin?.end(); } catch { /* ignore */ }
+      try { proc.kill('SIGTERM'); } catch { /* ignore */ }
+    }
+    if (this.containerId) {
+      try { execSync(`docker rm -f ${this.containerId} 2>/dev/null`, { timeout: 5000 }); } catch { /* ignore */ }
+    }
+  }
+
   write(input: string): void {
+    if (this.pendingPermission) {
+      const allowed = input.trim().toLowerCase().startsWith('y');
+      const pending = this.pendingPermission;
+      this.pendingPermission = null;
+      if (!allowed) {
+        this.emit({ type: 'error', message: 'Permission denied by user' });
+        this.emitDone(1);
+        return;
+      }
+      this.startDockerRun(pending.tool);
+      return;
+    }
     if (this.killed || !this.childProc?.stdin) return;
     try { this.childProc.stdin.write(input); } catch { /* process exited */ }
   }
 
   kill(): void {
     this.killed = true;
-    if (this.childProc) {
-      try { this.childProc.stdin?.end(); } catch { /* ignore */ }
-      try { this.childProc.kill('SIGTERM'); } catch { /* ignore */ }
-    }
-    // docker rm -f as fallback
-    if (this.containerId) {
-      try { execSync(`docker rm -f ${this.containerId} 2>/dev/null`, { timeout: 5000 }); } catch { /* ignore */ }
-    }
+    this.stopCurrentProcess();
   }
+}
+
+function extractToolPath(input: Record<string, unknown>): string | undefined {
+  const value = input.file_path || input.path || input.filePath || input.command;
+  return typeof value === 'string' ? value : undefined;
 }

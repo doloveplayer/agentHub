@@ -104,6 +104,10 @@ export function useChat(sessionId: string) {
               break;
             case 'agent_status': {
               const eventType = data.status as AgentEvent['type'];
+              // The backend also sends a top-level permission_request event
+              // with the same permissionId. Use that as the single interactive
+              // card source to avoid duplicate Allow/Deny controls.
+              if (eventType === 'permission_request') break;
               if (data.agentMessageId && eventType) {
                 addAgentEvent(data.agentMessageId, {
                   id: 'ae-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
@@ -328,7 +332,7 @@ export function useChat(sessionId: string) {
     } catch (err: any) {
       console.error('[WS] Failed to send message:', err);
     }
-  }, [sessionId, agents, addMessage, addStreamingMessage, ensureConnection]);
+  }, [sessionId, agents, trustMode, orchestrationMode, addMessage, addStreamingMessage, ensureConnection]);
 
   const respondToPermission = useCallback(async (permissionId: string, allowed: boolean) => {
     try {

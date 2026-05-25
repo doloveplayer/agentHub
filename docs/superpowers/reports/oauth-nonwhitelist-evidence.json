@@ -1,0 +1,41 @@
+{
+  "startedAt": "2026-05-25T01:06:17.059Z",
+  "endedAt": "2026-05-25T01:07:09.926Z",
+  "scope": "TC-AUTH-002 live GitHub OAuth non-whitelist verification",
+  "targetLogin": "XTC2233",
+  "environment": {
+    "api": "http://localhost:3000",
+    "web": "http://localhost:5173",
+    "browser": "Playwright headed isolated Chromium profile"
+  },
+  "before": {
+    "targetUserExists": false,
+    "targetUsers": []
+  },
+  "callback": {
+    "url": "http://localhost:3000/api/auth/github/callback?code=[redacted]",
+    "status": 403,
+    "bodySnippet": "{\"error\":\"User not in allowed list\"}"
+  },
+  "finalPage": {
+    "url": "https://github.com/login/oauth/authorize",
+    "bodySnippet": "{\"error\":\"User not in allowed list\"}"
+  },
+  "after": {
+    "targetUserExists": false,
+    "targetUsers": [],
+    "whitelistControlUserStillExists": true,
+    "whitelistControlUser": {
+      "id": "316b5855-dde3-449e-a801-851610ab7d32",
+      "login": "JohnSiegfried",
+      "githubId": 115396162,
+      "createdAt": "2026-05-24T15:24:56.723Z",
+      "updatedAt": "2026-05-24T15:24:56.723Z"
+    }
+  },
+  "status": "passed",
+  "notes": [
+    "Manual browser authorization must be completed with the non-whitelisted GitHub account.",
+    "No GitHub password, OAuth authorization code, app secret, JWT, or GitHub access credential is recorded."
+  ]
+}

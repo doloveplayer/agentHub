@@ -3,7 +3,7 @@ import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { AbstractProvider, EventHandler, ProviderConfig, UnifiedAgentEvent } from './base.js';
 import { EventParser } from '../EventParser.js';
-import { buildSafeEnv } from '../ClaudeCodeProcess.js';
+import { buildDockerEnvArgs, buildSafeEnv } from '../ClaudeCodeProcess.js';
 
 export class ClaudeCodeProvider implements AbstractProvider {
   readonly name = 'claude-code';
@@ -63,28 +63,18 @@ export class ClaudeCodeProvider implements AbstractProvider {
     this.agentHome = `/workspace/_agent_${agentTag}`;
     const promptFile = `_repl_prompt_${agentTag}.txt`;
 
-    // Write prompt + per-agent env file to bind-mounted hostWorkDir
+    // Write only prompt data to the bind-mounted workspace. Provider secrets
+    // are passed with docker -e and are not written into workspace files.
     const hwDir = config.hostWorkDir || workDir;
     if (config.hostWorkDir) {
       writeFileSync(resolve(config.hostWorkDir, promptFile), prompt + '\n', 'utf-8');
 
-      // Per-agent env file with CLAUDE_CONFIG_DIR for independent memory/skills
+      // Per-agent config directory for independent memory/skills.
       const agentConfigDir = resolve(config.hostWorkDir, `_agent_${agentTag}`, '.claude');
       const agentHomeInside = '/home/node/.claude';
       if (!existsSync(agentConfigDir)) {
         mkdirSync(agentConfigDir, { recursive: true });
       }
-
-      const envFile = `_env_${agentTag}.sh`;
-      const authKeys = ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'];
-      const envLines: string[] = [];
-      envLines.push(`export CLAUDE_CONFIG_DIR='${agentHomeInside}'`);
-      for (const k of authKeys) {
-        if (safeEnv[k]) {
-          envLines.push(`export ${k}='${String(safeEnv[k]).replace(/'/g, "'\\''")}'`);
-        }
-      }
-      writeFileSync(resolve(config.hostWorkDir, envFile), envLines.join('\n'), 'utf-8');
     }
 
     // docker run -i: native stdin/stdout pipes, no Docker multiplex.
@@ -97,9 +87,10 @@ export class ClaudeCodeProvider implements AbstractProvider {
       '--name', this.containerName,
       '-v', `${hwDir}:/workspace`,
       '-w', '/workspace',
+      ...buildDockerEnvArgs(safeEnv),
       'agenthub-sandbox:latest',
       'sh', '-c',
-      `. /workspace/${config.hostWorkDir ? `_env_${agentTag}.sh` : '_env.sh'} && cd ${workDir} && cat /workspace/${promptFile} - | claude --output-format stream-json --verbose`,
+      `cd ${workDir} && cat /workspace/${promptFile} - | claude --output-format stream-json --verbose`,
     ];
 
     // Per-agent CLAUDE_CONFIG_DIR bind-mount (independent memory/skills for each agent)
@@ -113,7 +104,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
     console.log(`[agent:repl] Starting REPL: container=${this.containerName.slice(0, 24)} agent=${agentTag}`);
     console.log(`[agent:repl] Auth: API_KEY=${safeEnv['ANTHROPIC_API_KEY'] ? 'yes' : 'no'} BASE_URL=${safeEnv['ANTHROPIC_BASE_URL'] ? 'yes' : 'no'}`);
 
-    const proc = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const proc = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...safeEnv } });
     this.childProc = proc;
 
     // Temporary: log unrecognized event types

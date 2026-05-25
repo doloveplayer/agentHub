@@ -1,0 +1,497 @@
+{
+  "startedAt": "2026-05-24T15:38:21.069Z",
+  "endedAt": "2026-05-24T16:09:52.064Z",
+  "durationMs": 1890995,
+  "provider": "test",
+  "scope": [
+    "TC-WS-025",
+    "TC-NFR-008",
+    "TC-NFR-009",
+    "TC-NFR-010"
+  ],
+  "configuration": {
+    "soakMs": 1800000,
+    "pingIntervalMs": 30000,
+    "perfSamples": 5,
+    "seedChunk": 1000,
+    "api": "http://localhost:3000",
+    "web": "http://localhost:5173"
+  },
+  "testUser": {
+    "login": "long-stability-1779637101069",
+    "id": "253cf5c0-78fc-4f33-8557-4c6c0d975960"
+  },
+  "uncaught": null,
+  "results": [
+    {
+      "caseId": "ENV",
+      "title": "压测环境检查",
+      "status": "通过",
+      "startedAt": "2026-05-24T15:38:21.125Z",
+      "evidence": {
+        "apiAuthMeNoTokenStatus": 401,
+        "webLoginStatus": 200,
+        "dockerContainers": [
+          "agenthub-postgres-1",
+          "agenthub-redis-1"
+        ],
+        "runningSandboxContainers": 0,
+        "sandboxDirsBefore": 0,
+        "consoleErrors": [],
+        "requestFailures": [],
+        "screenshot": "docs/superpowers/reports/long-stability-login.png"
+      },
+      "errors": [],
+      "endedAt": "2026-05-24T15:38:22.323Z",
+      "durationMs": 1198
+    },
+    {
+      "caseId": "TC-NFR-008",
+      "title": "空库/1w/10w 会话列表查询性能",
+      "status": "通过",
+      "startedAt": "2026-05-24T15:38:22.323Z",
+      "evidence": {
+        "thresholds": {
+          "emptyP95Ms": 500,
+          "tenKP95Ms": 5000,
+          "hundredKP95Ms": 30000
+        },
+        "zero": {
+          "label": "empty",
+          "expectedCount": 0,
+          "samples": [
+            {
+              "status": 200,
+              "elapsedMs": 6.486668000000009,
+              "bytes": 2,
+              "count": 0
+            },
+            {
+              "status": 200,
+              "elapsedMs": 3.1992129999998724,
+              "bytes": 2,
+              "count": 0
+            },
+            {
+              "status": 200,
+              "elapsedMs": 2.1675480000001244,
+              "bytes": 2,
+              "count": 0
+            },
+            {
+              "status": 200,
+              "elapsedMs": 2.0341450000000805,
+              "bytes": 2,
+              "count": 0
+            },
+            {
+              "status": 200,
+              "elapsedMs": 1.9668810000000576,
+              "bytes": 2,
+              "count": 0
+            }
+          ],
+          "p50Ms": 2.1675480000001244,
+          "p95Ms": 6.486668000000009,
+          "maxMs": 6.486668000000009,
+          "maxBytes": 2
+        },
+        "tenK": {
+          "label": "10k",
+          "expectedCount": 10000,
+          "samples": [
+            {
+              "status": 200,
+              "elapsedMs": 126.70387299999993,
+              "bytes": 2668891,
+              "count": 10000
+            },
+            {
+              "status": 200,
+              "elapsedMs": 104.91813800000023,
+              "bytes": 2668891,
+              "count": 10000
+            },
+            {
+              "status": 200,
+              "elapsedMs": 106.94802200000004,
+              "bytes": 2668891,
+              "count": 10000
+            },
+            {
+              "status": 200,
+              "elapsedMs": 97.67143299999998,
+              "bytes": 2668891,
+              "count": 10000
+            },
+            {
+              "status": 200,
+              "elapsedMs": 117.63892600000008,
+              "bytes": 2668891,
+              "count": 10000
+            }
+          ],
+          "p50Ms": 106.94802200000004,
+          "p95Ms": 126.70387299999993,
+          "maxMs": 126.70387299999993,
+          "maxBytes": 2668891
+        },
+        "hundredK": {
+          "label": "100k",
+          "expectedCount": 100000,
+          "samples": [
+            {
+              "status": 200,
+              "elapsedMs": 1256.320928,
+              "bytes": 26867781,
+              "count": 100000
+            },
+            {
+              "status": 200,
+              "elapsedMs": 1200.7022930000003,
+              "bytes": 26867781,
+              "count": 100000
+            },
+            {
+              "status": 200,
+              "elapsedMs": 1179.250234000001,
+              "bytes": 26867781,
+              "count": 100000
+            },
+            {
+              "status": 200,
+              "elapsedMs": 1141.2422050000005,
+              "bytes": 26867781,
+              "count": 100000
+            },
+            {
+              "status": 200,
+              "elapsedMs": 1189.9160850000007,
+              "bytes": 26867781,
+              "count": 100000
+            }
+          ],
+          "p50Ms": 1189.9160850000007,
+          "p95Ms": 1256.320928,
+          "maxMs": 1256.320928,
+          "maxBytes": 26867781
+        },
+        "thresholdPass": true
+      },
+      "errors": [],
+      "endedAt": "2026-05-24T15:38:32.659Z",
+      "durationMs": 10336
+    },
+    {
+      "caseId": "TC-NFR-010",
+      "title": "多会话并行任务沙箱资源不泄漏",
+      "status": "通过",
+      "startedAt": "2026-05-24T15:38:32.659Z",
+      "evidence": {
+        "before": {
+          "runningSandboxContainers": 0,
+          "sandboxDirs": 0
+        },
+        "after": {
+          "runningSandboxContainers": 0,
+          "sandboxDirs": 0
+        },
+        "batches": [
+          {
+            "batchStart": 0,
+            "sessionIds": [
+              "d11af1ae-1de4-4e0c-ab88-ef1d8965bf78",
+              "cff1b809-cdb9-4110-90b1-22d33a493395",
+              "ca0f3744-5ff4-4d69-a82e-68a8317df0a0",
+              "6c409099-58e3-440e-9546-b9fc58848e79",
+              "f9f2362a-96a0-47ca-a3c5-42ac46a05ff9"
+            ],
+            "connected": 5,
+            "deleteStatuses": [
+              204,
+              204,
+              204,
+              204,
+              204
+            ],
+            "cleanup": {
+              "ok": true,
+              "leakedContainers": [],
+              "leakedDirs": [],
+              "waitedMs": 5117
+            }
+          },
+          {
+            "batchStart": 5,
+            "sessionIds": [
+              "0b35fdfd-4ff9-4b4d-8e81-1b7361c29b72",
+              "0d540362-86d4-4a28-8577-a0cf2ff178e2",
+              "16488994-f549-4bf3-8f79-ff9d20f04d85",
+              "780e0ddd-4f06-4b85-87f7-8ce0fcfe765b",
+              "e4c83d91-7bd8-4ffc-b1ea-25a0bfea5c17"
+            ],
+            "connected": 5,
+            "deleteStatuses": [
+              204,
+              204,
+              204,
+              204,
+              204
+            ],
+            "cleanup": {
+              "ok": true,
+              "leakedContainers": [],
+              "leakedDirs": [],
+              "waitedMs": 5177
+            }
+          },
+          {
+            "batchStart": 10,
+            "sessionIds": [
+              "00717486-5718-4a1a-b901-8ce4c5a32970",
+              "c2955349-ed55-4b8c-b41e-685fe74ab46d",
+              "0c9766da-0641-4660-9a57-72066bb0b4ab",
+              "9c41d333-b101-41c5-9cd4-b672d05dceff",
+              "4ba90a30-831c-4596-8949-3bb503c0875e"
+            ],
+            "connected": 5,
+            "deleteStatuses": [
+              204,
+              204,
+              204,
+              204,
+              204
+            ],
+            "cleanup": {
+              "ok": true,
+              "leakedContainers": [],
+              "leakedDirs": [],
+              "waitedMs": 5121
+            }
+          },
+          {
+            "batchStart": 15,
+            "sessionIds": [
+              "e32dd5ea-6445-43a0-82be-7f45c625ada1",
+              "98fe0c11-5ebe-4e2d-9845-4ef8f1d1dc72",
+              "f36e108c-e14a-45d4-9874-1da8a69f9a09",
+              "37bdad28-0f1e-475d-b5de-e21066e06f7e",
+              "2cc1136d-53fe-45ee-be90-cb9e71ba10a4"
+            ],
+            "connected": 5,
+            "deleteStatuses": [
+              204,
+              204,
+              204,
+              204,
+              204
+            ],
+            "cleanup": {
+              "ok": true,
+              "leakedContainers": [],
+              "leakedDirs": [],
+              "waitedMs": 5129
+            }
+          },
+          {
+            "batchStart": 20,
+            "sessionIds": [
+              "379fa6bb-77e2-4d17-95c9-cdedf36807cf",
+              "0cc981bb-0198-42aa-a979-93c9b66d13c5",
+              "b6825c47-c10f-42a4-8098-3f6933497435",
+              "0b51f20e-104a-4594-89e6-accb920e1205",
+              "ad6d856b-5d03-4b8c-b783-18b1ef0f94b5"
+            ],
+            "connected": 5,
+            "deleteStatuses": [
+              204,
+              204,
+              204,
+              204,
+              204
+            ],
+            "cleanup": {
+              "ok": true,
+              "leakedContainers": [],
+              "leakedDirs": [],
+              "waitedMs": 5130
+            }
+          },
+          {
+            "batchStart": 25,
+            "sessionIds": [
+              "5daf0310-497b-4381-85ef-38ef52609890",
+              "79af853a-4f35-4c82-a1de-616eb1eefb84",
+              "7951fe4c-ce20-4a94-a9b3-88b338acbac6",
+              "12681524-e164-43a8-bc2e-cf4405a8cce0",
+              "b7b06b00-37ef-4799-8c1a-9d4ddb00756c"
+            ],
+            "connected": 5,
+            "deleteStatuses": [
+              204,
+              204,
+              204,
+              204,
+              204
+            ],
+            "cleanup": {
+              "ok": true,
+              "leakedContainers": [],
+              "leakedDirs": [],
+              "waitedMs": 5135
+            }
+          },
+          {
+            "batchStart": 30,
+            "sessionIds": [
+              "e34ff0b8-b284-4956-90bf-41a63e12b2f8",
+              "51ddab58-31e3-4569-b34f-755d7fea6df3",
+              "63315146-e52c-4128-9d00-9b1c8611c884",
+              "d27e217c-9104-45ef-9740-f8e770e4bdbf",
+              "3ad933af-d74e-4288-aa26-cc61f1d2873c"
+            ],
+            "connected": 5,
+            "deleteStatuses": [
+              204,
+              204,
+              204,
+              204,
+              204
+            ],
+            "cleanup": {
+              "ok": true,
+              "leakedContainers": [],
+              "leakedDirs": [],
+              "waitedMs": 5108
+            }
+          },
+          {
+            "batchStart": 35,
+            "sessionIds": [
+              "92f65cdc-c235-418c-ba91-d7250a5395e4",
+              "67c44db6-2bb1-426c-989b-5146b0672282",
+              "1d05d949-e08f-4c9c-bd9e-823b13b1a761",
+              "b859c224-dc42-4927-9f04-c7ef84df38ea",
+              "aa8fae04-7b09-43b2-9911-89372070dcfe"
+            ],
+            "connected": 5,
+            "deleteStatuses": [
+              204,
+              204,
+              204,
+              204,
+              204
+            ],
+            "cleanup": {
+              "ok": true,
+              "leakedContainers": [],
+              "leakedDirs": [],
+              "waitedMs": 5153
+            }
+          },
+          {
+            "batchStart": 40,
+            "sessionIds": [
+              "c94e01a0-e8bf-4acb-8db4-146726a56448",
+              "22b386a8-9ed0-4e9f-970c-2ece2ac3c290",
+              "69e758ff-bdcc-4781-b472-93bb6a45e6fa",
+              "95aca33a-07c9-405b-a924-70e0ed44d45a",
+              "b5185b6d-e5fb-40a6-af70-9b0e32ef4833"
+            ],
+            "connected": 5,
+            "deleteStatuses": [
+              204,
+              204,
+              204,
+              204,
+              204
+            ],
+            "cleanup": {
+              "ok": true,
+              "leakedContainers": [],
+              "leakedDirs": [],
+              "waitedMs": 5148
+            }
+          },
+          {
+            "batchStart": 45,
+            "sessionIds": [
+              "63269f6e-b159-4216-833f-dfb56848626a",
+              "ef1df580-1f5a-4f19-956e-f496bd1cb744",
+              "af11479c-d275-4794-ac95-0c9d528844d4",
+              "6722c127-197b-4685-a762-40d0a1a2ad26",
+              "9a0b8e1d-9893-46e4-8b1a-c9087fdd17c2"
+            ],
+            "connected": 5,
+            "deleteStatuses": [
+              204,
+              204,
+              204,
+              204,
+              204
+            ],
+            "cleanup": {
+              "ok": true,
+              "leakedContainers": [],
+              "leakedDirs": [],
+              "waitedMs": 5076
+            }
+          }
+        ]
+      },
+      "errors": [],
+      "endedAt": "2026-05-24T15:39:43.632Z",
+      "durationMs": 70973
+    },
+    {
+      "caseId": "TC-WS-025",
+      "title": "WebSocket 空闲 30 分钟后继续发送消息",
+      "status": "通过",
+      "startedAt": "2026-05-24T15:39:43.743Z",
+      "evidence": {
+        "idleSessionId": "c8487ddd-9454-493e-8441-8f6d5f4a3156",
+        "soakMs": 1800000,
+        "idleConnectionOpenAfterSoak": true,
+        "idleChatAgentMessageId": "5d6fbd3a-2c58-4c6f-81a5-1e1505db9b43",
+        "idleChatEnd": {
+          "type": "stream_end",
+          "agentMessageId": "5d6fbd3a-2c58-4c6f-81a5-1e1505db9b43",
+          "fullContent": "Mock agent received the request.\nMock agent completed successfully.\n",
+          "exitCode": 0
+        }
+      },
+      "errors": [],
+      "endedAt": "2026-05-24T16:09:45.703Z",
+      "durationMs": 1801960
+    },
+    {
+      "caseId": "TC-NFR-009",
+      "title": "100 并发 WebSocket 连接稳定",
+      "status": "通过",
+      "startedAt": "2026-05-24T15:39:43.743Z",
+      "evidence": {
+        "loadSessionId": "f3b68a4e-3d4c-45f0-98b4-c6f94075c028",
+        "targetConnections": 100,
+        "connected": 100,
+        "openAfterSoak": 100,
+        "abnormalClosed": 0,
+        "errorRate": 0,
+        "pingCount": 5900,
+        "soakMs": 1800000,
+        "initialChatAt": "2026-05-24T15:39:44.523Z",
+        "initialChatAgentMessageId": "e162cf5f-1388-4256-85e4-0201d3de6df9",
+        "finalChatAgentMessageId": "6491e81e-2b12-47e4-826b-db606f833bbc",
+        "finalChatEnd": {
+          "type": "stream_end",
+          "agentMessageId": "6491e81e-2b12-47e4-826b-db606f833bbc",
+          "fullContent": "Mock agent received the request.\nMock agent completed successfully.\n",
+          "exitCode": 0
+        },
+        "threshold": "error rate < 1%"
+      },
+      "errors": [],
+      "endedAt": "2026-05-24T16:09:45.703Z",
+      "durationMs": 1801960
+    }
+  ]
+}

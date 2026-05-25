@@ -1,0 +1,101 @@
+{
+  "startedAt": "2026-05-25T01:52:03.351Z",
+  "finishedAt": "2026-05-25T01:54:26.355Z",
+  "provider": "claude-code",
+  "timeoutExpectationMs": 120000,
+  "cases": [
+    {
+      "name": "REAL-PROVIDER-ALLOW",
+      "mode": "allow",
+      "sessionId": "b4259af8-1079-4512-b9cb-321cccd0584b",
+      "messageId": "39ce14e3-926d-4b8b-b951-5c85f3381d20",
+      "permissionId": "39ce14e3-926d-4b8b-b951-5c85f3381d20|::|Write|::|1779673928385",
+      "permissionLatencyMs": 4868,
+      "streamEnd": {
+        "type": "stream_end",
+        "agentMessageId": "39ce14e3-926d-4b8b-b951-5c85f3381d20",
+        "fullContent": "Done. The file `/workspace/real_provider_allow-1779673923353.txt` has been created with the content `REAL_PROVIDER_ALLOW`.",
+        "exitCode": 0
+      },
+      "streamErrors": [],
+      "eventTypes": [
+        "connected",
+        "agent_status",
+        "agent_status",
+        "permission_request",
+        "agent_status",
+        "agent_status",
+        "stream_chunk",
+        "agent_status",
+        "stream_end"
+      ],
+      "targetFile": "/workspace/real_provider_allow-1779673923353.txt",
+      "fileExists": true,
+      "fileContent": "REAL_PROVIDER_ALLOW",
+      "envFileExists": false,
+      "passed": true
+    },
+    {
+      "name": "REAL-PROVIDER-DENY",
+      "mode": "deny",
+      "sessionId": "b32d6329-0651-46c6-ace9-d79858b9befd",
+      "messageId": "599032a3-4c44-45f0-915a-89d82157bf6a",
+      "permissionId": "599032a3-4c44-45f0-915a-89d82157bf6a|::|Write|::|1779673941402",
+      "permissionLatencyMs": 4983,
+      "streamEnd": {
+        "type": "stream_end",
+        "agentMessageId": "599032a3-4c44-45f0-915a-89d82157bf6a",
+        "fullContent": "[Agent stopped]",
+        "exitCode": 1
+      },
+      "streamErrors": [
+        "Permission denied by user"
+      ],
+      "eventTypes": [
+        "connected",
+        "agent_status",
+        "agent_status",
+        "permission_request",
+        "agent_status",
+        "stream_error",
+        "stream_end"
+      ],
+      "targetFile": "/workspace/real_provider_deny-1779673936130.txt",
+      "fileExists": false,
+      "fileContent": null,
+      "envFileExists": false,
+      "passed": true
+    },
+    {
+      "name": "REAL-PROVIDER-TIMEOUT",
+      "mode": "timeout",
+      "sessionId": "750a2919-100d-46e2-ac05-679b8d48862c",
+      "messageId": "d25a889b-6def-4c8d-ab2b-f10d357fa4c1",
+      "permissionId": "d25a889b-6def-4c8d-ab2b-f10d357fa4c1|::|Write|::|1779673946343",
+      "permissionLatencyMs": 4509,
+      "streamEnd": {
+        "type": "stream_end",
+        "agentMessageId": "d25a889b-6def-4c8d-ab2b-f10d357fa4c1",
+        "fullContent": "[Agent stopped]",
+        "exitCode": 1
+      },
+      "streamErrors": [
+        "Permission denied by user"
+      ],
+      "eventTypes": [
+        "connected",
+        "agent_status",
+        "agent_status",
+        "permission_request",
+        "stream_error",
+        "stream_end"
+      ],
+      "targetFile": "/workspace/real_provider_timeout-1779673941690.txt",
+      "fileExists": false,
+      "fileContent": null,
+      "envFileExists": false,
+      "passed": true
+    }
+  ],
+  "passed": true
+}

@@ -106,20 +106,12 @@ app.get('/api/debug/claude-auth', async (c) => {
     const sb = await SandboxManager.create(debugId);
     const safeEnv = buildSafeEnv();
 
-    // Only write critical auth vars — full safeEnv can break shell quoting
-    const authKeys = ['ANTHROPIC_API_KEY', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN'];
-    const envLines: string[] = [];
-    for (const k of authKeys) {
-      if (safeEnv[k]) envLines.push(`export ${k}='${String(safeEnv[k]).replace(/'/g, "'\\''")}'`);
-    }
-    writeFileSync(resolve(sb.hostWorkDir, '_env.sh'), envLines.join('\n'), 'utf-8');
-
     // Test 1: pipe approach (known working)
-    const cmd1 = `. /workspace/_env.sh && echo "hello" | claude --print --output-format stream-json --verbose --dangerously-skip-permissions 2>&1 || true`;
+    const cmd1 = `echo "hello" | claude --print --output-format stream-json --verbose --dangerously-skip-permissions 2>&1 || true`;
     // Test 2: file redirect approach
-    const cmd2 = `. /workspace/_env.sh && cat /workspace/_prompt.txt | claude --print --output-format stream-json --verbose --dangerously-skip-permissions 2>&1 || true`;
+    const cmd2 = `cat /workspace/_prompt.txt | claude --print --output-format stream-json --verbose --dangerously-skip-permissions 2>&1 || true`;
     // Test 3: without dangerously-skip-permissions
-    const cmd3 = `. /workspace/_env.sh && cat /workspace/_prompt.txt | claude --print --output-format stream-json --verbose 2>&1 || true`;
+    const cmd3 = `cat /workspace/_prompt.txt | claude --print --output-format stream-json --verbose 2>&1 || true`;
     // Test 4: without env (just cat + claude)
     const cmd4 = `cat /workspace/_prompt.txt | claude --print --output-format stream-json --verbose --dangerously-skip-permissions 2>&1 || true`;
 
@@ -130,6 +122,7 @@ app.get('/api/debug/claude-auth', async (c) => {
       let out = '';
       await SandboxManager.execStream(sb.containerId, ['sh', '-c', cmd], {
         workDir: '/workspace',
+        env: name === 'no_env' ? undefined : safeEnv,
         onStdout: (d) => { out += d; },
         onStderr: (d) => { out += d; },
       }).catch(() => {});

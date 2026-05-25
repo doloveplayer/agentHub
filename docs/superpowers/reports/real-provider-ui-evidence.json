@@ -1,0 +1,24 @@
+{
+  "testedAt": "2026-05-25T01:54:39.784Z",
+  "provider": "claude-code",
+  "sessionId": "455de13d-d754-44a4-bfc9-bd9c9313cebc",
+  "targetFile": "/workspace/ui_real_provider_allow_1779674072973.txt",
+  "permissionVisibleMs": 2332,
+  "screenshotPath": "/home/c2216-5090/lmy/contest/agentHub/docs/superpowers/reports/real-provider-ui-permission.png",
+  "fileExists": true,
+  "fileContent": "UI_REAL_PROVIDER_ALLOW",
+  "envFileExists": false,
+  "consoleErrors": [
+    "Warning: validateDOMNesting(...): %s cannot appear as a descendant of <%s>.%s <div> p \n    at div\n    at div\n    at InlineCodeEditor (http://localhost:5173/src/components/MessageBubble.tsx:244:29)\n    at code (http://localhost:5173/src/components/MessageBubble.tsx:229:12)\n    at p\n    at p (http://localhost:5173/src/components/MessageBubble.tsx:196:9)\n    at Markdown (http://localhost:5173/node_modules/.vite/deps/react-markdown.js?v=7382a144:7108:21)\n    at div\n    at div\n    at div\n    at div\n    at MessageBubble (http://localhost:5173/src/components/MessageBubble.tsx:31:33)\n    at div\n    at div\n    at div\n    at ChatView (http://localhost:5173/src/components/ChatView.tsx?t=1779673457541:93:27)\n    at div\n    at div\n    at ChatPage (http://localhost:5173/src/pages/ChatPage.tsx?t=1779673457541:26:21)\n    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=7382a144:4131:5)\n    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=7382a144:4601:5)\n    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=7382a144:4544:15)\n    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=7382a144:5290:5)\n    at App (http://localhost:5173/src/App.tsx?t=1779673457541:25:17)",
+    "Warning: validateDOMNesting(...): %s cannot appear as a descendant of <%s>.%s <section> p \n    at section\n    at Ee (http://localhost:5173/node_modules/.vite/deps/@monaco-editor_react.js?v=7382a144:508:22)\n    at Ve (http://localhost:5173/node_modules/.vite/deps/@monaco-editor_react.js?v=7382a144:611:29)\n    at div\n    at InlineCodeEditor (http://localhost:5173/src/components/MessageBubble.tsx:244:29)\n    at code (http://localhost:5173/src/components/MessageBubble.tsx:229:12)\n    at p\n    at p (http://localhost:5173/src/components/MessageBubble.tsx:196:9)\n    at Markdown (http://localhost:5173/node_modules/.vite/deps/react-markdown.js?v=7382a144:7108:21)\n    at div\n    at div\n    at div\n    at div\n    at MessageBubble (http://localhost:5173/src/components/MessageBubble.tsx:31:33)\n    at div\n    at div\n    at div\n    at ChatView (http://localhost:5173/src/components/ChatView.tsx?t=1779673457541:93:27)\n    at div\n    at div\n    at ChatPage (http://localhost:5173/src/pages/ChatPage.tsx?t=1779673457541:26:21)\n    at RenderedRoute (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=7382a144:4131:5)\n    at Routes (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=7382a144:4601:5)\n    at Router (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=7382a144:4544:15)\n    at BrowserRouter (http://localhost:5173/node_modules/.vite/deps/react-router-dom.js?v=7382a144:5290:5)\n    at App (http://localhost:5173/src/App.tsx?t=1779673457541:25:17)",
+    "Failed to load resource: net::ERR_NETWORK_CHANGED",
+    "Monaco initialization: error: Event",
+    "Monaco initialization: error: Event",
+    "Monaco initialization: error: Event",
+    "Monaco initialization: error: Event"
+  ],
+  "requestFailures": [
+    "GET https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs/loader.js net::ERR_NETWORK_CHANGED"
+  ],
+  "passed": true
+}
