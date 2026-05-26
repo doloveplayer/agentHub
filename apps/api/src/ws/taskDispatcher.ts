@@ -7,6 +7,8 @@ import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
 import { DagPersistence } from '../agent/DagPersistence.js';
 import { agentCoordinator } from '../agent/AgentCoordinator.js';
+import { getManagerLoop } from '../agent/ManagerLoop.js';
+import { getApprovalGate } from '../agent/ApprovalGate.js';
 
 import { createOneShotAgentProcess } from '../agent/processFactory.js';
 import {
@@ -170,6 +172,45 @@ async function dispatchTaskOneShot(
         break;
       case 'done':
         broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent: output || '[Task completed]', exitCode: event.exitCode });
+
+        if ((task as any).requiresApproval && event.exitCode === 0) {
+          // Pause for human review before marking task complete
+          const gate = getApprovalGate();
+          const request = gate.submit(task.id, queue.planId, agentName, output.slice(0, 2000));
+          broadcast(sessionId, {
+            type: 'approval_required',
+            planId: queue.planId,
+            taskId: task.id,
+            agentName,
+            approvalId: request.id,
+            output: output.slice(0, 500),
+            replies: [],
+          });
+          (async () => {
+            const decision = await gate.waitForDecision(task.id);
+            gate.remove(task.id);
+            if (!decision.approved) {
+              broadcast(sessionId, { type: 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: `Rejected: ${decision.comment || 'No comment'}` });
+              broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent: output, exitCode: 1 });
+              stateTracker.setDone(taskMsgId);
+              agentCurrentTask.delete(agentName);
+              queue.current = null;
+              void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, false);
+            } else {
+              broadcast(sessionId, { type: 'task_completed', planId: queue.planId, taskId: task.id, agentName, output: output.slice(0, 200) });
+              broadcast(sessionId, { type: 'approval_resolved', taskId: task.id, approved: true });
+              stateTracker.setDone(taskMsgId);
+              agentCurrentTask.delete(agentName);
+              queue.current = null;
+              processNextInQueue(sessionId, agentName, queue);
+              void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, true);
+            }
+          })().catch((err: any) => {
+            console.error(`[ws] ApprovalGate error: ${err.message}`);
+          });
+          break;
+        }
+
         broadcast(sessionId, { type: event.exitCode === 0 ? 'task_completed' : 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: output.slice(0, 200) });
         stateTracker.setDone(taskMsgId);
         agentCurrentTask.delete(agentName);
@@ -428,16 +469,122 @@ export async function handleDispatchedTaskFinished(
       await enqueueTaskAssignments(sessionId, planId, ready, sandbox);
     }
   } else {
-    const blocked = markTaskFailed(execution, taskId);
-    for (const item of blocked) {
+    // Dynamic re-planning via ManagerLoop: on failure, ask Main Agent to decide
+    const failedTask = execution.tasks.get(taskId);
+    const failedAgentName = failedTask?.agentName ?? "unknown";
+
+    // Collect upstream results and remaining tasks
+    const upstreamResults: Array<{ taskId: string; output: string }> = [];
+    const remainingTaskTitles: string[] = [];
+    for (const [tid, item] of execution.tasks) {
+      if (item.status === "done") {
+        upstreamResults.push({ taskId: tid, output: item.task.title });
+      } else if (item.status === "waiting" || item.status === "queued") {
+        remainingTaskTitles.push(`${item.task.id}: ${item.task.title}`);
+      }
+    }
+
+    const failure = {
+      failedTaskId: taskId,
+      failedAgentName,
+      error: `Task execution failed`,
+      output: "",
+      upstreamResults,
+    };
+
+    broadcast(sessionId, { type: "manager_reviewing", planId, taskId, reason: "Task failed, requesting Main Agent decision..." });
+
+    try {
+      const manager = getManagerLoop();
+      const decision = await manager.reviewAndDecide(planId, sessionId, failure, remainingTaskTitles);
+
       broadcast(sessionId, {
-        type: 'task_blocked',
+        type: "manager_decision",
         planId,
-        taskId: item.task.id,
-        blockedBy: taskId,
-        agentName: item.agentName,
-        output: `Blocked because dependency ${taskId} failed`,
+        taskId,
+        decision: decision.action,
+        reason: decision.reason,
       });
+
+      switch (decision.action) {
+        case "continue": {
+          // Retry: mark as retry-queued, the scheduler will pick it up
+          markTaskFailed(execution, taskId);
+          markTaskRetryQueued(execution, taskId);
+          const sandbox = sandboxes.get(sessionId);
+          if (sandbox) {
+            const retryAssignment = consumeReadyTasks(execution);
+            if (retryAssignment.length > 0) {
+              await enqueueTaskAssignments(sessionId, planId, retryAssignment, sandbox);
+            }
+          }
+          break;
+        }
+        case "replan": {
+          if (decision.nextTasks && decision.nextTasks.length > 0) {
+            // Mark failed task as done (accepted), then inject replacement tasks
+            markTaskFailed(execution, taskId);
+            for (const t of decision.nextTasks) {
+              execution.tasks.set(t.id, {
+                task: {
+                  id: t.id,
+                  title: t.title,
+                  description: t.description,
+                  agentType: t.agentType,
+                  dependsOn: t.dependsOn,
+                  expectedOutput: t.expectedOutput,
+                  priority: t.priority || "medium",
+                },
+                agentName: t.agentType,
+                agentId: "",
+                status: "waiting",
+                dependents: [],
+              });
+            }
+            const sandbox = sandboxes.get(sessionId);
+            if (sandbox) {
+              const replanned = consumeReadyTasks(execution);
+              if (replanned.length > 0) {
+                await enqueueTaskAssignments(sessionId, planId, replanned, sandbox);
+              }
+            }
+          } else {
+            // Replan with no tasks = abort
+            const blocked = markTaskFailed(execution, taskId);
+            for (const item of blocked) {
+              broadcast(sessionId, {
+                type: "task_blocked", planId, taskId: item.task.id,
+                blockedBy: taskId, agentName: item.agentName,
+                output: `Replan returned no tasks: ${decision.reason}`,
+              });
+            }
+          }
+          break;
+        }
+        case "abort":
+        default: {
+          const blocked = markTaskFailed(execution, taskId);
+          for (const item of blocked) {
+            broadcast(sessionId, {
+              type: "task_blocked", planId, taskId: item.task.id,
+              blockedBy: taskId, agentName: item.agentName,
+              output: `Aborted: ${decision.reason}`,
+            });
+          }
+          break;
+        }
+      }
+    } catch (err: any) {
+      // ManagerLoop itself failed — fall back to original blocking behavior
+      console.error(`[dag] ManagerLoop error: ${err.message}`);
+      const blocked = markTaskFailed(execution, taskId);
+      for (const item of blocked) {
+        broadcast(sessionId, {
+          type: "task_blocked", planId, taskId: item.task.id,
+          blockedBy: taskId, agentName: item.agentName,
+          output: `Blocked because dependency ${taskId} failed (ManagerLoop unavailable)`,
+        });
+      }
     }
   }
 

@@ -8,8 +8,17 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "jsx": "react-jsx",
-    "types": ["node"],
-    "paths": { "@agenthub/shared": ["../../packages/shared/src"] }
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "@agenthub/shared": [
+        "../../packages/shared/src"
+      ]
+    },
+    "skipLibCheck": true
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }

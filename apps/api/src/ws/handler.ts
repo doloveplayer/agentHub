@@ -8,6 +8,7 @@ import { ProviderFactory } from '../agent/providers/factory.js';
 import { stateTracker } from '../agent/StateTracker.js';
 import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
 import { selectDefaultAgent, toTaskStates } from '../agent/turns.js';
+import { getApprovalGate } from '../agent/ApprovalGate.js';
 import { extractAndValidate } from '../agent/PlanValidator.js';
 import { prisma } from '../db/prisma.js';
 import { verifyToken } from '../lib/jwt.js';
@@ -223,6 +224,9 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'deploy_to_platform': handleDeployToPlatform(sessionId, data); break;
     case 'modify_task': handleModifyTask(sessionId, data); break;
     case 'retry_task': handleRetryTask(sessionId, data); break;
+    case 'approval_approve': handleApprovalApprove(sessionId, ws, data); break;
+    case 'approval_reject': handleApprovalReject(sessionId, ws, data); break;
+    case 'approval_reply': handleApprovalReply(sessionId, ws, data); break;
     default: sendTo(ws, { type: 'error', message: `Unknown message type: ${data.type}` });
   }
 }
@@ -665,6 +669,12 @@ async function handleChatMessage(
           }
           break;
         case 'done': {
+          // Guard against double-cleanup: if timeout already removed this state entry, skip
+          const doneStateMap = agentStates.get(sessionId);
+          if (doneStateMap && !doneStateMap.has(mention.messageId)) {
+            console.log(`[ws] Agent done (already cleaned up by timeout): ${mention.messageId}`);
+            break;
+          }
           stateTracker.setDone(mention.messageId);
           if (agentNameForProc) MilestoneBroadcaster.classify({ sessionId, agentName: agentNameForProc, agentMessageId: mention.messageId, eventType: 'done' });
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
@@ -968,6 +978,37 @@ async function handleRetryTask(sessionId: string, data: { planId: string; taskId
     }
   } else {
     broadcast(sessionId, { type: 'stream_error', error: `No agent found for type: ${taskNode.agentType}` });
+  }
+}
+
+// ---- Approval Gate handlers ----
+
+function handleApprovalApprove(sessionId: string, _ws: WebSocket, data: { taskId: string; comment?: string }): void {
+  const gate = getApprovalGate();
+  const request = gate.approve(data.taskId, data.comment);
+  if (request) {
+    broadcast(sessionId, { type: "approval_resolved", taskId: data.taskId, approved: true, comment: data.comment });
+  }
+}
+
+function handleApprovalReject(sessionId: string, _ws: WebSocket, data: { taskId: string; comment?: string }): void {
+  const gate = getApprovalGate();
+  const request = gate.reject(data.taskId, data.comment);
+  if (request) {
+    broadcast(sessionId, { type: "approval_resolved", taskId: data.taskId, approved: false, comment: data.comment });
+  }
+}
+
+function handleApprovalReply(sessionId: string, _ws: WebSocket, data: { taskId: string; message: string }): void {
+  const gate = getApprovalGate();
+  const request = gate.addReply(data.taskId, "user", data.message);
+  if (request) {
+    broadcast(sessionId, {
+      type: "approval_reply_added",
+      taskId: data.taskId,
+      approvalId: request.id,
+      replies: request.replies,
+    });
   }
 }
 

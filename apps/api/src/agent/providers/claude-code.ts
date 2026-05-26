@@ -1,26 +1,39 @@
-import { spawn, execSync, type ChildProcess } from 'child_process';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
-import { resolve } from 'path';
 import { AbstractProvider, EventHandler, ProviderConfig, UnifiedAgentEvent } from './base.js';
-import { EventParser } from '../EventParser.js';
-import { buildDockerEnvArgs, buildSafeEnv } from '../ClaudeCodeProcess.js';
+import { ClaudeAgentSDK, mapPermissionMode, mapAllowedTools, type SDKStreamOptions } from '../ClaudeAgentSDK.js';
+import type { ParsedEvent } from '../EventParser.js';
+
+function parsedToUnified(event: ParsedEvent): UnifiedAgentEvent | null {
+  const base = { providerRaw: event, timestamp: Date.now() };
+  switch (event.type) {
+    case 'text': return { ...base, type: 'thinking' as const, content: event.content };
+    case 'tool_use': return { ...base, type: 'tool_use' as const, toolName: event.toolName, toolInput: event.input };
+    case 'tool_result': return { ...base, type: 'tool_result' as const, content: event.content };
+    case 'subagent_start': return { ...base, type: 'subagent_start' as const, content: event.agentType };
+    case 'subagent_result': return { ...base, type: 'subagent_result' as const, content: event.agentType };
+    case 'permission_request': return { ...base, type: 'permission_request' as const, toolName: event.tool, filePath: event.path };
+    case 'done': return { ...base, type: 'done' as const, exitCode: event.exitCode };
+    case 'error': return { ...base, type: 'error' as const, message: event.message };
+    case 'system': return null;
+    default: return null;
+  }
+}
 
 export class ClaudeCodeProvider implements AbstractProvider {
   readonly name = 'claude-code';
   readonly capabilities = {
-    persistentSession: false,
+    persistentSession: true,     // SDK resume = native session persistence
     permissionProxy: true,
     streamingOutput: true,
     independentMemory: true,
     independentConfig: true,
   };
 
-  private containerName: string | null = null;
   private handlers: EventHandler[] = [];
-  private doneEmitted = false;
+  private sdk: ClaudeAgentSDK | null = null;
   private killed = false;
-  private partialLine = '';
-  private childProc: ChildProcess | null = null;
+  private claudeSessionId: string | undefined;
+  private currentCwd = '/workspace';
+  private currentTrustMode = true;
   private agentHome = '/workspace';
 
   onEvent(handler: EventHandler): void { this.handlers.push(handler); }
@@ -32,15 +45,13 @@ export class ClaudeCodeProvider implements AbstractProvider {
   }
 
   private emitDone(exitCode: number): void {
-    if (this.doneEmitted) return;
-    this.doneEmitted = true;
     this.emit({ type: 'done', exitCode, timestamp: Date.now() });
   }
 
   getAgentHome(): string { return this.agentHome; }
 
   isAlive(): boolean {
-    return !this.killed && this.childProc !== null && !this.childProc.killed;
+    return !this.killed && this.sdk !== null;
   }
 
   async start(
@@ -50,142 +61,117 @@ export class ClaudeCodeProvider implements AbstractProvider {
     workDir: string,
     config: ProviderConfig,
   ): Promise<void> {
-    this.doneEmitted = false;
     this.killed = false;
-    EventParser.resetDeltaState();
+    const cwd = config.hostWorkDir || workDir;
+    this.currentCwd = cwd;
+    this.currentTrustMode = !config.apiKey; // trust mode when no explicit API key override
+    this.agentHome = cwd;
 
-    const safeEnv = buildSafeEnv();
-    if (config.apiKey) safeEnv['ANTHROPIC_API_KEY'] = config.apiKey;
-    if (config.baseUrl) safeEnv['ANTHROPIC_BASE_URL'] = config.baseUrl;
+    const profile = this.currentTrustMode ? "bypass" as const : "read_only" as const;
 
-    const agentTag = config.agentName || 'agent';
-    this.containerName = `agenthub-repl-${sessionId.slice(0, 8)}-${agentTag.slice(0, 12)}`;
-    this.agentHome = `/workspace/_agent_${agentTag}`;
-    const promptFile = `_repl_prompt_${agentTag}.txt`;
+    this.sdk = new ClaudeAgentSDK();
 
-    // Write only prompt data to the bind-mounted workspace. Provider secrets
-    // are passed with docker -e and are not written into workspace files.
-    const hwDir = config.hostWorkDir || workDir;
-    if (config.hostWorkDir) {
-      writeFileSync(resolve(config.hostWorkDir, promptFile), prompt + '\n', 'utf-8');
+    const sdkOptions: SDKStreamOptions = {
+      cwd,
+      permissionMode: mapPermissionMode(profile),
+      allowedTools: mapAllowedTools(profile),
+      model: config.model,
+      persistSession: true,
+      settingSources: ["user", "project"],
+    };
 
-      // Per-agent config directory for independent memory/skills.
-      const agentConfigDir = resolve(config.hostWorkDir, `_agent_${agentTag}`, '.claude');
-      const agentHomeInside = '/home/node/.claude';
-      if (!existsSync(agentConfigDir)) {
-        mkdirSync(agentConfigDir, { recursive: true });
-      }
+    if (config.env) {
+      sdkOptions.env = { ...process.env, ...config.env as Record<string, string | undefined> };
     }
 
-    // docker run -i: native stdin/stdout pipes, no Docker multiplex.
-    // Container PID 1 = claude REPL, dies when claude exits.
-    // --rm auto-removes container on exit.
-    // NO --print (REPL mode: process stays alive for sendPrompt reuse).
-    // NO --dangerously-skip-permissions (permission_request events are emitted and intercepted).
-    const args: string[] = [
-      'run', '--rm', '-i',
-      '--name', this.containerName,
-      '-v', `${hwDir}:/workspace`,
-      '-w', '/workspace',
-      ...buildDockerEnvArgs(safeEnv),
-      'agenthub-sandbox:latest',
-      'sh', '-c',
-      `cd ${workDir} && cat /workspace/${promptFile} - | claude --output-format stream-json --verbose`,
-    ];
+    try {
+      const result = await this.sdk.stream(prompt, sdkOptions, (event) => {
+        if (event.type === "system" && event.sessionId) {
+          this.claudeSessionId = event.sessionId;
+        }
+        // Forward permission requests as-is for the handler to intercept
+        if (event.type === "permission_request") {
+          this.emit({
+            type: "permission_request",
+            toolName: event.tool,
+            filePath: event.path,
+            timestamp: Date.now(),
+          });
+          return;
+        }
+        const unified = parsedToUnified(event);
+        if (unified) this.emit(unified);
+      });
 
-    // Per-agent CLAUDE_CONFIG_DIR bind-mount (independent memory/skills for each agent)
-    if (config.hostWorkDir) {
-      const agentConfigDir = resolve(config.hostWorkDir, `_agent_${agentTag}`, '.claude');
-      const agentHomeInside = '/home/node/.claude';
-      // Insert after the workspace -v pair (index 6) → splice at 7
-      args.splice(7, 0, '-v', `${agentConfigDir}:${agentHomeInside}`, '-e', `CLAUDE_CONFIG_DIR=${agentHomeInside}`);
+      this.claudeSessionId = result.sessionId || this.claudeSessionId;
+
+      if (!this.killed) {
+        this.emitDone(result.exitCode);
+      }
+    } catch (error: any) {
+      if (!this.killed) {
+        this.emit({ type: 'error', message: error.message ?? String(error), timestamp: Date.now() });
+        this.emitDone(1);
+      }
     }
+  }
 
-    console.log(`[agent:repl] Starting REPL: container=${this.containerName.slice(0, 24)} agent=${agentTag}`);
-    console.log(`[agent:repl] Auth: API_KEY=${safeEnv['ANTHROPIC_API_KEY'] ? 'yes' : 'no'} BASE_URL=${safeEnv['ANTHROPIC_BASE_URL'] ? 'yes' : 'no'}`);
+  sendPrompt(prompt: string): void {
+    if (this.killed) return;
 
-    const proc = spawn('docker', args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...safeEnv } });
-    this.childProc = proc;
+    // Cancel previous in-flight stream to avoid concurrent session writes
+    this.sdk?.kill();
+    this.sdk = new ClaudeAgentSDK();
+    const profile = this.currentTrustMode ? "bypass" as const : "read_only" as const;
 
-    // Temporary: log unrecognized event types
-    let unknownEventCount = 0;
-    const MAX_UNKNOWN_LOG = 20;
-    const structuralTypes = new Set(['content_block_stop']);
+    const sdkOptions: SDKStreamOptions = {
+      cwd: this.currentCwd,
+      resume: this.claudeSessionId,
+      permissionMode: mapPermissionMode(profile),
+      allowedTools: mapAllowedTools(profile),
+      persistSession: true,
+      settingSources: ["user", "project"],
+    };
 
-    proc.stdout.on('data', (chunk: Buffer) => {
-      if (this.killed) return;
-      this.partialLine += chunk.toString();
-      const lines = this.partialLine.split('\n');
-      this.partialLine = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const event = EventParser.parseLine(line);
-        if (event) {
-          const unified = EventParser.toUnified(event);
-          if (unified) this.emit(unified);
-        } else if (unknownEventCount < MAX_UNKNOWN_LOG) {
-          try {
-            const raw = JSON.parse(line);
-            if (structuralTypes.has(raw.type)) continue;
-          } catch { /* non-JSON */ }
-          unknownEventCount++;
-          console.log(`[agent:repl:unknown] ${line.slice(0, 200)}`);
-        }
+    this.sdk.stream(prompt, sdkOptions, (event) => {
+      if (event.type === "system" && event.sessionId) {
+        this.claudeSessionId = event.sessionId;
       }
-    });
-
-    proc.stderr.on('data', (chunk: Buffer) => {
-      if (this.killed) return;
-      const message = chunk.toString().trim();
-      if (!message) return;
-      const isDockerNoise = /^(Unable to find|Pulling from|Digest:|Status:|Downloaded|Extracting|Pull complete)/.test(message);
-      if (!isDockerNoise) this.emit({ type: 'error', message, timestamp: Date.now() });
-    });
-
-    proc.on('close', (code) => {
-      if (!this.killed) {
-        // Flush remaining partial line
-        if (this.partialLine.trim()) {
-          const event = EventParser.parseLine(this.partialLine);
-          if (event) {
-            const unified = EventParser.toUnified(event);
-            if (unified && unified.type !== 'done') this.emit(unified);
-          }
-        }
-        this.emitDone(code ?? 1);
+      if (event.type === "permission_request") {
+        this.emit({
+          type: "permission_request",
+          toolName: event.tool,
+          filePath: event.path,
+          timestamp: Date.now(),
+        });
+        return;
       }
-    });
-
-    proc.on('error', (err) => {
+      const unified = parsedToUnified(event);
+      if (unified) this.emit(unified);
+    }).then((result) => {
+      this.claudeSessionId = result.sessionId || this.claudeSessionId;
       if (!this.killed) {
-        this.emit({ type: 'error', message: `docker run error: ${err.message}`, timestamp: Date.now() });
+        this.emitDone(result.exitCode);
+      }
+    }).catch((error: any) => {
+      if (!this.killed) {
+        this.emit({ type: 'error', message: error.message ?? String(error), timestamp: Date.now() });
         this.emitDone(1);
       }
     });
   }
 
-  sendPrompt(prompt: string): void {
-    if (this.killed || !this.childProc?.stdin) return;
-    try {
-      // Native pipe: write prompt directly. No truncation, no newline escaping.
-      // cat - reads from stdin and pipes to claude REPL.
-      this.childProc.stdin.write(prompt + '\n');
-    } catch { /* process already exited */ }
-  }
-
   write(input: string): void {
-    if (this.killed || !this.childProc?.stdin) return;
-    try { this.childProc.stdin.write(input); } catch { /* process exited */ }
+    // Legacy compat: treat write as sendPrompt for permission reply
+    // The SDK handles permissions natively, so this is a no-op for the SDK path
+    if (input.trim()) {
+      this.sendPrompt(input);
+    }
   }
 
   stop(): void {
     this.killed = true;
-    if (this.childProc) {
-      try { this.childProc.stdin?.end(); } catch { /* ignore */ }
-      try { this.childProc.kill('SIGTERM'); } catch { /* ignore */ }
-    }
-    if (this.containerName) {
-      try { execSync(`docker rm -f ${this.containerName} 2>/dev/null`, { timeout: 5000 }); } catch { /* ignore */ }
-    }
+    this.sdk?.kill();
+    this.sdk = null;
   }
 }

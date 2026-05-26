@@ -119,6 +119,39 @@ auth.get('/github/callback', async (c) => {
   return c.redirect(frontendUrl.toString());
 });
 
+// GET /dev-token — test bypass (dev only, no GitHub OAuth)
+// Returns a signed JWT for the first allowed user without going through OAuth.
+// Only enabled when NODE_ENV is not "production".
+auth.get('/dev-token', async (c) => {
+  if (process.env.NODE_ENV === 'production') {
+    return c.json({ error: 'Dev token endpoint disabled in production' }, 403);
+  }
+
+  const allowedUsers = config.github.allowedUsers;
+  if (allowedUsers.length === 0) {
+    return c.json({ error: 'No allowed users configured' }, 400);
+  }
+
+  const login = allowedUsers[0];
+  const devGitHubId = 0; // synthetic — no real GitHub account needed
+
+  // Upsert synthetic dev user
+  const user = await prisma.user.upsert({
+    where: { githubId: devGitHubId },
+    update: { login, avatarUrl: '', email: null as any },
+    create: { githubId: devGitHubId, login, avatarUrl: '', email: null as any },
+  });
+
+  const token = signToken({ userId: user.id, githubLogin: user.login });
+
+  return c.json({
+    token,
+    userId: user.id,
+    login: user.login,
+    note: 'Dev bypass token — inject into localStorage as agenthub_token',
+  });
+});
+
 // GET /me — return current user (protected)
 auth.get('/me', authMiddleware, async (c) => {
   const { userId } = c.get('user');

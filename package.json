@@ -12,6 +12,8 @@
     }
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.98.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "monaco-editor": "0.53.0"
   }
 }

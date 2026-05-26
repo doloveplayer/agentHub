@@ -130,3 +130,53 @@ git remote set-url origin git@github.com:doloveplayer/agentHub.git
 
 **中间结果保存**：
 产生的中间截图调试应该保存至screenTmp/AgentScreenshots目录下，并调用图片分析 MCP进行分析
+
+## E2E Testing with Auth Bypass
+
+AgentHub requires GitHub OAuth login for all authenticated API calls. For automated E2E testing without real GitHub credentials, use the dev-token bypass endpoint:
+
+### Setup
+
+```bash
+# Start backend with dev mode (NODE_ENV != production)
+cd apps/api && NODE_ENV=development npx tsx src/index.ts
+```
+
+### Get a test token
+
+```bash
+# Returns a signed JWT for the first user in GITHUB_ALLOWED_USERS
+curl http://localhost:3000/api/auth/dev-token | python3 -m json.tool
+# → { "token": "eyJ...", "userId": "...", "login": "doloveplayer" }
+```
+
+### Use in Playwright tests
+
+```python
+import urllib.request, json
+
+# 1. Get dev token
+with urllib.request.urlopen("http://localhost:3000/api/auth/dev-token") as r:
+    TOKEN = json.loads(r.read())["token"]
+
+# 2. Inject into browser
+await page.evaluate(f"""() => {{
+    localStorage.setItem('agenthub_token', '{TOKEN}');
+}}""")
+
+# 3. Reload — now authenticated
+await page.goto("http://localhost:5173", wait_until="networkidle")
+```
+
+### API calls
+
+```bash
+# All authenticated endpoints accept Bearer token
+TOKEN=$(curl -s http://localhost:3000/api/auth/dev-token | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/agents
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/auth/me
+```
+
+### Security
+
+The dev-token endpoint is **disabled in production** (`NODE_ENV=production` returns 403). It creates a synthetic user with `githubId: 0` — no real GitHub account needed. Only usable when `GITHUB_ALLOWED_USERS` has at least one entry.

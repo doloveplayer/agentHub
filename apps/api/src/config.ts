@@ -79,7 +79,3 @@ export const config = {
 
 } as const;
 
-export const redis = {
-  host: optional('REDIS_HOST', 'localhost'),
-  port: optionalInt('REDIS_PORT', 6379),
-};
