@@ -4,7 +4,7 @@ import { ChatView } from '../components/ChatView';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/appStore';
 import { useResizablePanel } from '../hooks/useResizablePanel';
-import { Menu, GripVertical } from 'lucide-react';
+import { Menu } from 'lucide-react';
 
 export function ChatPage() {
   const setAgents = useAppStore((s) => s.setAgents);

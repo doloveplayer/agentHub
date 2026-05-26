@@ -183,6 +183,11 @@ export function ChatView() {
     return String(n);
   }
 
+  const hasRunningAgent = activeSessionId ? isSessionStreaming(activeSessionId) : false;
+  const { width: panelWidth, onMouseDown: onPanelResize } = useResizablePanel({
+    defaultWidth: 288, minWidth: 220, maxWidth: 500, side: 'right',
+  });
+
   if (!activeSessionId) {
     return (
       <div className="flex-1 flex items-center justify-center text-hub-muted">
@@ -193,11 +198,6 @@ export function ChatView() {
       </div>
     );
   }
-
-  const hasRunningAgent = isSessionStreaming(activeSessionId);
-  const { width: panelWidth, onMouseDown: onPanelResize } = useResizablePanel({
-    defaultWidth: 288, minWidth: 220, maxWidth: 500, side: 'right',
-  });
 
   return (
     <div className="flex-1 flex h-full">
