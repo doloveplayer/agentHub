@@ -17,7 +17,7 @@ export interface AgentEvent {
     tool?: string;
     path?: string;
     permissionId?: string;
-    tokenUsage?: { input: number; output: number };
+    tokenUsage?: { input: number; output: number; cacheRead?: number; contextPct?: number };
   };
 }
 
@@ -116,6 +116,7 @@ interface AppState {
   unreadCounts: Record<string, number>;
   incrementUnread: (sessionId: string) => void;
   clearUnread: (sessionId: string) => void;
+  clearSessionEvents: (sessionId: string) => void;
 }
 
 export interface TaskState {
@@ -165,7 +166,20 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSessions: (sessions) => set({ sessions }),
 
-  setActiveSession: (id) => set({ activeSessionId: id }),
+  setActiveSession: (id) => {
+    const prev = get().activeSessionId;
+    if (prev && prev !== id) {
+      // Clear agent events from the previous session
+      const msgIds = new Set((get().messages[prev] ?? []).map(m => m.id));
+      const filtered: Record<string, AgentEvent[]> = {};
+      for (const [msgId, evts] of Object.entries(get().agentEvents)) {
+        if (!msgIds.has(msgId)) filtered[msgId] = evts;
+      }
+      set({ activeSessionId: id, agentEvents: filtered });
+    } else {
+      set({ activeSessionId: id });
+    }
+  },
 
   setAgents: (agents) => set({ agents }),
 
@@ -353,4 +367,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       unreadCounts: { ...state.unreadCounts, [sessionId]: 0 },
     })),
+
+  clearSessionEvents: (sessionId) =>
+    set((state) => {
+      const msgIds = new Set((state.messages[sessionId] ?? []).map(m => m.id));
+      const filtered: Record<string, AgentEvent[]> = {};
+      for (const [msgId, events] of Object.entries(state.agentEvents)) {
+        if (!msgIds.has(msgId)) filtered[msgId] = events;
+      }
+      return { agentEvents: filtered };
+    }),
 }));

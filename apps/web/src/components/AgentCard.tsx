@@ -75,13 +75,18 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
           }`}
         />
         <span className="text-body font-semibold text-hub-primary truncate">{displayName}</span>
+        {lastToken && lastToken.contextPct !== undefined && lastToken.contextPct > 0 && (
+          <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-hub-raised text-hub-tertiary font-medium" title={`Context: ${lastToken.contextPct}% (${lastToken.input} tokens)`}>
+            ctx {lastToken.contextPct}%
+          </span>
+        )}
         {lastToken && (
-          <span className="text-caption px-1.5 py-0.5 rounded-sm bg-hub-raised text-hub-tertiary font-medium" title={`Input: ${lastToken.input} Output: ${lastToken.output}`}>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-hub-raised text-hub-tertiary font-medium" title={`Input: ${lastToken.input} Output: ${lastToken.output}`}>
             {lastToken.input > 1000 ? `${(lastToken.input / 1000).toFixed(1)}K` : lastToken.input}↑ {lastToken.output > 1000 ? `${(lastToken.output / 1000).toFixed(1)}K` : lastToken.output}↓
           </span>
         )}
         {toolCount > 0 && (
-          <span className="text-caption px-1.5 py-0.5 rounded-sm bg-hub-raised text-hub-tertiary font-medium">{toolCount} tools</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-hub-raised text-hub-tertiary font-medium">{toolCount} tools</span>
         )}
         {status === 'running' && onStop && (
           <button
@@ -109,7 +114,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
       )}
 
       {/* Activity feed */}
-      <div ref={feedRef} className="max-h-52 overflow-y-auto panel-scroll px-2.5 py-1.5 space-y-1 text-caption leading-relaxed">
+      <div ref={feedRef} className="max-h-52 overflow-y-auto panel-scroll px-2.5 py-1.5 space-y-0.5 text-[10px] leading-relaxed">
         {recentEvents.length === 0 && status === 'idle' && (
           <p className="text-hub-muted text-center py-2 italic">Waiting for task...</p>
         )}

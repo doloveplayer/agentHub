@@ -584,8 +584,13 @@ async function handleChatMessage(
           break;
         }
         case 'system':
-          stateTracker.updateTokenUsage(mention.messageId, { input: (event as any).inputTokens || 0, output: (event as any).outputTokens || 0, cacheRead: 0, cacheCreate: 0 });
-          broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input: (event as any).inputTokens || 0, output: (event as any).outputTokens || 0 } }, agentMessageId: mention.messageId, timestamp: Date.now() });
+          {
+            const sysInput = (event as any).inputTokens || 0;
+            const sysOutput = (event as any).outputTokens || 0;
+            const contextPct = sysInput > 0 ? Math.round((sysInput / config.agent.contextWindowTokens) * 100) : 0;
+            stateTracker.updateTokenUsage(mention.messageId, { input: sysInput, output: sysOutput, cacheRead: 0, cacheCreate: 0 });
+            broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input: sysInput, output: sysOutput, contextPct } }, agentMessageId: mention.messageId, timestamp: Date.now() });
+          }
           break;
         case 'done': {
           stateTracker.setDone(mention.messageId);

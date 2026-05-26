@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { useChat } from '../hooks/useChat';
+import { useResizablePanel } from '../hooks/useResizablePanel';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { AgentStatusPanel } from './AgentStatusPanel';
@@ -194,6 +195,9 @@ export function ChatView() {
   }
 
   const hasRunningAgent = isSessionStreaming(activeSessionId);
+  const { width: panelWidth, onMouseDown: onPanelResize } = useResizablePanel({
+    defaultWidth: 288, minWidth: 220, maxWidth: 500, side: 'right',
+  });
 
   return (
     <div className="flex-1 flex h-full">
@@ -245,10 +249,19 @@ export function ChatView() {
         <MessageInput onSend={send} disabled={hasRunningAgent} />
       </div>
 
-      {/* Agent status panel — only for group sessions, hidden on small screens */}
+      {/* Agent status panel — resizable right sidebar */}
       {activeSession?.type === 'group' && sessionAgents.length > 0 && (
-        <div className="hidden lg:block w-72 flex-shrink-0">
-          <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} />
+        <div className="hidden lg:flex flex-shrink-0" style={{ width: panelWidth }}>
+          <div
+            onMouseDown={onPanelResize}
+            className="w-1 cursor-col-resize hover:bg-hub-accent/60 active:bg-hub-accent transition-colors flex-shrink-0"
+            title="拖拽调整宽度"
+          >
+            <div className="w-4 h-full -ml-1.5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} />
+          </div>
         </div>
       )}
     </div>

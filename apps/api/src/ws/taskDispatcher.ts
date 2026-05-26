@@ -113,7 +113,7 @@ export async function processNextInQueue(
       });
       incRunningAgentCount();
     }
-    broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: procInfo.agentId });
+    broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: procInfo.agentId, taskMessageId });
     procInfo.provider.sendPrompt(taskPrompt);
   } else {
     // One-shot fallback: start a ClaudeCodeProcess directly for the task
@@ -158,8 +158,8 @@ async function dispatchTaskOneShot(
     }
   });
 
-  broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id });
-  console.log(`[ws] Task dispatch (one-shot): agent=${agentName} task=${task.id}`);
+  broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
+  console.log(`[ws] Task dispatch (one-shot fallback): agent=${agentName} task=${task.id}`);
   proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, true, sandbox.hostWorkDir, taskMsgId, undefined, agentName)
     .catch((err: any) => {
       console.error(`[ws] Task one-shot failed: ${err.message}`);
@@ -203,8 +203,11 @@ export async function startTaskAgent(
         break;
       case 'system': {
         const sysEvent = event as any;
+        const sysInput = sysEvent.inputTokens || 0;
+        const sysOutput = sysEvent.outputTokens || 0;
+        const contextPct = sysInput > 0 ? Math.round((sysInput / config.agent.contextWindowTokens) * 100) : 0;
         broadcast(sessionId, { type: 'agent_status', status: 'token_update',
-          details: { tokenUsage: { input: sysEvent.inputTokens || 0, output: sysEvent.outputTokens || 0 } },
+          details: { tokenUsage: { input: sysInput, output: sysOutput, contextPct } },
           agentMessageId: taskMsgId, timestamp: Date.now() });
         break;
       }
@@ -255,7 +258,7 @@ export async function startTaskAgent(
     incRunningAgentCount();
   }
 
-  broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName: agent.name, agentId: agent.id });
+  broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName: agent.name, agentId: agent.id, taskMessageId: taskMsgId });
   console.log(`[ws] Task dispatch (one-shot): agent=${agent.name} task=${task.id}`);
   proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, true, sandbox.hostWorkDir, taskMsgId, undefined, agent.name)
     .catch((err: any) => {

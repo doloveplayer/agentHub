@@ -3,11 +3,15 @@ import { SessionList } from '../components/SessionList';
 import { ChatView } from '../components/ChatView';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/appStore';
-import { Menu } from 'lucide-react';
+import { useResizablePanel } from '../hooks/useResizablePanel';
+import { Menu, GripVertical } from 'lucide-react';
 
 export function ChatPage() {
   const setAgents = useAppStore((s) => s.setAgents);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { width: sidebarWidth, onMouseDown: onSidebarResize } = useResizablePanel({
+    defaultWidth: 256, minWidth: 180, maxWidth: 400, side: 'left',
+  });
 
   useEffect(() => {
     api.getAgents().then(setAgents).catch(console.error);
@@ -25,9 +29,16 @@ export function ChatPage() {
         </div>
       )}
 
-      {/* Desktop sidebar */}
-      <div className="hidden md:block w-56 lg:w-64 flex-shrink-0">
+      {/* Desktop sidebar — resizable */}
+      <div className="hidden md:flex flex-shrink-0" style={{ width: sidebarWidth }}>
         <SessionList />
+        <div
+          onMouseDown={onSidebarResize}
+          className="w-1 cursor-col-resize hover:bg-hub-accent/60 active:bg-hub-accent transition-colors flex-shrink-0 group"
+          title="拖拽调整宽度"
+        >
+          <div className="w-4 h-full -ml-1.5" />
+        </div>
       </div>
 
       {/* Chat area with hamburger menu for mobile */}

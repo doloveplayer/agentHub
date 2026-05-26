@@ -145,6 +145,22 @@ export function useChat(sessionId: string) {
               if (data.planId && data.taskId && data.agentName) {
                 const store = useAppStore.getState();
                 store.setTaskAgent(data.planId, data.taskId, data.agentId, data.agentName);
+                // Create local message so AgentCard detects running status and shows events
+                if (data.taskMessageId && data.agentId) {
+                  const existing = store.messages[sessionId]?.find(m => m.id === data.taskMessageId);
+                  if (!existing) {
+                    store.addMessage(sessionId, {
+                      id: data.taskMessageId,
+                      sessionId,
+                      senderType: 'agent',
+                      agentId: data.agentId,
+                      content: '',
+                      status: 'streaming',
+                      createdAt: new Date().toISOString(),
+                    } as Message);
+                    store.addStreamingMessage(sessionId, data.taskMessageId);
+                  }
+                }
               }
               break;
             case 'conflict_detected': {
