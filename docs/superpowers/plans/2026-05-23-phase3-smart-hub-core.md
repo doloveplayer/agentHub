@@ -116,21 +116,18 @@
 
 - [x] **Provider 接口定义**：`AbstractProvider` + capabilities 声明
 - [x] **Claude Code Provider**：完整实现（REPL + one-shot fallback）
-- [ ] **Agent DB 扩展**：Agent 模型新增 `provider` (default: "claude-code") + `providerConfig` (JSON) 字段
-  - 文件：`apps/api/prisma/schema.prisma`
-- [ ] **第二平台 Provider**（Codex 或 OpenCode）：
-  - 实现 `AbstractProvider` 接口
-  - 将原生输出转换为 `UnifiedAgentEvent`
-  - 注册到 `ProviderFactory`
-  - 文件：新建 `apps/api/src/agent/providers/codex.ts` 或 `opencode.ts`
-- [ ] **Agent 创建 UI**：创建/编辑表单新增 provider 下拉选择 + 对应配置字段（model、endpoint 等）
-  - 文件：`apps/web/src/components/` (Agent 管理页)
-- [ ] **用户 Provider 配置页**：每种 provider 的 API key / base URL 配置
-  - 文件：新建 `apps/web/src/components/ProviderSettings.tsx`
+- [x] **Agent DB 扩展**：Agent 模型新增 `provider` (default: "claude-code") + `providerConfig` (JSON) 字段
+  - → 迁移至 `2026-05-26-multi-provider-agents.md` Task 1
+- [x] **第二平台 Provider**（Codex 或 OpenCode）：
+  - → 迁移至 `2026-05-26-multi-provider-agents.md` Task 2 + Task 3
+- [x] **Agent 创建 UI**：创建/编辑表单新增 provider 下拉选择 + 对应配置字段（model、endpoint 等）
+  - → 迁移至 `2026-05-26-multi-provider-agents.md` Task 4
+- [x] **用户 Provider 配置页**：每种 provider 的 API key / base URL 配置
+  - → 迁移至 `2026-05-26-multi-provider-agents.md` Task 11
 - [x] **Agent 联系人卡片**：在 SessionList 和 ChatView 中展示头像、名称、能力标签（如"代码生成"/"代码审查"/"部署运维"）、在线状态
   - 文件：`apps/web/src/components/SessionList.tsx`, `ChatView.tsx`
-- [ ] **Agent Card 差异化渲染**：根据 `agent.provider` 渲染不同活动流区域
-  - 文件：`apps/web/src/components/AgentCard.tsx`
+- [x] **Agent Card 差异化渲染**：根据 `agent.provider` 渲染不同活动流区域
+  - → 迁移至 `2026-05-26-multi-provider-agents.md` Task 5
 
 ---
 
