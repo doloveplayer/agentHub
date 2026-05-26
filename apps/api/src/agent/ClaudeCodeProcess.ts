@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { resolve } from 'path';
-import { spawn, execSync, type ChildProcess } from 'child_process';
+import { spawn, type ChildProcess } from 'child_process';
 import { EventParser, ParsedEvent } from './EventParser.js';
 import { buildClaudePrintArgs } from './turns.js';
 
@@ -188,7 +188,10 @@ export class ClaudeCodeProcess {
     const hwDir = hostWorkDir || workDir;
     const claudeArgsParts = buildClaudePrintArgs(effectiveTrustMode);
     if (approvedTool) claudeArgsParts.push('--allowedTools', approvedTool);
-    if (claudeSessionId) claudeArgsParts.push('--resume', claudeSessionId);
+    if (claudeSessionId) {
+      claudeArgsParts.push('--resume', claudeSessionId);
+      console.log(`[agent:spawn] Resuming Claude session: ${claudeSessionId.slice(0, 20)}...`);
+    }
     const claudeArgs = claudeArgsParts.join(' ');
     // --network host: container shares host network, can access localhost services
     // (proxy, API endpoints) directly without host.docker.internal rewriting.
@@ -314,9 +317,7 @@ export class ClaudeCodeProcess {
       try { proc.stdin?.end(); } catch { /* ignore */ }
       try { proc.kill('SIGTERM'); } catch { /* ignore */ }
     }
-    if (this.containerId) {
-      try { execSync(`docker rm -f ${this.containerId} 2>/dev/null`, { timeout: 5000 }); } catch { /* ignore */ }
-    }
+    // 容器已带 --rm，会在进程退出后自动清理。不显式 docker rm -f。
   }
 
   write(input: string): void {

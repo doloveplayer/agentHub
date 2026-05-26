@@ -17,6 +17,7 @@ import { parseReviewReport, parseTestOutput, parseNpmAuditJson } from '../artifa
 import {
   sessions, agentStates, agentProcesses, sandboxes,
   runningAgentCount, incRunningAgentCount, decRunningAgentCount,
+  pendingAgentQueue, enqueuePending, dequeuePending,
   sessionsWithMilestones, sequentialQueues,
   agentTaskQueues, agentCurrentTask, agentCurrentMessage,
   permissionTimeouts, PERMISSION_TIMEOUT_MS, ENABLE_PERSISTENT_REPL,
@@ -259,7 +260,17 @@ async function handleChatMessage(
 
   for (const mention of mentions) {
     if (runningAgentCount >= config.agent.maxConcurrent) {
-      broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Max concurrent agents reached (${config.agent.maxConcurrent}).` });
+      enqueuePending({
+        sessionId,
+        mention: { agentId: mention.agentId, subPrompt: mention.subPrompt, messageId: mention.messageId },
+        enqueuedAt: Date.now(),
+      });
+      broadcast(sessionId, {
+        type: 'agent_queued',
+        agentMessageId: mention.messageId,
+        position: pendingAgentQueue.length,
+        message: `All agents busy — queued (position ${pendingAgentQueue.length}). Will execute when a slot frees.`,
+      });
       continue;
     }
 
@@ -269,6 +280,9 @@ async function handleChatMessage(
       continue;
     }
 
+    // Reserve a concurrency slot immediately (before any async ops) to prevent
+    // race conditions where multiple messages pass the limit check simultaneously.
+    incRunningAgentCount();
     try {
       await prisma.message.update({ where: { id: mention.messageId }, data: { status: 'streaming', content: '' } });
     } catch {
@@ -276,6 +290,8 @@ async function handleChatMessage(
         await prisma.message.create({ data: { id: mention.messageId, sessionId, senderType: 'agent', agentId: mention.agentId || null, content: '', status: 'streaming' } });
       } catch {
         broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: 'Failed to create message' });
+        decRunningAgentCount();
+        drainPendingQueue();
         continue;
       }
     }
@@ -328,6 +344,10 @@ async function handleChatMessage(
     );
     const existingProc = agentNameForProc ? agentProcesses.get(sessionId)?.get(agentNameForProc) : null;
 
+    // One-shot --resume mode (default): each message creates a new container
+    // but reuses the Claude Code session via --resume for context continuity.
+    // Persistent REPL (ENABLE_PERSISTENT_REPL=1) is available for testing but
+    // the `cat file - | claude` pattern may block on stdin EOF.
     if (ENABLE_PERSISTENT_REPL && existingProc && existingProc.provider.isAlive()) {
       console.log(`[ws] Reusing REPL process for agent=${agentNameForProc} msg=${mention.messageId}`);
       agentCurrentMessage.set(agentNameForProc!, mention.messageId);
@@ -343,7 +363,7 @@ async function handleChatMessage(
       agentStates.get(sessionId)!.set(mention.messageId, {
         process: existingProc.provider, timer: existingProc.timer, agentId: mention.agentId, agentName,
       });
-      incRunningAgentCount();
+      // incRunningAgentCount already called at concurrency check (line 285)
       return;
     }
 
@@ -419,6 +439,7 @@ async function handleChatMessage(
                 if (st) { clearTimeout(st.timer); stateMap.delete(msgId); decRunningAgentCount(); }
                 if (stateMap.size === 0) agentStates.delete(sessionId);
               }
+              drainPendingQueue();
               accumulatedContent = '';
               const conflicts = detectConflicts(sessionId);
               if (conflicts.length > 0) {
@@ -454,7 +475,6 @@ async function handleChatMessage(
       if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
       agentStates.get(sessionId)!.set(mention.messageId, { process: provider, timer, agentId: mention.agentId, agentName });
       agentCurrentMessage.set(agentName, mention.messageId);
-      incRunningAgentCount();
 
       console.log(`[ws] Starting REPL provider: session=${sessionId} agent=${agentName} msg=${mention.messageId}`);
       provider.start(sessionId, agentPrompt, sandbox.containerId, sandbox.workDir, { agentName, hostWorkDir: sandbox.hostWorkDir, env: safeEnv })
@@ -556,6 +576,7 @@ async function handleChatMessage(
               if (st) { clearTimeout(st.timer); stateMap.delete(mention.messageId); decRunningAgentCount(); }
               if (stateMap.size === 0) agentStates.delete(sessionId);
             }
+            drainPendingQueue();
             startNextSequential(sessionId);
           })();
           break;
@@ -565,6 +586,7 @@ async function handleChatMessage(
           prisma.message.update({ where: { id: mention.messageId }, data: { status: 'error' } }).catch(() => {});
           broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: event.message });
           clearRunningAgent(sessionId, mention.messageId);
+          drainPendingQueue();
           break;
       }
     });
@@ -579,11 +601,11 @@ async function handleChatMessage(
         if (st) { clearTimeout(st.timer); stateMap.delete(mention.messageId); decRunningAgentCount(); }
         if (stateMap.size === 0) agentStates.delete(sessionId);
       }
+      drainPendingQueue();
     }, config.agent.timeoutMs);
 
     if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
     agentStates.get(sessionId)!.set(mention.messageId, { process: agent, timer, agentId: mention.agentId });
-    incRunningAgentCount();
 
     try {
       console.log(`[ws] Starting agent: session=${sessionId} agentMsg=${mention.messageId} prompt="${agentPrompt.slice(0, 80)}..."`);
@@ -603,11 +625,41 @@ async function handleChatMessage(
           broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed to start agent: ${err.message}` });
           prisma.message.update({ where: { id: mention.messageId }, data: { status: 'error' } }).catch(() => {});
           clearRunningAgent(sessionId, mention.messageId);
+          drainPendingQueue();
         });
     } catch (err: any) {
       console.error(`[ws] Agent spawn error: ${err.message}`);
       clearRunningAgent(sessionId, mention.messageId);
+      drainPendingQueue();
     }
+  }
+}
+
+/** Drain the pending queue: start waiting agents when slots free up. */
+function drainPendingQueue(): void {
+  if (pendingAgentQueue.length === 0) return;
+
+  const now = Date.now();
+  const queueTimeout = config.agent.queueTimeoutMs;
+
+  while (pendingAgentQueue.length > 0 && runningAgentCount < config.agent.maxConcurrent) {
+    const next = dequeuePending();
+    if (!next) break;
+
+    if (now - next.enqueuedAt > queueTimeout) {
+      broadcast(next.sessionId, {
+        type: 'stream_error',
+        agentMessageId: next.mention.messageId,
+        error: `Queue timeout after ${queueTimeout / 1000}s — too many agents waiting.`,
+      });
+      continue;
+    }
+
+    console.log(`[ws] Dequeuing agent: session=${next.sessionId} msg=${next.mention.messageId}`);
+    handleChatMessage(next.sessionId, {
+      content: next.mention.subPrompt,
+      mentions: [next.mention],
+    });
   }
 }
 
@@ -624,6 +676,7 @@ function handleStopAgent(sessionId: string, data: { agentMessageId: string }): v
   if (st.agentName) { agentCurrentMessage.delete(st.agentName); agentProcesses.get(sessionId)?.delete(st.agentName); }
   stateMap.delete(data.agentMessageId);
   decRunningAgentCount();
+  drainPendingQueue();
   if (stateMap.size === 0) agentStates.delete(sessionId);
   prisma.message.update({ where: { id: data.agentMessageId }, data: { status: 'done' } }).catch(() => {});
   broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });

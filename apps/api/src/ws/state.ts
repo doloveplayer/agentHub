@@ -33,6 +33,22 @@ export let runningAgentCount = 0;
 export function incRunningAgentCount(): void { runningAgentCount++; }
 export function decRunningAgentCount(): void { runningAgentCount = Math.max(0, runningAgentCount - 1); }
 
+/** FIFO queue for agents waiting when concurrency limit is reached */
+export interface PendingAgentRequest {
+  sessionId: string;
+  mention: { agentId: string; subPrompt: string; messageId: string };
+  enqueuedAt: number;
+}
+export const pendingAgentQueue: PendingAgentRequest[] = [];
+
+export function enqueuePending(request: PendingAgentRequest): void {
+  pendingAgentQueue.push(request);
+}
+
+export function dequeuePending(): PendingAgentRequest | undefined {
+  return pendingAgentQueue.shift();
+}
+
 /** Sessions with milestone broadcasting */
 export const sessionsWithMilestones = new Set<string>();
 
@@ -75,9 +91,11 @@ export const PERMISSION_TIMEOUT_MS =
   optionalPositiveInt('AGENTHUB_PERMISSION_TIMEOUT_MS') ??
   optionalPositiveInt('PERMISSION_TIMEOUT_MS') ??
   120_000;
-// REPL mode disabled: `cat file - | claude` blocks on spawn's stdin pipe
-// which never receives EOF. Use one-shot ClaudeCodeProcess (--print mode) instead.
-// Re-enable after implementing PTY-based stdin or docker exec send mechanism.
+// REPL mode disabled (ENABLE_PERSISTENT_REPL defaults to false).
+// The `cat file - | claude` pattern blocks because stdin never receives EOF.
+// Current approach: one-shot `docker run --rm` + `--resume` per message.
+// This gives session continuity without a persistent container.
+// To re-enable REPL: implement PTY/FIFO-based stdin (see docs/superpowers/plans/2026-05-25-pty-repl-fix.md).
 export const ENABLE_PERSISTENT_REPL = process.env.AGENTHUB_ENABLE_PERSISTENT_REPL === '1';
 
 /** TaskQueueManager reference (set by index.ts) */
