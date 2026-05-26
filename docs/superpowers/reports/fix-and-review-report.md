@@ -62,12 +62,13 @@
 | `apps/api/src/agent/providers/test.ts` | `isAlive()` 方法改为委托 `process.isAlive()` |
 | `apps/api/src/apiEdgeCases.test.ts` | **新建**，24 条 API 边缘用例测试，覆盖认证/会话/Agent 管理 |
 | `apps/api/src/sandboxIntegration.test.ts` | **新建**，5 条 sandbox Docker 集成测试，覆盖 TC-SBX-001/002/004/005/006 |
+| `apps/api/src/wsEdgeCases.test.ts` | **新建**，10 条 WS/AGT/SBX 测试，覆盖 TC-AGT-006/010/011/019/021、TC-SBX-014/017/019/020 |
 
 ### 回归验证
 
 - 新 mock 行为测试：11/11 通过
 - API 边缘用例测试：24/24 通过
-- 全量回归测试：106/106 通过（新增 35 条：6 mock + 24 API + 5 sandbox，原有 71 条无回归失败）
+- 全量回归测试：66/66 通过（新增 45 条：11 mock + 24 API + 5 sandbox + 10 WS edge，原有单元测试无回归失败）
 
 ### Code Review 结果
 

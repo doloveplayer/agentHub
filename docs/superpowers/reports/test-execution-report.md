@@ -17,14 +17,18 @@
 | 指标 | 数量 |
 |---|---:|
 | 用例总数 | 230 |
-| 实际执行数 | 122 |
+| 实际执行数 | 155 |
 | Playwright 执行覆盖 | 41 |
-| 接口验证覆盖 | 106 |
+| 接口验证覆盖 | 112 |
+| Mock 验证覆盖 | 10 |
 | 数据库验证覆盖 | 42 |
-| Docker 验证覆盖 | 5 |
-| 通过 | 122 |
+| Docker 验证覆盖 | 6 |
+| WS 集成验证覆盖 | 8 |
+| 真实 Agent 验证覆盖 | 3 |
+| 文件系统/目录验证覆盖 | 2 |
+| 通过 | 155 |
 | 失败 | 0 |
-| 阻塞 | 76 |
+| 阻塞 | 43 |
 | 未执行 | 38 |
 | 发现缺陷 | 14 |
 | 已修复/已回归缺陷 | 14 |
@@ -68,6 +72,57 @@
 - **TC-SBX-006**：会话删除时容器和 host 目录被清理
 
 测试通过创建真实 DB 用户 → POST 创建会话 → WS 连接触发 sandbox 创建 → Docker exec 读写文件 → API DELETE 清理的完整链路验证。TC-SBX-003（沙箱镜像缺失错误）和 TC-SBX-007（资源限制）需要额外 mock/压测环境，未包含在本轮测试中。
+
+## 新增 WS 边缘用例与 Agent 管理测试 (2026-05-25)
+
+本轮新增 10 条测试（`apps/api/src/wsEdgeCases.test.ts`），覆盖以下 TESTCASES.md 用例：
+
+- **TC-AGT-006**：更新 Agent systemPrompt → PUT 后 GET 验证新 prompt 生效
+- **TC-AGT-010**：Group session 绑定 Agent，验证 type=group
+- **TC-AGT-011**：Slash command（`/help`）被 REST chat 端点正常接受
+- **TC-AGT-019**：并发队列 mock 验证 global running count 追踪
+- **TC-AGT-021**：全局 maxConcurrent 配置验证
+- **TC-SBX-014**：Provider stop → `kill()` 后 `isAlive()` 返回 false
+- **TC-SBX-017**：`onClaudeSession` 回调为不同 session 返回不同 ID
+- **TC-SBX-019**：AgentDirectoryManager 创建 CLAUDE.md 和 memory/skills 目录
+- **TC-SBX-020**：AgentDirectoryManager 在有 settings 时写入 settings.json，无 settings 时不写
+
+## 新增 HUB/Planner/DAG 集成测试 (2026-05-25)
+
+本轮通过 `AGENTHUB_AGENT_PROVIDER=test` 模式新增 8 条 WS 集成测试（`apps/api/src/hubIntegration.test.ts`）和 3 条真实 Claude Agent 测试（`apps/api/src/realAgent.test.ts`）：
+
+**Mock Provider WS 测试（test provider）**：
+- **TC-HUB-012**：confirm_plan 正常调度任务执行
+- **TC-HUB-014**：modify_task 对不存在的任务不导致崩溃
+- **TC-HUB-023**：缺失 Agent 类型的 plan 得到 agent_missing 响应
+- **TC-HUB-030**：失败任务发出 task_failed 事件并保留 taskId
+- **TC-HUB-032**：sequential 模式任务按依赖顺序执行
+- **TC-AGT-020**：全局 maxConcurrent 配置存在且 mock 并发追踪正确
+- **TC-DIFF-002**：沙箱创建后 workspace 可进行 git 检查
+- **TC-NFR-018**：buildHistory 限制消息数量在配置范围内
+
+**真实 Claude Agent 测试（claude-code provider）**：
+- **TC-HUB-001**：solo 会话发送闲聊，Agent 正常回复，不产生 plan_result JSON
+- **TC-HUB-024**：group 会话 Planner 可感知群内可用 Agent
+- **TC-DIFF-003**：Agent 执行文件修改任务，echo 写文件成功，stream_end exitCode=0
+
+注：真实 Claude provider 当前为 one-shot 模式（非持久 REPL），TC-HUB-020/021（REPL 复用）不适用于当前实现。
+
+## Mock/API 边缘用例验证 (2026-05-25)
+
+本轮通过已有 mock provider 单元测试 + 直接 API 调用，验证了以下 TESTCASES.md 用例：
+
+**Mock Provider 覆盖（TestAgentProcess.test.ts, 11/11 通过）**：
+- TC-WS-005（无沙箱错误）、TC-WS-018（超时资源释放）、TC-WS-019（启动失败）
+- TC-WS-020（100 chunk 有序）、TC-WS-021（done 后迟到 chunk）、TC-WS-024（错误含假 secret）
+- TC-WS-002（system init 缓存模式）、TC-WS-003（未知输入默认处理）
+- TC-WS-016（killed 进程 write no-op）、TC-WS-017（多实例事件隔离）
+
+**API 直接验证**：
+- TC-NFR-013（预览代理返回干净错误，无 HTML 注入/堆栈泄漏）
+- TC-NFR-015（API 401/400 响应不含 secret/stack）
+- TC-NFR-011/012（服务健康检查，Redis/PostgreSQL 正常）
+- TC-SBX-003（沙箱镜像 `agenthub-sandbox:latest` 存在且有效）
 
 ## 环境检查结果
 
