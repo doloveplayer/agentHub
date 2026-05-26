@@ -117,6 +117,9 @@ interface AppState {
   incrementUnread: (sessionId: string) => void;
   clearUnread: (sessionId: string) => void;
   clearSessionEvents: (sessionId: string) => void;
+  inboxNotifications: Record<string, number>;
+  addInboxNotification: (agentName: string) => void;
+  clearInboxNotifications: (agentName: string) => void;
 }
 
 export interface TaskState {
@@ -155,6 +158,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   agentCurrentTask: {},
   agentTaskCounts: {},
   unreadCounts: {},
+  inboxNotifications: {},
 
   setToken: (token) => {
     if (token) localStorage.setItem('agenthub_token', token);
@@ -377,4 +381,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       return { agentEvents: filtered };
     }),
+
+  addInboxNotification: (agentName) =>
+    set((state) => ({
+      inboxNotifications: {
+        ...state.inboxNotifications,
+        [agentName]: (state.inboxNotifications[agentName] || 0) + 1,
+      },
+    })),
+
+  clearInboxNotifications: (agentName) =>
+    set((state) => ({
+      inboxNotifications: { ...state.inboxNotifications, [agentName]: 0 },
+    })),
 }));

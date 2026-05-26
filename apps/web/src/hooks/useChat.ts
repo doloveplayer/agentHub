@@ -179,6 +179,28 @@ export function useChat(sessionId: string) {
               cfStore.addMessage(sessionId, cfMsg);
               break;
             }
+            case 'inbox_update':
+              if (data.agentName) {
+                useAppStore.getState().addInboxNotification(data.agentName);
+              }
+              break;
+            case 'permission_violation':
+              if (data.agentMessageId) {
+                addAgentEvent(data.agentMessageId, {
+                  id: 'pv-' + Date.now(),
+                  type: 'permission_request',
+                  timestamp: data.timestamp || Date.now(),
+                  details: {
+                    tool: data.toolName,
+                    path: data.filePath,
+                    content: `${data.reason || 'Permission denied'} → Delegating to ${data.delegateTo || 'unknown'}`,
+                  },
+                });
+              }
+              if (data.agentName) {
+                useAppStore.getState().addInboxNotification(data.agentName);
+              }
+              break;
             case 'agent_missing': {
               const store = useAppStore.getState();
               const fallbackNote = data.fallbackAgent
