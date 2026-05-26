@@ -61,18 +61,21 @@ function sortByPriority(tasks: TaskDispatchNode[]): TaskDispatchNode[] {
 }
 
 function resolveAgentNameInSession(sessionId: string, agentType: string): string | null {
+  // Check active task queues
   const queueNames = [...agentTaskQueues.keys()];
   for (const name of queueNames) {
     if (name === agentType) return name;
   }
-  // Also check agentProcesses
+  // Check running agent processes
   const procMap = agentProcesses.get(sessionId);
   if (procMap) {
     for (const [name] of procMap) {
       if (name === agentType) return name;
     }
   }
-  return null;
+  // Not yet started — trust agentType as the agent name.
+  // Built-in agents use name===type. Custom agents register with their name.
+  return agentType;
 }
 
 function planKey(sessionId: string, planId: string): string {

@@ -116,7 +116,7 @@ const markdownComponents: Components = {
   p: ({ children }) => {
     const text = childrenToText(children);
     return (
-      <p className="group/paragraph relative pr-7">
+      <div className="group/paragraph relative pr-7">
         {children}
         {text && (
           <button
@@ -127,7 +127,7 @@ const markdownComponents: Components = {
             <Quote className="h-3.5 w-3.5" />
           </button>
         )}
-      </p>
+      </div>
     );
   },
   code: ({ inline, className, children, ...props }: any) => {

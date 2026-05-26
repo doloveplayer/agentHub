@@ -210,7 +210,8 @@ function resolveAgentNameInSession(sessionId: string, agentType: string): string
     if (agentNameToType.get(name) === agentType) return name;
     if (name === agentType) return name;
   }
-  return null;
+  // Not yet started — trust agentType as the agent name.
+  return agentType;
 }
 
 function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
