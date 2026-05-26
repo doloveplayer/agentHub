@@ -3,10 +3,11 @@
 ## 当前测试覆盖情况
 
 - TESTCASES.md 解析总数：230
-- 通过：122
+- 通过：157
+- 有条件通过：3
 - 失败：0
-- 阻塞：76
-- 未执行：38
+- 阻塞：49（含 Playwright/Chrome 不可用 6 条）
+- 未执行：27
 - 已修复缺陷：14
 - 已通过测试模式缓解：0
 - 未修复/待确认缺陷：0
@@ -41,4 +42,17 @@
 
 结论：不通过，不建议直接生产上线。  
 上线前必须补齐：部署成功/回滚、8 小时混合稳定性压测、跨用户权限全链路、真实 Claude 多 Agent DAG 长任务 smoke，以及模型 provider 凭据的长期隔离方案。
+
+## 2026-05-25 真实 Agent 测试发现
+
+使用真实 Claude provider 执行 Planner DAG 场景测试（TC-HUB-025/026/031）：
+
+- **Agent 确认运行**：Planner 在 Docker 容器内正常启动，Claude API 调用成功，agent:stdout 日志显示 thinking/tool_use/tool_result 事件正常
+- **WS 生命周期限制**：当前 one-shot 模式下，Agent 进程完成后 sandbox 被清理，导致 WS 连接关闭，plan_result/plan_summary 事件无法通过 WS 捕获
+- **影响**：TC-HUB-020/021（REPL 复用）和 TC-HUB-025/026（复杂 DAG 端到端）需要持久 REPL 模式或轮询 DB 方案才能完整验证
+- **建议**：实现 REPL 持久会话模式后重新执行此 3 条用例
+
+## Playwright 阻塞
+
+本地环境未安装 Chromium/Chrome 浏览器，Playwright MCP 无法启动。TC-HUB-034/035（DAG 拖拽交互）和 TC-AGT-022~026（Agent 状态面板 UI）共 7 条用例阻塞。执行 `npx playwright install chromium` 可解除。
 可以后续优化：PPT/文档二次交互、视觉 Diff 基线、更多浏览器兼容性。

@@ -137,7 +137,10 @@ export class ClaudeCodeProcess {
     const safeEnv = buildSafeEnv();
     const agentTag = promptFileId || 'agent';
     const agentConfigTag = agentConfigId || agentTag;
-    const containerName = `agenthub-agent-${sessionId.slice(0, 8)}-${agentTag.slice(0, 12)}`;
+    const containerTag = agentConfigId
+      ? `${agentConfigId}-${agentTag.slice(-8)}`
+      : agentTag.slice(0, 12);
+    const containerName = `agenthub-agent-${sessionId.slice(0, 8)}-${containerTag}`;
     this.containerId = containerName;
     const promptFile = `_prompt_${agentTag}.txt`;
 

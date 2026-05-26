@@ -259,7 +259,10 @@ test('JWT verify throws on invalid token', () => {
 
 // ===== Cleanup =====
 
-test('cleanup: delete test users and sessions', async () => {
+test('cleanup: delete test data', async () => {
+  // Clean up agents created by TC-AGT-005/006
+  await prisma.agent.deleteMany({ where: { name: { startsWith: 'dup-test-' } } });
+  await prisma.agent.deleteMany({ where: { name: { startsWith: 'dup-agent-test' } } });
   if (userIdA) {
     await prisma.session.deleteMany({ where: { userId: userIdA } });
     await prisma.user.deleteMany({ where: { id: userIdA } });

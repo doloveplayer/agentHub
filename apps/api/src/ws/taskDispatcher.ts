@@ -135,7 +135,7 @@ async function dispatchTaskOneShot(
 
   broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id });
   console.log(`[ws] Task dispatch (one-shot): agent=${agentName} task=${task.id}`);
-  proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, true, sandbox.hostWorkDir, taskMsgId)
+  proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, true, sandbox.hostWorkDir, taskMsgId, undefined, agentName)
     .catch((err: any) => {
       console.error(`[ws] Task one-shot failed: ${err.message}`);
       broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: `Task failed: ${err.message}` });
@@ -232,7 +232,7 @@ export async function startTaskAgent(
 
   broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName: agent.name, agentId: agent.id });
   console.log(`[ws] Task dispatch (one-shot): agent=${agent.name} task=${task.id}`);
-  proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, true, sandbox.hostWorkDir, taskMsgId)
+  proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, true, sandbox.hostWorkDir, taskMsgId, undefined, agent.name)
     .catch((err: any) => {
       console.error(`[ws] Task one-shot failed: ${err.message}`);
       broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: `Task failed: ${err.message}` });
