@@ -7,7 +7,8 @@ import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import { ProviderFactory } from '../agent/providers/factory.js';
 import { stateTracker } from '../agent/StateTracker.js';
 import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
-import { selectDefaultAgent, extractPlannerPlan, toTaskStates } from '../agent/turns.js';
+import { selectDefaultAgent, toTaskStates } from '../agent/turns.js';
+import { extractAndValidate } from '../agent/PlanValidator.js';
 import { prisma } from '../db/prisma.js';
 import { verifyToken } from '../lib/jwt.js';
 import { config } from '../config.js';
@@ -21,7 +22,7 @@ import {
   sessionsWithMilestones, sequentialQueues,
   agentTaskQueues, agentCurrentTask, agentCurrentMessage,
   permissionTimeouts, PERMISSION_TIMEOUT_MS, ENABLE_PERSISTENT_REPL,
-  taskQueueManager, taskModifications, agentClaudeSessions,
+  taskModifications, agentClaudeSessions,
   trackFileMod, detectConflicts, clearFileMods,
   generateId, getOrCreateSandbox, broadcast, sendTo,
   cleanupSessionResources, cleanupSessionClient, clearRunningAgent,
@@ -41,7 +42,7 @@ import {
   takeMessageBeforeVersion,
 } from './diffBroadcast.js';
 
-export { broadcast, setTaskQueueManager } from './state.js';
+export { broadcast } from './state.js';
 
 // ---- Connection handler ----
 
@@ -130,6 +131,36 @@ async function handleConnection(ws: WebSocket, request: any) {
 
   console.log(`[ws] Client connected: session=${sessionId} userId=${userId}`);
   sendTo(ws, { type: 'connected', sessionId });
+
+  // Recover in-flight plan executions after backend restart
+  try {
+    const { DagPersistence } = await import('../agent/DagPersistence.js');
+    const plans = await DagPersistence.recover(sessionId);
+    for (const plan of plans) {
+      broadcast(sessionId, {
+        type: 'plan_recovered',
+        planId: plan.planId,
+        tasks: plan.tasks.map((t) => ({
+          taskId: t.id,
+          planId: plan.planId,
+          title: t.title,
+          agentType: t.agentType,
+          status: t.status === 'done' ? 'done' : t.status === 'failed' ? 'failed' : t.status === 'blocked' ? 'blocked' : 'waiting',
+          dependsOn: t.dependsOn,
+          expectedOutput: t.expectedOutput,
+          priority: t.priority,
+          assignedAgentName: t.agentName,
+          assignedAgentId: t.agentId,
+          description: t.description,
+        })),
+      });
+    }
+    if (plans.length > 0) {
+      console.log(`[ws] Recovered ${plans.length} plan(s) for session=${sessionId.slice(0, 8)}`);
+    }
+  } catch (err: any) {
+    console.log(`[ws] Plan recovery skipped: ${err.message}`);
+  }
 
   // Flush early messages that arrived before sandbox was ready
   sandboxReady = true;
@@ -454,6 +485,17 @@ async function handleChatMessage(
                 if (queue) { queue.current = null; processNextInQueue(sessionId, agentName, queue); }
                 void handleDispatchedTaskFinished(sessionId, taskInfo.planId, taskInfo.taskId, ev.exitCode === 0);
               }
+              if (ev.exitCode !== 0 && agentName) {
+                const sb = sandboxes.get(sessionId);
+                if (sb) {
+                  const { reassignQueuedTasks } = await import('./taskDispatcher.js');
+                  await reassignQueuedTasks(sessionId, agentName, {
+                    containerId: sb.containerId,
+                    workDir: sb.workDir,
+                    hostWorkDir: sb.hostWorkDir,
+                  });
+                }
+              }
               agentCurrentMessage.delete(agentName);
               startNextSequential(sessionId);
             })();
@@ -550,7 +592,7 @@ async function handleChatMessage(
           if (agentNameForProc) MilestoneBroadcaster.classify({ sessionId, agentName: agentNameForProc, agentMessageId: mention.messageId, eventType: 'done' });
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
           if (isPlannerAgent && event.exitCode === 0 && accumulatedContent) {
-            const plan = extractPlannerPlan(accumulatedContent);
+            const plan = extractAndValidate(accumulatedContent);
             if (plan) {
               const planId = `plan-${Date.now()}`;
               broadcast(sessionId, { type: 'plan_result', planId, planTitle: plan.planTitle, summary: plan.summary, tasks: toTaskStates(plan, planId), agentMessageId: mention.messageId });
@@ -576,6 +618,17 @@ async function handleChatMessage(
               if (st) { clearTimeout(st.timer); stateMap.delete(mention.messageId); decRunningAgentCount(); }
               if (stateMap.size === 0) agentStates.delete(sessionId);
             }
+            if (event.exitCode !== 0 && agentNameForProc) {
+              const sb = sandboxes.get(sessionId);
+              if (sb) {
+                const { reassignQueuedTasks } = await import('./taskDispatcher.js');
+                await reassignQueuedTasks(sessionId, agentNameForProc, {
+                  containerId: sb.containerId,
+                  workDir: sb.workDir,
+                  hostWorkDir: sb.hostWorkDir,
+                });
+              }
+            }
             drainPendingQueue();
             startNextSequential(sessionId);
           })();
@@ -593,6 +646,18 @@ async function handleChatMessage(
 
     const timer = setTimeout(() => {
       console.log(`[ws] Agent timeout: session=${sessionId} agentMsg=${mention.messageId}`);
+      if (agentNameForProc) {
+        const sb = sandboxes.get(sessionId);
+        if (sb) {
+          import('./taskDispatcher.js').then(({ reassignQueuedTasks }) =>
+            reassignQueuedTasks(sessionId, agentNameForProc, {
+              containerId: sb.containerId,
+              workDir: sb.workDir,
+              hostWorkDir: sb.hostWorkDir,
+            })
+          ).catch(() => {});
+        }
+      }
       agent.kill();
       broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: 'Agent execution timed out' });
       const stateMap = agentStates.get(sessionId);
@@ -675,6 +740,19 @@ function handleStopAgent(sessionId: string, data: { agentMessageId: string }): v
   if (st.process.kill) st.process.kill(); else if (st.process.stop) st.process.stop();
   if (st.agentName) { agentCurrentMessage.delete(st.agentName); agentProcesses.get(sessionId)?.delete(st.agentName); }
   stateMap.delete(data.agentMessageId);
+  const stoppedAgentName = st.agentName;
+  if (stoppedAgentName) {
+    const sb = sandboxes.get(sessionId);
+    if (sb) {
+      import('./taskDispatcher.js').then(({ reassignQueuedTasks }) =>
+        reassignQueuedTasks(sessionId, stoppedAgentName, {
+          containerId: sb.containerId,
+          workDir: sb.workDir,
+          hostWorkDir: sb.hostWorkDir,
+        })
+      ).catch(() => {});
+    }
+  }
   decRunningAgentCount();
   drainPendingQueue();
   if (stateMap.size === 0) agentStates.delete(sessionId);

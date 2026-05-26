@@ -15,6 +15,7 @@ export interface DagExecutionItem extends DagTaskAssignment {
 
 export interface DagExecutionState {
   planId: string;
+  planTitle?: string;
   tasks: Map<string, DagExecutionItem>;
   summaryBroadcasted?: boolean;
 }
@@ -22,6 +23,7 @@ export interface DagExecutionState {
 export function createDagExecutionState(
   planId: string,
   assignments: DagTaskAssignment[],
+  planTitle?: string,
 ): DagExecutionState {
   const tasks = new Map<string, DagExecutionItem>();
 
@@ -41,7 +43,7 @@ export function createDagExecutionState(
 
   assertAcyclic(tasks);
 
-  return { planId, tasks };
+  return { planId, tasks, planTitle };
 }
 
 export function consumeReadyTasks(state: DagExecutionState): DagTaskAssignment[] {

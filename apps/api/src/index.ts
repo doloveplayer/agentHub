@@ -6,7 +6,7 @@ import { execSync } from 'child_process';
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { config } from './config.js';
-import { attachWebSocket, setTaskQueueManager, broadcast } from './ws/handler.js';
+import { attachWebSocket, broadcast } from './ws/handler.js';
 import { ProviderFactory } from './agent/providers/factory.js';
 import { SandboxManager } from './agent/SandboxManager.js';
 import { prisma } from './db/prisma.js';
@@ -146,23 +146,12 @@ const server = serve(
   },
 );
 
-// Initialize Task Queue (BullMQ + Redis) — retained for drain/shutdown only.
-// Task execution is now handled by REPL dispatch (handler.ts → dispatchTasksToAgents).
-let taskQueueManager: any = null;
-try {
-  const { TaskQueueManager } = await import('./agent/TaskQueue.js');
-  taskQueueManager = new TaskQueueManager();
-  setTaskQueueManager(taskQueueManager);
-  await taskQueueManager.drain();
-  console.log('[startup] Task queue initialized (drain only, execution via REPL)');
-} catch (err: any) {
-  console.log(`[startup] Task queue skipped (Redis not available): ${err.message}`);
-}
+// Task scheduling is handled by in-process DAG dispatch (ws/taskDispatcher.ts).
+// BullMQ was removed — DAG state persistence replaced it (see DagPersistence.ts).
 
 // Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('[shutdown] Closing task queue...');
-  await taskQueueManager?.shutdown();
+process.on('SIGINT', () => {
+  console.log('[shutdown] Exiting...');
   process.exit(0);
 });
 

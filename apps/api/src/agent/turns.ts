@@ -71,20 +71,6 @@ export function buildClaudePrintArgs(trustMode = true): string[] {
   return args;
 }
 
-export function extractPlannerPlan(content: string): TaskPlan | null {
-  const candidates = [
-    ...extractFencedJson(content),
-    content,
-    ...extractJsonObjects(content),
-  ];
-
-  for (const candidate of candidates) {
-    const parsed = parsePlan(candidate);
-    if (parsed) return parsed;
-  }
-  return null;
-}
-
 export function toTaskStates(plan: TaskPlan, planId: string): TaskStatePayload[] {
   return plan.tasks.map((task, index) => ({
     taskId: task.id || `task-${index + 1}`,
@@ -105,70 +91,6 @@ function toTarget(agent: Pick<AgentConfig, 'id' | 'name' | 'displayName'>): Agen
     name: agent.name,
     displayName: agent.displayName,
   };
-}
-
-function extractFencedJson(content: string): string[] {
-  const blocks: string[] = [];
-  const fence = /```(?:json)?\s*([\s\S]*?)```/gi;
-  let match: RegExpExecArray | null;
-  while ((match = fence.exec(content)) !== null) {
-    if (match[1]) blocks.push(match[1].trim());
-  }
-  return blocks;
-}
-
-function extractJsonObjects(content: string): string[] {
-  const objects: string[] = [];
-  const tasksIndex = content.indexOf('"tasks"');
-  if (tasksIndex === -1) return objects;
-
-  for (let start = tasksIndex; start >= 0; start--) {
-    if (content[start] !== '{') continue;
-    let depth = 0;
-    for (let end = start; end < content.length; end++) {
-      if (content[end] === '{') depth++;
-      if (content[end] === '}') depth--;
-      if (depth === 0) {
-        objects.push(content.slice(start, end + 1));
-        return objects;
-      }
-    }
-  }
-  return objects;
-}
-
-function parsePlan(candidate: string): TaskPlan | null {
-  try {
-    const parsed = JSON.parse(candidate) as Partial<TaskPlan>;
-    if (!parsed || !Array.isArray(parsed.tasks) || parsed.tasks.length === 0) return null;
-    return {
-      planTitle: parsed.planTitle || 'Task Plan',
-      summary: parsed.summary || '',
-      tasks: parsed.tasks.map(normalizeTask),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function normalizeTask(task: Partial<TaskNode>, index: number): TaskNode {
-  return {
-    id: task.id || `task-${index + 1}`,
-    title: task.title || `Task ${index + 1}`,
-    description: task.description || '',
-    agentType: isKnownAgentType(task.agentType) ? task.agentType : 'CodeAgent',
-    dependsOn: Array.isArray(task.dependsOn) ? task.dependsOn : [],
-    expectedOutput: task.expectedOutput || '',
-    priority: isKnownPriority(task.priority) ? task.priority : 'medium',
-  };
-}
-
-function isKnownAgentType(value: unknown): value is TaskNode['agentType'] {
-  return value === 'CodeAgent' || value === 'ReviewAgent' || value === 'DevOpsAgent' || value === 'TestAgent' || value === 'DepsAgent';
-}
-
-function isKnownPriority(value: unknown): value is TaskNode['priority'] {
-  return value === 'high' || value === 'medium' || value === 'low';
 }
 
 /** Find the closest available agent when exact type match fails */

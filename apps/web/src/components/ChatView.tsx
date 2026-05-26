@@ -30,7 +30,7 @@ function PlanRenderer({
   confirmedPlans: Set<string>;
   setConfirmedPlans: React.Dispatch<React.SetStateAction<Set<string>>>;
   setTaskPlan: (planId: string, tasks: any[]) => void;
-  confirmPlan: (planId: string, tasks: any[]) => void;
+  confirmPlan: (planId: string) => void;
 }) {
   const unconfirmedPlans = Object.entries(taskPlans).filter(([pid]) =>
     pid.startsWith('plan-') && !confirmedPlans.has(pid)
@@ -51,11 +51,18 @@ function PlanRenderer({
           }))}
           onConfirm={() => {
             setConfirmedPlans(prev => new Set(prev).add(planId));
-            confirmPlan(planId, tasks);
+            confirmPlan(planId);
           }}
           onUpdateTask={(taskId, newDescription) => {
             setTaskPlan(planId, tasks.map((t: any) =>
               t.taskId === taskId ? { ...t, description: newDescription } : t));
+          }}
+          onUpdateField={(taskId, field, value) => {
+            const resolved = field === 'dependsOn' && typeof value === 'string'
+              ? value.split(',').map((s: string) => s.trim()).filter(Boolean)
+              : value;
+            setTaskPlan(planId, tasks.map((t: any) =>
+              t.taskId === taskId ? { ...t, [field]: resolved } : t));
           }}
           onCancel={() => {
             const newPlans = { ...taskPlans };

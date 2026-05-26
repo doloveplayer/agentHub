@@ -5,54 +5,6 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
 // ============================================================
-// topologicalSort (TaskQueue.ts)
-// ============================================================
-import { topologicalSort } from './TaskQueue.js';
-
-describe('topologicalSort', () => {
-  it('returns single layer for independent tasks', () => {
-    const tasks = [
-      { id: 't1', title: '', description: '', agentType: 'CodeAgent' as const, dependsOn: [], expectedOutput: '', priority: 'medium' as const },
-      { id: 't2', title: '', description: '', agentType: 'CodeAgent' as const, dependsOn: [], expectedOutput: '', priority: 'medium' as const },
-    ];
-    const layers = topologicalSort(tasks);
-    assert.strictEqual(layers.length, 1, 'all independent → single layer');
-    assert.strictEqual(layers[0].length, 2);
-  });
-
-  it('serializes dependent tasks into separate layers', () => {
-    const tasks = [
-      { id: 't1', title: '', description: '', agentType: 'CodeAgent' as const, dependsOn: [], expectedOutput: '', priority: 'medium' as const },
-      { id: 't2', title: '', description: '', agentType: 'CodeAgent' as const, dependsOn: ['t1'], expectedOutput: '', priority: 'medium' as const },
-      { id: 't3', title: '', description: '', agentType: 'CodeAgent' as const, dependsOn: ['t2'], expectedOutput: '', priority: 'medium' as const },
-    ];
-    const layers = topologicalSort(tasks);
-    assert.strictEqual(layers.length, 3, 'chain of 3 → 3 layers');
-    assert.strictEqual(layers[0][0].id, 't1');
-    assert.strictEqual(layers[1][0].id, 't2');
-    assert.strictEqual(layers[2][0].id, 't3');
-  });
-
-  it('handles diamond dependency', () => {
-    const tasks = [
-      { id: 't1', title: '', description: '', agentType: 'CodeAgent' as const, dependsOn: [], expectedOutput: '', priority: 'medium' as const },
-      { id: 't2', title: '', description: '', agentType: 'CodeAgent' as const, dependsOn: ['t1'], expectedOutput: '', priority: 'medium' as const },
-      { id: 't3', title: '', description: '', agentType: 'CodeAgent' as const, dependsOn: ['t1'], expectedOutput: '', priority: 'medium' as const },
-      { id: 't4', title: '', description: '', agentType: 'CodeAgent' as const, dependsOn: ['t2', 't3'], expectedOutput: '', priority: 'medium' as const },
-    ];
-    const layers = topologicalSort(tasks);
-    assert.strictEqual(layers.length, 3);
-    assert.strictEqual(layers[0].length, 1); // t1
-    assert.strictEqual(layers[1].length, 2); // t2, t3 in parallel
-    assert.strictEqual(layers[2].length, 1); // t4
-  });
-
-  it('handles empty array', () => {
-    assert.strictEqual(topologicalSort([]).length, 0);
-  });
-});
-
-// ============================================================
 // Mention matching (turns.ts)
 // ============================================================
 import { normalizeAgentHandle, matchAgentByHandle, selectDefaultAgent, findClosestAgent } from './turns.js';
@@ -162,34 +114,9 @@ describe('findClosestAgent', () => {
 });
 
 // ============================================================
-// Planner plan extraction (turns.ts)
+// toTaskStates (turns.ts)
 // ============================================================
-import { extractPlannerPlan, toTaskStates } from './turns.js';
-
-describe('extractPlannerPlan', () => {
-  it('parses fenced JSON with tasks', () => {
-    const content = 'Here is the plan:\n```json\n{"planTitle":"Test","summary":"s","tasks":[{"id":"t1","title":"Task 1","description":"d","agentType":"CodeAgent","dependsOn":[],"expectedOutput":"f","priority":"high"}]}\n```';
-    const plan = extractPlannerPlan(content);
-    assert.ok(plan);
-    assert.strictEqual(plan!.planTitle, 'Test');
-    assert.strictEqual(plan!.tasks.length, 1);
-  });
-
-  it('parses bare JSON with tasks', () => {
-    const content = '{"planTitle":"Bare","summary":"s","tasks":[{"id":"t1","title":"T1","description":"d","agentType":"CodeAgent","dependsOn":[],"expectedOutput":"f","priority":"medium"}]}';
-    const plan = extractPlannerPlan(content);
-    assert.ok(plan);
-    assert.strictEqual(plan!.planTitle, 'Bare');
-  });
-
-  it('returns null for chat text', () => {
-    assert.strictEqual(extractPlannerPlan('Hello, how can I help?'), null);
-  });
-
-  it('returns null for JSON without tasks', () => {
-    assert.strictEqual(extractPlannerPlan('{"foo":"bar"}'), null);
-  });
-});
+import { toTaskStates } from './turns.js';
 
 describe('toTaskStates', () => {
   it('converts TaskPlan to frontend-friendly states', () => {

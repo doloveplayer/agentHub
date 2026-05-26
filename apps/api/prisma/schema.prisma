@@ -65,3 +65,18 @@ model Agent {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 }
+
+model PlanExecution {
+  id        String   @id
+  planId    String
+  sessionId String
+  planTitle String   @default("")
+  status    String   @default("pending_confirmation")
+  tasks     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, planId])
+  @@index([sessionId])
+  @@index([planId])
+}

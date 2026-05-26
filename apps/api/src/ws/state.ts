@@ -98,10 +98,6 @@ export const PERMISSION_TIMEOUT_MS =
 // To re-enable REPL: implement PTY/FIFO-based stdin (see docs/superpowers/plans/2026-05-25-pty-repl-fix.md).
 export const ENABLE_PERSISTENT_REPL = process.env.AGENTHUB_ENABLE_PERSISTENT_REPL === '1';
 
-/** TaskQueueManager reference (set by index.ts) */
-export let taskQueueManager: any = null;
-export function setTaskQueueManager(tqm: any): void { taskQueueManager = tqm; }
-
 /** Plan confirmation: planId:taskId → modified description */
 export const taskModifications = new Map<string, string>();
 
@@ -203,6 +199,11 @@ export function cleanupSessionResources(sessionId: string): void {
     sandboxes.delete(sessionId);
     console.log(`[ws] Sandbox cleaned: session=${sessionId}`);
   }
+
+  // Clean up persisted plan executions
+  import('../agent/DagPersistence.js').then(({ DagPersistence }) =>
+    DagPersistence.cleanup(sessionId).catch(() => {})
+  );
 
   sessions.delete(sessionId);
 }

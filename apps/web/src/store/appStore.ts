@@ -104,6 +104,7 @@ interface AppState {
   isSessionStreaming: (sessionId: string) => boolean;
   setTaskPlan: (planId: string, tasks: TaskState[]) => void;
   updateTaskStatus: (planId: string, taskId: string, status: TaskState['status']) => void;
+  updateTaskField: (planId: string, taskId: string, field: string, value: any) => void;
   addDiffCard: (sessionId: string, card: DiffCardState) => void;
   upsertDeploymentCard: (sessionId: string, card: Omit<DeploymentCardState, 'logs' | 'updatedAt'> & { log?: string; timestamp?: number }) => void;
   addTestReport: (sessionId: string, report: TestReportState) => void;
@@ -296,6 +297,23 @@ export const useAppStore = create<AppState>((set, get) => ({
         taskPlans: {
           ...state.taskPlans,
           [planId]: tasks.map((t) => t.taskId === taskId ? { ...t, status } : t),
+        },
+      };
+    }),
+
+  updateTaskField: (planId, taskId, field, value) =>
+    set((state) => {
+      const tasks = state.taskPlans[planId];
+      if (!tasks) return state;
+      const resolvedValue = field === 'dependsOn'
+        ? (typeof value === 'string' ? value.split(',').map((s: string) => s.trim()).filter(Boolean) : value)
+        : value;
+      return {
+        taskPlans: {
+          ...state.taskPlans,
+          [planId]: tasks.map((t) =>
+            t.taskId === taskId ? { ...t, [field]: resolvedValue } : t
+          ),
         },
       };
     }),

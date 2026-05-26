@@ -363,13 +363,22 @@ export function useChat(sessionId: string) {
     }
   }, [ensureConnection]);
 
-  const confirmPlan = useCallback(async (planId: string, tasks: any[]) => {
+  const confirmPlan = useCallback(async (planId: string) => {
     try {
       const ws = await ensureConnection();
+      const tasks = useAppStore.getState().taskPlans[planId] || [];
       ws.send(JSON.stringify({
         type: 'confirm_plan',
         planId,
-        tasks,
+        tasks: tasks.map((t: any) => ({
+          taskId: t.taskId,
+          title: t.title,
+          description: t.description || '',
+          agentType: t.agentType,
+          dependsOn: t.dependsOn || [],
+          expectedOutput: t.expectedOutput || '',
+          priority: t.priority || 'medium',
+        })),
       }));
     } catch (err) {
       console.error('[WS] Failed to confirm plan:', err);

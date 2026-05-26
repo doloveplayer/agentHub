@@ -76,11 +76,6 @@ export const config = {
     provider: optional('AGENTHUB_AGENT_PROVIDER', optional('AGENT_PROVIDER', 'claude-code')),
   },
 
-  taskQueue: {
-    concurrency: optionalInt('TASK_CONCURRENCY', 3),
-    maxRetries: optionalInt('TASK_MAX_RETRIES', 2),
-    retryDelayMs: optionalInt('TASK_RETRY_DELAY_MS', 30_000),
-  },
 } as const;
 
 export const redis = {

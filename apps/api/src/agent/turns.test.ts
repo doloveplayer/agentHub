@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildClaudePrintArgs,
-  extractPlannerPlan,
   matchAgentByHandle,
   normalizeAgentHandle,
   selectDefaultAgent,
@@ -79,40 +78,22 @@ test('buildClaudePrintArgs only skips permissions when trust mode is enabled', (
   assert.ok(untrusted.includes('--print'));
 });
 
-test('extractPlannerPlan parses fenced JSON plans', () => {
-  const plan = extractPlannerPlan(`Here is the plan:
-
-\`\`\`json
-{
-  "planTitle": "Build auth",
-  "summary": "Add login",
-  "tasks": [
-    {
-      "id": "task-1",
-      "title": "Implement API",
-      "description": "Create auth route",
-      "agentType": "CodeAgent",
-      "dependsOn": [],
-      "expectedOutput": "src/auth.ts",
-      "priority": "high"
-    }
-  ]
-}
-\`\`\``);
-
-  assert.equal(plan?.planTitle, 'Build auth');
-  assert.equal(plan?.tasks[0]?.id, 'task-1');
-});
-
-test('extractPlannerPlan parses plain JSON plans and ignores normal chat', () => {
-  const plan = extractPlannerPlan('{"planTitle":"Plain","summary":"","tasks":[{"id":"task-1","title":"A","description":"B","agentType":"CodeAgent","dependsOn":[],"expectedOutput":"x","priority":"medium"}]}');
-  assert.equal(plan?.planTitle, 'Plain');
-  assert.equal(extractPlannerPlan('I can help you think through that.'), null);
-});
-
 test('toTaskStates normalizes planner tasks for the frontend DAG contract', () => {
-  const plan = extractPlannerPlan('{"planTitle":"Plain","summary":"","tasks":[{"id":"task-1","title":"A","description":"B","agentType":"CodeAgent","dependsOn":[],"expectedOutput":"x","priority":"medium"}]}');
-  assert.ok(plan);
+  const plan = {
+    planTitle: 'Plain',
+    summary: '',
+    tasks: [
+      {
+        id: 'task-1',
+        title: 'A',
+        description: 'B',
+        agentType: 'CodeAgent' as const,
+        dependsOn: [],
+        expectedOutput: 'x',
+        priority: 'medium' as const,
+      },
+    ],
+  };
 
   const tasks = toTaskStates(plan, 'plan-123');
 

@@ -5,6 +5,7 @@ import { stateTracker } from '../agent/StateTracker.js';
 import { findClosestAgent } from '../agent/turns.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
+import { DagPersistence } from '../agent/DagPersistence.js';
 
 import { createOneShotAgentProcess } from '../agent/processFactory.js';
 import {
@@ -33,6 +34,30 @@ export { type AgentTaskQueue, type TaskDispatchNode };
 
 const planExecutions = new Map<string, DagExecutionState>();
 const MAX_PLAN_EXECUTIONS = 500;
+
+const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+function priorityInsert(queue: TaskDispatchNode[], task: TaskDispatchNode): void {
+  const taskPriority = PRIORITY_ORDER[task.priority] ?? 1;
+  let insertAt = queue.length;
+  for (let i = 0; i < queue.length; i++) {
+    const existingPriority = PRIORITY_ORDER[queue[i].priority] ?? 1;
+    if (taskPriority < existingPriority) {
+      insertAt = i;
+      break;
+    }
+    insertAt = i + 1;
+  }
+  queue.splice(insertAt, 0, task);
+}
+
+function sortByPriority(tasks: TaskDispatchNode[]): TaskDispatchNode[] {
+  return [...tasks].sort((a, b) => {
+    const pa = PRIORITY_ORDER[a.priority] ?? 1;
+    const pb = PRIORITY_ORDER[b.priority] ?? 1;
+    return pa - pb;
+  });
+}
 
 function planKey(sessionId: string, planId: string): string {
   return `${sessionId}:${planId}`;
@@ -244,6 +269,7 @@ export async function dispatchTasksToAgents(
   planId: string,
   tasks: TaskDispatchNode[],
   sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+  planTitle?: string,
 ): Promise<void> {
   const sessionAgents = await prisma.sessionAgent.findMany({
     where: { sessionId },
@@ -311,7 +337,7 @@ export async function dispatchTasksToAgents(
 
   if (assignments.length === 0 && missingTypes.size > 0) return;
 
-  const execution = createDagExecutionState(planId, assignments);
+  const execution = createDagExecutionState(planId, assignments, planTitle);
   setPlanExecution(sessionId, planId, execution);
   await enqueueTaskAssignments(sessionId, planId, consumeReadyTasks(execution), sandbox);
 }
@@ -356,6 +382,8 @@ export async function handleDispatchedTaskFinished(
   }
 
   maybeBroadcastPlanSummary(sessionId, execution);
+  persistState(sessionId, planId, execution).catch((err) =>
+    console.error(`[dag] Persist error on task finish: ${err.message}`));
 }
 
 async function enqueueTaskAssignments(
@@ -376,7 +404,7 @@ async function enqueueTaskAssignments(
   for (const assignment of assignments) {
     const existing = agentTaskQueues.get(assignment.agentName);
     const queue: AgentTaskQueue = existing || { planId, sessionId, tasks: [], current: null, sandbox };
-    queue.tasks.push(assignment.task);
+    priorityInsert(queue.tasks, assignment.task);
     agentTaskQueues.set(assignment.agentName, queue);
     touched.add(assignment.agentName);
   }
@@ -401,6 +429,9 @@ function setPlanExecution(sessionId: string, planId: string, execution: DagExecu
     if (!oldestKey) break;
     planExecutions.delete(oldestKey);
   }
+  // Persist to DB
+  persistState(sessionId, planId, execution).catch((err) =>
+    console.error(`[dag] Persist error: ${err.message}`));
 }
 
 function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionState): void {
@@ -413,6 +444,16 @@ function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionSta
 
   if (finished !== items.length) return;
 
+  // Mark completed in DB
+  const allDone = failed === 0;
+  if (allDone) {
+    DagPersistence.markCompleted(sessionId, execution.planId).catch((err) =>
+      console.error(`[dag] Failed to mark plan ${execution.planId} completed: ${err.message}`));
+  } else {
+    DagPersistence.markFailed(sessionId, execution.planId).catch((err) =>
+      console.error(`[dag] Failed to mark plan ${execution.planId} failed: ${err.message}`));
+  }
+
   broadcast(sessionId, {
     type: 'plan_summary',
     planId: execution.planId,
@@ -422,4 +463,118 @@ function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionSta
     fileChanges: [],
   });
   execution.summaryBroadcasted = true;
+}
+
+async function persistState(sessionId: string, planId: string, state: DagExecutionState): Promise<void> {
+  const tasks = [...state.tasks.values()].map((item) => ({
+    id: item.task.id,
+    title: item.task.title,
+    description: item.task.description,
+    agentType: item.task.agentType,
+    dependsOn: item.task.dependsOn,
+    expectedOutput: item.task.expectedOutput,
+    priority: item.task.priority,
+    agentName: item.agentName,
+    agentId: item.agentId,
+    status: item.status,
+    dependents: item.dependents,
+  }));
+
+  await DagPersistence.save({
+    planId,
+    sessionId,
+    planTitle: state.planTitle ?? '',
+    status: 'executing',
+    tasks,
+  });
+}
+
+export async function reassignQueuedTasks(
+  sessionId: string,
+  failedAgentName: string,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+): Promise<void> {
+  const queue = agentTaskQueues.get(failedAgentName);
+  if (!queue || queue.tasks.length === 0) return;
+
+  const orphanedTasks = sortByPriority([...queue.tasks]);
+  agentTaskQueues.delete(failedAgentName);
+  agentCurrentTask.delete(failedAgentName);
+
+  if (orphanedTasks.length === 0) return;
+
+  const sessionAgents = await prisma.sessionAgent.findMany({
+    where: { sessionId },
+    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true } } },
+  });
+
+  if (sessionAgents.length === 0) return;
+
+  const availableAgents = sessionAgents
+    .filter((sa) => sa.agent.name !== failedAgentName)
+    .map((sa) => sa.agent);
+
+  for (const task of orphanedTasks) {
+    const matching = availableAgents.filter(
+      (a) => a.name !== failedAgentName
+    );
+    let target: { name: string; displayName: string } | null = matching.length > 0
+      ? matching.reduce((best, a) => {
+          const load = (agentTaskQueues.get(a.name)?.tasks.length ?? 0) + (agentCurrentTask.has(a.name) ? 1 : 0);
+          const bestLoad = (agentTaskQueues.get(best.name)?.tasks.length ?? 0) + (agentCurrentTask.has(best.name) ? 1 : 0);
+          return load < bestLoad ? a : best;
+        })
+      : null;
+    if (!target) {
+      target = findClosestAgent(task.agentType, availableAgents as any);
+    }
+
+    if (!target) {
+      broadcast(sessionId, {
+        type: 'task_blocked',
+        planId: queue.planId,
+        taskId: task.id,
+        blockedBy: failedAgentName,
+        agentName: failedAgentName,
+        output: `Agent ${failedAgentName} failed and no replacement available for type ${task.agentType}`,
+      });
+      continue;
+    }
+
+    broadcast(sessionId, {
+      type: 'agent_reassigned',
+      planId: queue.planId,
+      taskId: task.id,
+      from: failedAgentName,
+      to: target.name,
+      taskTitle: task.title,
+    });
+
+    const newQueue = agentTaskQueues.get(target.name);
+    if (newQueue) {
+      newQueue.tasks.push(task);
+    } else {
+      agentTaskQueues.set(target.name, {
+        planId: queue.planId,
+        sessionId,
+        tasks: [task],
+        current: null,
+        sandbox,
+      });
+    }
+  }
+
+  // Kick any idle agents that just got tasks
+  const kicked = new Set<string>();
+  for (const task of orphanedTasks) {
+    const reassignedTo = [...agentTaskQueues.entries()]
+      .find(([, q]) => q.tasks.includes(task))?.[0];
+    if (reassignedTo && !kicked.has(reassignedTo)) {
+      kicked.add(reassignedTo);
+      const newQueue = agentTaskQueues.get(reassignedTo);
+      if (newQueue && !newQueue.current) {
+        await processNextInQueue(sessionId, reassignedTo, newQueue);
+      }
+    }
+  }
 }
