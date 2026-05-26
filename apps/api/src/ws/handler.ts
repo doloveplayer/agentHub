@@ -14,6 +14,8 @@ import { verifyToken } from '../lib/jwt.js';
 import { config } from '../config.js';
 import { isDeployTarget, normalizeTarget, startDeployment } from '../routes/deploy.js';
 import { parseReviewReport, parseTestOutput, parseNpmAuditJson } from '../artifacts/ArtifactTools.js';
+import { agentCoordinator } from '../agent/AgentCoordinator.js';
+import { permissionProfiles, type AgentCapability } from '../agent/PermissionProfiles.js';
 
 import {
   sessions, agentStates, agentProcesses, sandboxes,
@@ -44,7 +46,16 @@ import {
 
 export { broadcast } from './state.js';
 
+const agentNameToType = new Map<string, string>();
+
 // ---- Connection handler ----
+
+function buildProfileFromAgent(agent: { name: string; description?: string; capabilities?: unknown }): Partial<AgentCapability> {
+  if (agent.capabilities && typeof agent.capabilities === 'object') {
+    return agent.capabilities as Partial<AgentCapability>;
+  }
+  return {};
+}
 
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
 
@@ -162,6 +173,21 @@ async function handleConnection(ws: WebSocket, request: any) {
     console.log(`[ws] Plan recovery skipped: ${err.message}`);
   }
 
+  // Register agent permission profiles for this session
+  try {
+    const sessionAgentsForProfiles = await prisma.sessionAgent.findMany({
+      where: { sessionId },
+      include: { agent: { select: { id: true, name: true, displayName: true, description: true } } },
+    });
+    for (const sa of sessionAgentsForProfiles) {
+      const profile = buildProfileFromAgent(sa.agent);
+      permissionProfiles.register(sa.agent.name, profile);
+      agentNameToType.set(sa.agent.name, sa.agent.name);
+    }
+  } catch (err: any) {
+    console.log(`[ws] Profile registration skipped: ${err.message}`);
+  }
+
   // Flush early messages that arrived before sandbox was ready
   sandboxReady = true;
   if (earlyMessages.length > 0) {
@@ -169,6 +195,22 @@ async function handleConnection(ws: WebSocket, request: any) {
     for (const em of earlyMessages) handleMessage(ws, sessionId, em.data);
     earlyMessages.length = 0;
   }
+}
+
+function resolveAgentNameInSession(sessionId: string, agentType: string): string | null {
+  const procMap = agentProcesses.get(sessionId);
+  if (procMap) {
+    for (const [name] of procMap) {
+      if (agentNameToType.get(name) === agentType) return name;
+      if (name === agentType) return name;
+    }
+  }
+  // Also check task queues
+  for (const [name] of agentTaskQueues) {
+    if (agentNameToType.get(name) === agentType) return name;
+    if (name === agentType) return name;
+  }
+  return null;
 }
 
 function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
@@ -366,6 +408,12 @@ async function handleChatMessage(
       ? (await prisma.agent.findUnique({ where: { id: mention.agentId }, select: { name: true } }))?.name
       : null;
     const diffAgentName = agentNameForProc || 'agent';
+    if (agentNameForProc) {
+      const agent = await prisma.agent.findUnique({ where: { id: mention.agentId }, select: { name: true } });
+      if (agent) {
+        agentNameToType.set(agentNameForProc, agent.name);
+      }
+    }
     recordMessageBeforeVersion(
       mention.messageId,
       sandbox.hostWorkDir,
@@ -559,9 +607,32 @@ async function handleChatMessage(
               trackFileMod(sessionId, diffAgentName, modPath);
             }
           }
+          if (agentNameForProc && sandbox) {
+            const agentType = agentNameToType.get(agentNameForProc) ?? agentNameForProc;
+            agentCoordinator.onToolUse({
+              sessionId,
+              agentName: agentNameForProc,
+              agentType,
+              messageId: mention.messageId,
+              hostWorkDir: sandbox.hostWorkDir,
+              resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+              broadcast,
+            }, event as any);
+          }
           broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: event.toolName, input: event.input, inputPreview: JSON.stringify(event.input ?? {}).slice(0, 80) }, agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
         case 'tool_result':
+          if (agentNameForProc && sandbox) {
+            const agentType = agentNameToType.get(agentNameForProc) ?? agentNameForProc;
+            const content = typeof event.content === 'string' ? event.content : '';
+            agentCoordinator.onToolResult({
+              sessionId, agentName: agentNameForProc, agentType,
+              messageId: mention.messageId,
+              hostWorkDir: sandbox.hostWorkDir,
+              resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+              broadcast,
+            }, content);
+          }
           broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { content: typeof event.content === 'string' ? event.content.slice(0, 200) : '', resultPreview: typeof event.content === 'string' ? event.content.slice(0, 80) : '' }, agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
         case 'subagent_start':
@@ -612,6 +683,17 @@ async function handleChatMessage(
               finalContent.slice(0, 180),
             );
             broadcastStructuredArtifact(sessionId, diffAgentName, finalContent);
+            if (agentNameForProc && sandbox) {
+              const agentType = agentNameToType.get(agentNameForProc) ?? agentNameForProc;
+              const summary = finalContent.slice(0, 200);
+              agentCoordinator.onAgentDone({
+                sessionId, agentName: agentNameForProc, agentType,
+                messageId: mention.messageId,
+                hostWorkDir: sandbox.hostWorkDir,
+                resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+                broadcast,
+              }, event.exitCode, summary);
+            }
             const stateMap = agentStates.get(sessionId);
             if (stateMap) {
               const st = stateMap.get(mention.messageId);
@@ -671,6 +753,18 @@ async function handleChatMessage(
 
     if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
     agentStates.get(sessionId)!.set(mention.messageId, { process: agent, timer, agentId: mention.agentId });
+
+    if (agentNameForProc && sandbox) {
+      const agentType = agentNameToType.get(agentNameForProc) ?? agentNameForProc;
+      const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({
+        sessionId, agentName: agentNameForProc, agentType,
+        messageId: mention.messageId,
+        hostWorkDir: sandbox.hostWorkDir,
+        resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+        broadcast,
+      });
+      agentPrompt += coordinationPrompt;
+    }
 
     try {
       console.log(`[ws] Starting agent: session=${sessionId} agentMsg=${mention.messageId} prompt="${agentPrompt.slice(0, 80)}..."`);

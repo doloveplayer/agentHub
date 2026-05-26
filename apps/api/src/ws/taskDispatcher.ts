@@ -6,6 +6,7 @@ import { findClosestAgent } from '../agent/turns.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
 import { DagPersistence } from '../agent/DagPersistence.js';
+import { agentCoordinator } from '../agent/AgentCoordinator.js';
 
 import { createOneShotAgentProcess } from '../agent/processFactory.js';
 import {
@@ -57,6 +58,21 @@ function sortByPriority(tasks: TaskDispatchNode[]): TaskDispatchNode[] {
     const pb = PRIORITY_ORDER[b.priority] ?? 1;
     return pa - pb;
   });
+}
+
+function resolveAgentNameInSession(sessionId: string, agentType: string): string | null {
+  const queueNames = [...agentTaskQueues.keys()];
+  for (const name of queueNames) {
+    if (name === agentType) return name;
+  }
+  // Also check agentProcesses
+  const procMap = agentProcesses.get(sessionId);
+  if (procMap) {
+    for (const [name] of procMap) {
+      if (name === agentType) return name;
+    }
+  }
+  return null;
 }
 
 function planKey(sessionId: string, planId: string): string {
@@ -131,7 +147,14 @@ async function dispatchTaskOneShot(
   if (!sandbox) { console.log(`[ws] Task dispatch: no sandbox for session ${sessionId}`); return; }
   const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, systemPrompt: true } });
   if (!agent) { console.log(`[ws] Task dispatch: agent ${agentName} not found in DB`); return; }
-  const fullPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}`;
+  const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({
+    sessionId, agentName: agent.name, agentType: agent.name,
+    messageId: buildTaskMessageId(queue.planId, task.id),
+    hostWorkDir: sandbox.hostWorkDir,
+    resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+    broadcast,
+  });
+  const fullPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}\n${coordinationPrompt}`;
   const proc = createOneShotAgentProcess();
   const taskMsgId = buildTaskMessageId(queue.planId, task.id);
   let output = '';
@@ -181,7 +204,14 @@ export async function startTaskAgent(
   agentCurrentTask.set(agent.name, { planId: queue.planId, taskId: task.id });
   markTaskRunningForPlan(sessionId, queue.planId, task.id);
 
-  const fullPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}`;
+  const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({
+    sessionId, agentName: agent.name, agentType: agent.name,
+    messageId: buildTaskMessageId(queue.planId, task.id),
+    hostWorkDir: sandbox.hostWorkDir,
+    resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+    broadcast,
+  });
+  const fullPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}\n${coordinationPrompt}`;
   const taskMsgId = buildTaskMessageId(queue.planId, task.id);
   let output = '';
 
@@ -200,6 +230,19 @@ export async function startTaskAgent(
       case 'tool_use':
         broadcast(sessionId, { type: 'agent_status', status: 'tool_use',
           details: { toolName: event.toolName, input: event.input }, agentMessageId: taskMsgId, timestamp: Date.now() });
+        {
+          const agentType = agent.name;
+          const filePath = (event as any).input?.file_path || (event as any).input?.path || (event as any).input?.filePath;
+          agentCoordinator.onToolUse({
+            sessionId,
+            agentName: agent.name,
+            agentType,
+            messageId: taskMsgId,
+            hostWorkDir: sandbox.hostWorkDir,
+            resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+            broadcast,
+          }, { type: 'tool_use', toolName: (event as any).toolName || '', input: (event as any).input || {} } as any);
+        }
         break;
       case 'system': {
         const sysEvent = event as any;
@@ -215,6 +258,17 @@ export async function startTaskAgent(
           sessionId, taskMsgId, sandbox.hostWorkDir,
           takeMessageBeforeVersion(taskMsgId), agent.name, fullContent,
         );
+        {
+          const agentType = agent.name;
+          const summary = fullContent.slice(0, 200);
+          agentCoordinator.onAgentDone({
+            sessionId, agentName: agent.name, agentType,
+            messageId: taskMsgId,
+            hostWorkDir: sandbox.hostWorkDir,
+            resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+            broadcast,
+          }, event.exitCode ?? 0, summary);
+        }
         broadcast(sessionId, {
           type: event.exitCode === 0 ? 'task_completed' : 'task_failed',
           planId: queue.planId, taskId: task.id, agentName: agent.name,

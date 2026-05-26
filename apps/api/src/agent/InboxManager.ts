@@ -73,4 +73,39 @@ INTERVENE: You may offer help to other agents by asking the user to relay a mess
 
 BROADCAST: When you complete a significant phase or produce key output files, mention it so other agents can coordinate.`;
   }
+
+  /**
+   * Hub-driven coordination prompt fragment.
+   * Injected into agent prompts so agents know they are part of
+   * a hub-orchestrated multi-agent session.
+   */
+  static hubModePrompt(agentName: string): string {
+    return `\n## Multi-Agent Coordination
+You are part of a multi-agent session coordinated by AgentHub.
+
+OTHER AGENTS: The hub will route important messages from other agents to you automatically.
+When you receive a message from another agent, consider it carefully and respond if relevant.
+
+PERMISSIONS: You have defined capabilities. If you attempt an operation outside your scope,
+the hub will notify you and suggest delegating to the right agent.
+
+COLLABORATION: If you encounter a problem that another agent should handle, output
+a clear message like "NEEDS HELP from @CodeAgent: <description>" and the hub will route it.`;
+  }
+
+  /**
+   * Count unread entries in an agent's inbox file.
+   * Returns the number of non-empty lines. Returns 0 if the file doesn't exist.
+   * Does NOT clear the file (unlike read()).
+   */
+  static unreadCount(hostWorkDir: string, agentName: string): number {
+    const inboxPath = resolve(hostWorkDir, `_inbox_${agentName}.jsonl`);
+    if (!existsSync(inboxPath)) return 0;
+    try {
+      const raw = readFileSync(inboxPath, 'utf-8');
+      return raw.split('\n').filter(Boolean).length;
+    } catch {
+      return 0;
+    }
+  }
 }

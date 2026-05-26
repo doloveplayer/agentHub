@@ -63,6 +63,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const lastToken = tokenEvents.length > 0 ? tokenEvents[tokenEvents.length - 1].details.tokenUsage : null;
   const currentTask = useAppStore(s => agentName ? s.agentCurrentTask[agentName] : null);
   const taskCount = useAppStore(s => agentName ? (s.agentTaskCounts[agentName] || 0) : 0);
+  const inboxCount = useAppStore(s => agentName ? (s.inboxNotifications[agentName] || 0) : 0);
 
   return (
     <div className="bg-hub-surface border-hub rounded-hub-lg mb-2.5 overflow-hidden">
@@ -75,6 +76,15 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
           }`}
         />
         <span className="text-body font-semibold text-hub-primary truncate">{displayName}</span>
+        {inboxCount > 0 && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded-full bg-hub-accent/20 text-hub-accent font-bold cursor-pointer hover:bg-hub-accent/30 transition"
+            title={`${inboxCount} unread messages from other agents`}
+            onClick={(e) => { e.stopPropagation(); useAppStore.getState().clearInboxNotifications(agentName!); }}
+          >
+            {inboxCount}
+          </span>
+        )}
         {lastToken && (
           <span className="text-caption px-1.5 py-0.5 rounded-sm bg-hub-raised text-hub-tertiary font-medium" title={`Input: ${lastToken.input} Output: ${lastToken.output}`}>
             {lastToken.input > 1000 ? `${(lastToken.input / 1000).toFixed(1)}K` : lastToken.input}↑ {lastToken.output > 1000 ? `${(lastToken.output / 1000).toFixed(1)}K` : lastToken.output}↓
