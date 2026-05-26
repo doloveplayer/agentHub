@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Copy, Check, Quote, Wand2 } from 'lucide-react';
+import { User, Copy, Check, Quote, Wand2, Loader2, AlertCircle, MoreHorizontal } from 'lucide-react';
 import Editor from '@monaco-editor/react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -57,6 +57,25 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
         <div className={`flex items-center gap-2 mb-1 ${isHuman ? 'flex-row-reverse' : ''}`}>
           <span className="text-xs text-hub-tertiary font-medium">{label}</span>
           {time && <span className="text-[10px] text-hub-muted">{time}</span>}
+          {/* Status indicators */}
+          {!isHuman && message.status === 'streaming' && (
+            <span className="flex items-center gap-1 text-[10px] text-hub-accent">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Agent is replying...
+            </span>
+          )}
+          {isHuman && message.status === 'sending' && (
+            <span className="flex items-center gap-1 text-[10px] text-hub-tertiary">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Sending...
+            </span>
+          )}
+          {message.status === 'error' && (
+            <span className="flex items-center gap-0.5 text-[10px] text-hub-danger" title="Error occurred">
+              <AlertCircle className="w-3 h-3" />
+              Error
+            </span>
+          )}
           {message.content && message.status === 'done' && (
             <button
               onClick={handleCopy}
@@ -69,8 +88,8 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
         </div>
         <div className={`rounded-hub-2xl px-4 py-2.5 text-sm leading-relaxed ${
           isHuman
-            ? 'bg-hub-accent text-white rounded-tr-hub-md'
-            : 'bg-hub-raised border border-hub text-hub-primary rounded-tl-hub-md'
+            ? message.status === 'error' ? 'bg-hub-accent border border-hub-danger/40 text-white rounded-tr-hub-md' : 'bg-hub-accent text-white rounded-tr-hub-md'
+            : message.status === 'error' ? 'bg-hub-raised border border-hub-danger/40 text-hub-primary rounded-tl-hub-md' : 'bg-hub-raised border border-hub text-hub-primary rounded-tl-hub-md'
         }`}>
           {message.content ? (
             <div className="markdown-content">
@@ -90,8 +109,13 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
               <span className="w-1.5 h-3 rounded-full streaming-cursor" style={{ backgroundColor: 'var(--text-tertiary)', opacity: 0.6, animationDelay: '0.15s' }} />
               <span className="w-1.5 h-2 rounded-full streaming-cursor" style={{ backgroundColor: 'var(--text-tertiary)', opacity: 0.3, animationDelay: '0.3s' }} />
             </span>
+          ) : message.status === 'error' ? (
+            <span className="flex items-center gap-1 text-hub-danger text-xs">
+              <AlertCircle className="w-3.5 h-3.5" />
+              Agent encountered an error
+            </span>
           ) : (
-            <span className="text-hub-muted italic text-xs">{message.status === 'error' ? '[Agent stopped]' : '[No output]'}</span>
+            <span className="text-hub-muted italic text-xs">[No output]</span>
           )}
         </div>
       </div>

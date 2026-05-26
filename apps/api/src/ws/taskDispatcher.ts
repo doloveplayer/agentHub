@@ -9,8 +9,18 @@ import { DagPersistence } from '../agent/DagPersistence.js';
 import { agentCoordinator } from '../agent/AgentCoordinator.js';
 import { getManagerLoop } from '../agent/ManagerLoop.js';
 import { getApprovalGate } from '../agent/ApprovalGate.js';
+import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDetection.js';
+import { execSync } from 'child_process';
+import * as path from 'path';
+import * as fs from 'fs';
 
-import { createOneShotAgentProcess } from '../agent/processFactory.js';
+import { createSDKAgentProcess, createOneShotAgentProcess } from '../agent/processFactory.js';
+
+/** Resolve trustMode boolean from session's permission mode. */
+function resolveTrustMode(sessionId: string): boolean {
+  const mode = sessionPermissionModes.get(sessionId) || 'ask';
+  return mode === 'smart' || mode === 'trust';
+}
 import {
   createDagExecutionState,
   consumeReadyTasks,
@@ -22,7 +32,7 @@ import {
   type DagTaskAssignment,
 } from './dagExecution.js';
 import {
-  broadcast, agentProcesses, agentStates, agentTaskQueues,
+  broadcast, sessionPermissionModes, agentProcesses, agentStates, agentTaskQueues,
   agentCurrentTask, agentCurrentMessage, sandboxes,
   incRunningAgentCount, decRunningAgentCount,
   type AgentTaskQueue, type TaskDispatchNode,
@@ -92,6 +102,24 @@ ${task.dependsOn.length > 0 ? `\nDepends on: ${task.dependsOn.join(', ')}\n` : '
 Execute this task now. Output results to the specified files.`;
 }
 
+/** Collect a file tree snapshot from the sandbox host workdir. */
+function collectFileTree(hostWorkDir: string): string {
+  try {
+    if (!fs.existsSync(hostWorkDir)) return '(workspace not found)';
+    // Use find to get a tree, excluding node_modules and .git
+    const output = execSync(
+      `find . -maxdepth 4 -not -path './node_modules/*' -not -path './.git/*' -not -path './.sandbox/*' | head -200`,
+      { cwd: hostWorkDir, encoding: 'utf-8', timeout: 5000 },
+    );
+    return output.trim() || '(empty workspace)';
+  } catch {
+    return '(unable to collect file tree)';
+  }
+}
+
+/** Max auto-retries before escalating to ManagerLoop. */
+const MAX_AUTO_RETRIES = 3;
+
 function buildTaskMessageId(planId: string, taskId: string): string {
   return `task-${planId}-${taskId}`.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
@@ -159,8 +187,8 @@ async function dispatchTaskOneShot(
     resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
     broadcast,
   });
-  const fullPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}\n${coordinationPrompt}`;
-  const proc = createOneShotAgentProcess();
+  const fullPrompt = `${agent.systemPrompt}${languageConsistencyPrompt(detectLanguage(task.description || task.title))}\n\n---\n\n${buildTaskPrompt(task)}\n${coordinationPrompt}`;
+  const proc = (await createSDKAgentProcess()) || createOneShotAgentProcess();
   const taskMsgId = buildTaskMessageId(queue.planId, task.id);
   let output = '';
 
@@ -227,7 +255,7 @@ async function dispatchTaskOneShot(
 
   broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
   console.log(`[ws] Task dispatch (one-shot fallback): agent=${agentName} task=${task.id}`);
-  proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, true, sandbox.hostWorkDir, taskMsgId, undefined, agentName)
+  proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, resolveTrustMode(sessionId), sandbox.hostWorkDir, taskMsgId, undefined, agentName)
     .catch((err: any) => {
       console.error(`[ws] Task one-shot failed: ${err.message}`);
       broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: `Task failed: ${err.message}` });
@@ -255,7 +283,7 @@ export async function startTaskAgent(
     resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
     broadcast,
   });
-  const fullPrompt = `${agent.systemPrompt}\n\n---\n\n${buildTaskPrompt(task)}\n${coordinationPrompt}`;
+  const fullPrompt = `${agent.systemPrompt}${languageConsistencyPrompt(detectLanguage(task.description || task.title))}\n\n---\n\n${buildTaskPrompt(task)}\n${coordinationPrompt}`;
   const taskMsgId = buildTaskMessageId(queue.planId, task.id);
   let output = '';
 
@@ -264,7 +292,7 @@ export async function startTaskAgent(
     `Before ${agent.name} task ${task.id}`,
   );
 
-  const proc = createOneShotAgentProcess();
+  const proc = (await createSDKAgentProcess()) || createOneShotAgentProcess();
   proc.onEvent((event) => {
     switch (event.type) {
       case 'text':
@@ -358,7 +386,7 @@ export async function startTaskAgent(
 
   broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName: agent.name, agentId: agent.id, taskMessageId: taskMsgId });
   console.log(`[ws] Task dispatch (one-shot): agent=${agent.name} task=${task.id}`);
-  proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, true, sandbox.hostWorkDir, taskMsgId, undefined, agent.name)
+  proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, resolveTrustMode(sessionId), sandbox.hostWorkDir, taskMsgId, undefined, agent.name)
     .catch((err: any) => {
       console.error(`[ws] Task one-shot failed: ${err.message}`);
       broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: `Task failed: ${err.message}` });
@@ -469,11 +497,17 @@ export async function handleDispatchedTaskFinished(
       await enqueueTaskAssignments(sessionId, planId, ready, sandbox);
     }
   } else {
-    // Dynamic re-planning via ManagerLoop: on failure, ask Main Agent to decide
+    // Escalation chain: auto-retry → ManagerLoop re-plan → manual intervention
     const failedTask = execution.tasks.get(taskId);
     const failedAgentName = failedTask?.agentName ?? "unknown";
+    const currentRetryCount = failedTask?.retryCount ?? 0;
 
-    // Collect upstream results and remaining tasks
+    // Record the error for context
+    if (failedTask) {
+      failedTask.lastError = `Task execution failed (attempt ${currentRetryCount + 1})`;
+    }
+
+    // Collect context: upstream results, file tree, task prompt
     const upstreamResults: Array<{ taskId: string; output: string }> = [];
     const remainingTaskTitles: string[] = [];
     for (const [tid, item] of execution.tasks) {
@@ -484,106 +518,168 @@ export async function handleDispatchedTaskFinished(
       }
     }
 
-    const failure = {
-      failedTaskId: taskId,
-      failedAgentName,
-      error: `Task execution failed`,
-      output: "",
-      upstreamResults,
-    };
+    const sandbox = sandboxes.get(sessionId);
+    const fileTree = sandbox ? collectFileTree(sandbox.hostWorkDir) : undefined;
+    const taskPrompt = failedTask ? buildTaskPrompt(failedTask.task) : undefined;
 
-    broadcast(sessionId, { type: "manager_reviewing", planId, taskId, reason: "Task failed, requesting Main Agent decision..." });
-
-    try {
-      const manager = getManagerLoop();
-      const decision = await manager.reviewAndDecide(planId, sessionId, failure, remainingTaskTitles);
-
-      broadcast(sessionId, {
-        type: "manager_decision",
-        planId,
-        taskId,
-        decision: decision.action,
-        reason: decision.reason,
-      });
-
-      switch (decision.action) {
-        case "continue": {
-          // Retry: mark as retry-queued, the scheduler will pick it up
-          markTaskFailed(execution, taskId);
-          markTaskRetryQueued(execution, taskId);
-          const sandbox = sandboxes.get(sessionId);
-          if (sandbox) {
-            const retryAssignment = consumeReadyTasks(execution);
-            if (retryAssignment.length > 0) {
-              await enqueueTaskAssignments(sessionId, planId, retryAssignment, sandbox);
-            }
-          }
-          break;
+    // Stage 1: auto-retry (before max retries)
+    if (currentRetryCount < MAX_AUTO_RETRIES) {
+      console.log(`[dag] Auto-retrying task ${taskId} (attempt ${currentRetryCount + 1}/${MAX_AUTO_RETRIES})`);
+      markTaskRetryQueued(execution, taskId);
+      if (sandbox) {
+        const retryAssignment = consumeReadyTasks(execution);
+        if (retryAssignment.length > 0) {
+          broadcast(sessionId, {
+            type: "manager_decision",
+            planId,
+            taskId,
+            decision: "continue",
+            reason: `Auto-retry ${currentRetryCount + 1}/${MAX_AUTO_RETRIES}`,
+          });
+          await enqueueTaskAssignments(sessionId, planId, retryAssignment, sandbox);
         }
-        case "replan": {
-          if (decision.nextTasks && decision.nextTasks.length > 0) {
-            // Mark failed task as done (accepted), then inject replacement tasks
-            markTaskFailed(execution, taskId);
-            for (const t of decision.nextTasks) {
-              execution.tasks.set(t.id, {
-                task: {
-                  id: t.id,
-                  title: t.title,
-                  description: t.description,
-                  agentType: t.agentType,
-                  dependsOn: t.dependsOn,
-                  expectedOutput: t.expectedOutput,
-                  priority: t.priority || "medium",
-                },
-                agentName: t.agentType,
-                agentId: "",
-                status: "waiting",
-                dependents: [],
-              });
-            }
-            const sandbox = sandboxes.get(sessionId);
-            if (sandbox) {
-              const replanned = consumeReadyTasks(execution);
-              if (replanned.length > 0) {
-                await enqueueTaskAssignments(sessionId, planId, replanned, sandbox);
+      }
+    } else {
+      // Stage 2: escalate to ManagerLoop for re-planning
+      markTaskFailed(execution, taskId);
+
+      const failure = {
+        failedTaskId: taskId,
+        failedAgentName,
+        error: failedTask?.lastError ?? `Task execution failed after ${currentRetryCount} retries`,
+        output: "",
+        upstreamResults,
+        retryCount: currentRetryCount,
+        fileTree,
+        taskPrompt,
+      };
+
+      broadcast(sessionId, { type: "manager_reviewing", planId, taskId, reason: `Task failed after ${currentRetryCount} retries, requesting Main Agent decision...` });
+
+      try {
+        const manager = getManagerLoop();
+        const decision = await manager.reviewAndDecide(planId, sessionId, failure, remainingTaskTitles);
+
+        broadcast(sessionId, {
+          type: "manager_decision",
+          planId,
+          taskId,
+          decision: decision.action,
+          reason: decision.reason,
+        });
+
+        switch (decision.action) {
+          case "continue": {
+            markTaskRetryQueued(execution, taskId);
+            const sb = sandboxes.get(sessionId);
+            if (sb) {
+              const retryAssignment = consumeReadyTasks(execution);
+              if (retryAssignment.length > 0) {
+                await enqueueTaskAssignments(sessionId, planId, retryAssignment, sb);
               }
             }
-          } else {
-            // Replan with no tasks = abort
+            break;
+          }
+          case "replan": {
+            if (decision.nextTasks && decision.nextTasks.length > 0) {
+              for (const t of decision.nextTasks) {
+                execution.tasks.set(t.id, {
+                  task: {
+                    id: t.id,
+                    title: t.title,
+                    description: t.description,
+                    agentType: t.agentType,
+                    dependsOn: t.dependsOn,
+                    expectedOutput: t.expectedOutput,
+                    priority: t.priority || "medium",
+                  },
+                  agentName: t.agentType,
+                  agentId: "",
+                  status: "waiting",
+                  dependents: [],
+                  retryCount: 0,
+                });
+              }
+              const sb = sandboxes.get(sessionId);
+              if (sb) {
+                const replanned = consumeReadyTasks(execution);
+                if (replanned.length > 0) {
+                  await enqueueTaskAssignments(sessionId, planId, replanned, sb);
+                }
+              }
+            } else {
+              // Stage 3: ManagerLoop returned abort → manual intervention needed
+              const blocked = markTaskFailed(execution, taskId);
+              broadcast(sessionId, {
+                type: "replan_required",
+                planId,
+                taskId,
+                failedTask: {
+                  taskId,
+                  title: failedTask?.task.title ?? taskId,
+                  agentType: failedTask?.task.agentType ?? "unknown",
+                  error: decision.reason,
+                  retryCount: currentRetryCount,
+                },
+              });
+              for (const item of blocked) {
+                broadcast(sessionId, {
+                  type: "task_blocked", planId, taskId: item.task.id,
+                  blockedBy: taskId, agentName: item.agentName,
+                  output: `Replan returned no tasks: ${decision.reason}`,
+                });
+              }
+            }
+            break;
+          }
+          case "abort":
+          default: {
             const blocked = markTaskFailed(execution, taskId);
+            broadcast(sessionId, {
+              type: "replan_required",
+              planId,
+              taskId,
+              failedTask: {
+                taskId,
+                title: failedTask?.task.title ?? taskId,
+                agentType: failedTask?.task.agentType ?? "unknown",
+                error: decision.reason,
+                retryCount: currentRetryCount,
+              },
+            });
             for (const item of blocked) {
               broadcast(sessionId, {
                 type: "task_blocked", planId, taskId: item.task.id,
                 blockedBy: taskId, agentName: item.agentName,
-                output: `Replan returned no tasks: ${decision.reason}`,
+                output: `Aborted: ${decision.reason}`,
               });
             }
+            break;
           }
-          break;
         }
-        case "abort":
-        default: {
-          const blocked = markTaskFailed(execution, taskId);
-          for (const item of blocked) {
-            broadcast(sessionId, {
-              type: "task_blocked", planId, taskId: item.task.id,
-              blockedBy: taskId, agentName: item.agentName,
-              output: `Aborted: ${decision.reason}`,
-            });
-          }
-          break;
-        }
-      }
-    } catch (err: any) {
-      // ManagerLoop itself failed — fall back to original blocking behavior
-      console.error(`[dag] ManagerLoop error: ${err.message}`);
-      const blocked = markTaskFailed(execution, taskId);
-      for (const item of blocked) {
+      } catch (err: any) {
+        // ManagerLoop itself failed — fall back to original blocking behavior
+        console.error(`[dag] ManagerLoop error: ${err.message}`);
+        const blocked = markTaskFailed(execution, taskId);
         broadcast(sessionId, {
-          type: "task_blocked", planId, taskId: item.task.id,
-          blockedBy: taskId, agentName: item.agentName,
-          output: `Blocked because dependency ${taskId} failed (ManagerLoop unavailable)`,
+          type: "replan_required",
+          planId,
+          taskId,
+          failedTask: {
+            taskId,
+            title: failedTask?.task.title ?? taskId,
+            agentType: failedTask?.task.agentType ?? "unknown",
+            error: `ManagerLoop unavailable: ${err.message}`,
+            retryCount: currentRetryCount,
+          },
         });
+        for (const item of blocked) {
+          broadcast(sessionId, {
+            type: "task_blocked", planId, taskId: item.task.id,
+            blockedBy: taskId, agentName: item.agentName,
+            output: `Blocked because dependency ${taskId} failed (ManagerLoop unavailable)`,
+          });
+        }
       }
     }
   }
@@ -591,6 +687,135 @@ export async function handleDispatchedTaskFinished(
   maybeBroadcastPlanSummary(sessionId, execution);
   persistState(sessionId, planId, execution).catch((err) =>
     console.error(`[dag] Persist error on task finish: ${err.message}`));
+}
+
+/**
+ * Manual re-plan triggered from frontend "让 Main Agent 重新规划" button.
+ * Collects full context and asks ManagerLoop to produce replacement tasks.
+ */
+export async function handleReplanFailedTask(
+  sessionId: string,
+  planId: string,
+  taskId: string,
+): Promise<void> {
+  const execution = planExecutions.get(planKey(sessionId, planId));
+  if (!execution) {
+    broadcast(sessionId, { type: "stream_error", error: `Plan ${planId} not found` });
+    return;
+  }
+
+  const failedTask = execution.tasks.get(taskId);
+  if (!failedTask) {
+    broadcast(sessionId, { type: "stream_error", error: `Task ${taskId} not found in plan` });
+    return;
+  }
+
+  const currentRetryCount = failedTask.retryCount ?? 0;
+
+  // Collect comprehensive context
+  const upstreamResults: Array<{ taskId: string; output: string }> = [];
+  const remainingTaskTitles: string[] = [];
+  for (const [tid, item] of execution.tasks) {
+    if (item.status === "done") {
+      upstreamResults.push({ taskId: tid, output: item.task.title });
+    } else if (item.status === "waiting" || item.status === "queued") {
+      remainingTaskTitles.push(`${item.task.id}: ${item.task.title}`);
+    }
+  }
+
+  const sandbox = sandboxes.get(sessionId);
+  const fileTree = sandbox ? collectFileTree(sandbox.hostWorkDir) : undefined;
+  const taskPrompt = buildTaskPrompt(failedTask.task);
+
+  broadcast(sessionId, {
+    type: "manager_reviewing",
+    planId,
+    taskId,
+    reason: `User requested manual re-plan for failed task ${taskId} (已失败 ${currentRetryCount} 次)`,
+  });
+
+  const failure = {
+    failedTaskId: taskId,
+    failedAgentName: failedTask.agentName ?? "unknown",
+    error: failedTask.lastError ?? `Task failed after ${currentRetryCount} retries`,
+    output: "",
+    upstreamResults,
+    retryCount: currentRetryCount,
+    fileTree,
+    taskPrompt,
+  };
+
+  try {
+    const manager = getManagerLoop();
+    const decision = await manager.reviewAndDecide(planId, sessionId, failure, remainingTaskTitles);
+
+    broadcast(sessionId, {
+      type: "manager_decision",
+      planId,
+      taskId,
+      decision: decision.action,
+      reason: decision.reason,
+    });
+
+    if (decision.action === "replan" && decision.nextTasks && decision.nextTasks.length > 0) {
+      // Inject replacement tasks
+      for (const t of decision.nextTasks) {
+        execution.tasks.set(t.id, {
+          task: {
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            agentType: t.agentType,
+            dependsOn: t.dependsOn,
+            expectedOutput: t.expectedOutput,
+            priority: t.priority || "medium",
+          },
+          agentName: t.agentType,
+          agentId: "",
+          status: "waiting",
+          dependents: [],
+          retryCount: 0,
+        });
+      }
+      const sb = sandboxes.get(sessionId);
+      if (sb) {
+        const replanned = consumeReadyTasks(execution);
+        if (replanned.length > 0) {
+          await enqueueTaskAssignments(sessionId, planId, replanned, sb);
+        }
+      }
+    } else if (decision.action === "continue") {
+      // Manual retry
+      markTaskRetryQueued(execution, taskId);
+      const sb = sandboxes.get(sessionId);
+      if (sb) {
+        const retryAssignment = consumeReadyTasks(execution);
+        if (retryAssignment.length > 0) {
+          await enqueueTaskAssignments(sessionId, planId, retryAssignment, sb);
+        }
+      }
+    } else {
+      // abort — task stays failed, user sees the result
+      broadcast(sessionId, {
+        type: "replan_required",
+        planId,
+        taskId,
+        failedTask: {
+          taskId,
+          title: failedTask.task.title,
+          agentType: failedTask.task.agentType,
+          error: decision.reason,
+          retryCount: currentRetryCount,
+        },
+      });
+    }
+  } catch (err: any) {
+    console.error(`[dag] Replan handler error: ${err.message}`);
+    broadcast(sessionId, { type: "stream_error", error: `Re-planning failed: ${err.message}` });
+  }
+
+  persistState(sessionId, planId, execution).catch((err) =>
+    console.error(`[dag] Persist error after replan: ${err.message}`));
 }
 
 async function enqueueTaskAssignments(

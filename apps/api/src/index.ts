@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { serve } from '@hono/node-server';
 import type { Server } from 'http';
+import type http from 'http';
+import type net from 'net';
 import { execSync } from 'child_process';
 import { writeFileSync } from 'fs';
 import { resolve } from 'path';
@@ -16,7 +18,7 @@ import chatRoutes from './routes/chat.js';
 import agentRoutes from './routes/agents.js';
 import workspaceRoutes from './routes/workspace.js';
 import diffRoutes from './routes/diff.js';
-import previewRoutes from './routes/preview.js';
+import previewRoutes, { handlePreviewUpgrade } from './routes/preview.js';
 import deployRoutes from './routes/deploy.js';
 import testRoutes from './routes/test.js';
 import securityRoutes from './routes/security.js';
@@ -156,6 +158,11 @@ process.on('SIGINT', () => {
 });
 
 // Attach WebSocket handler (Hono's serve returns a Node http.Server at runtime)
-attachWebSocket(server as unknown as Server);
+// HMR WebSocket proxy: forward preview-proxy WebSocket upgrades to the sandbox container
+const nodeServer = server as unknown as http.Server;
+nodeServer.on('upgrade', (req, socket, head) => {
+  handlePreviewUpgrade(req, socket as net.Socket, head).catch(() => {});
+});
+attachWebSocket(nodeServer);
 
 export default app;

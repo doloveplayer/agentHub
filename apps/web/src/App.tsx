@@ -3,6 +3,7 @@ import { useAppStore } from './store/appStore';
 import { ChatPage } from './pages/ChatPage';
 import { LoginPage } from './components/LoginPage';
 import { AuthCallback } from './components/AuthCallback';
+import { ToastContainer } from './components/ToastContainer';
 
 export function App() {
   const token = useAppStore((s) => s.token);
@@ -14,6 +15,7 @@ export function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
       </Routes>
+      <ToastContainer />
     </BrowserRouter>
   );
 }

@@ -11,6 +11,8 @@ export interface DagTaskAssignment {
 export interface DagExecutionItem extends DagTaskAssignment {
   status: DagTaskStatus;
   dependents: string[];
+  retryCount: number;
+  lastError?: string;
 }
 
 export interface DagExecutionState {
@@ -30,7 +32,7 @@ export function createDagExecutionState(
   for (const assignment of assignments) {
     const id = assignment.task.id;
     if (tasks.has(id)) throw new Error(`Duplicate task id in plan: ${id}`);
-    tasks.set(id, { ...assignment, status: 'waiting', dependents: [] });
+    tasks.set(id, { ...assignment, status: 'waiting', dependents: [], retryCount: 0 });
   }
 
   for (const item of tasks.values()) {
@@ -98,6 +100,7 @@ export function markTaskRetryQueued(state: DagExecutionState, taskId: string): D
   if (!item || item.status !== 'failed') return null;
 
   item.status = 'queued';
+  item.retryCount += 1;
   state.summaryBroadcasted = false;
   resetRecoverableBlockedDescendants(state, item, new Set([taskId]));
   return toAssignment(item);

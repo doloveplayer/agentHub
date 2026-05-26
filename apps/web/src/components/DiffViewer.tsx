@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { DiffEditor } from '@monaco-editor/react';
 import { Check, X } from 'lucide-react';
 
@@ -25,6 +25,11 @@ interface Props {
 export function DiffViewer({ path, diff, hunks = [], conflictRanges = [], busyHunkId, onAcceptHunk, onRejectHunk }: Props) {
   const { original, modified, language } = useMemo(() => buildDiffModels(path, diff), [path, diff]);
   const [selectedHunkId, setSelectedHunkId] = useState(hunks[0]?.id ?? null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (!selectedHunkId || !hunks.some((hunk) => hunk.id === selectedHunkId)) {
@@ -34,7 +39,7 @@ export function DiffViewer({ path, diff, hunks = [], conflictRanges = [], busyHu
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!event.altKey || !selectedHunkId) return;
+      if (!event.altKey || !selectedHunkId || !mountedRef.current) return;
       const key = event.key.toLowerCase();
       if (key === 'a' && onAcceptHunk) {
         event.preventDefault();

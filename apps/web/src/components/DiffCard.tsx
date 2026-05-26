@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, GitPullRequest, Check, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { DiffViewer } from './DiffViewer';
@@ -23,6 +23,11 @@ export function DiffCard({ sessionId, files, title = 'File changes' }: Props) {
   const [dismissedFiles, setDismissedFiles] = useState<Set<string>>(() => new Set());
   const [dismissed, setDismissed] = useState(false);
 
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    return () => { mountedRef.current = false; };
+  }, []);
+
   if (dismissed) return null;
 
   const visibleFiles = files.filter((file) => !dismissedFiles.has(file.path));
@@ -32,9 +37,10 @@ export function DiffCard({ sessionId, files, title = 'File changes' }: Props) {
     setBusyPath(file.path);
     try {
       await api.acceptDiffFile(sessionId, file.path);
+      if (!mountedRef.current) return;
       setDismissedFiles((prev) => new Set(prev).add(file.path));
     } finally {
-      setBusyPath(null);
+      if (mountedRef.current) setBusyPath(null);
     }
   };
 
@@ -42,9 +48,10 @@ export function DiffCard({ sessionId, files, title = 'File changes' }: Props) {
     setBusyPath(file.path);
     try {
       await api.rejectDiffFile(sessionId, file.path, file.baseVersionId);
+      if (!mountedRef.current) return;
       setDismissedFiles((prev) => new Set(prev).add(file.path));
     } finally {
-      setBusyPath(null);
+      if (mountedRef.current) setBusyPath(null);
     }
   };
 

@@ -1,10 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
-import { buildSafeEnv } from '../agent/ClaudeCodeProcess.js';
-import { createOneShotAgentProcess } from '../agent/processFactory.js';
+import { createSDKAgentProcess, createOneShotAgentProcess } from '../agent/processFactory.js';
 import { InboxManager } from '../agent/InboxManager.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
-import { ProviderFactory } from '../agent/providers/factory.js';
 import { stateTracker } from '../agent/StateTracker.js';
 import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
 import { selectDefaultAgent, toTaskStates } from '../agent/turns.js';
@@ -17,14 +15,16 @@ import { isDeployTarget, normalizeTarget, startDeployment } from '../routes/depl
 import { parseReviewReport, parseTestOutput, parseNpmAuditJson } from '../artifacts/ArtifactTools.js';
 import { agentCoordinator } from '../agent/AgentCoordinator.js';
 import { permissionProfiles, type AgentCapability } from '../agent/PermissionProfiles.js';
+import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDetection.js';
 
 import {
-  sessions, agentStates, agentProcesses, sandboxes,
+  sessions, sessionPermissionModes, agentStates, agentProcesses, sandboxes,
   runningAgentCount, incRunningAgentCount, decRunningAgentCount,
   pendingAgentQueue, enqueuePending, dequeuePending,
+  perSessionPendingQueues, enqueuePerSession, dequeuePerSession,
   sessionsWithMilestones, sequentialQueues,
   agentTaskQueues, agentCurrentTask, agentCurrentMessage,
-  permissionTimeouts, PERMISSION_TIMEOUT_MS, ENABLE_PERSISTENT_REPL,
+  permissionTimeouts, PERMISSION_TIMEOUT_MS,
   taskModifications, agentClaudeSessions,
   trackFileMod, detectConflicts, clearFileMods,
   generateId, getOrCreateSandbox, broadcast, sendTo,
@@ -38,6 +38,7 @@ import {
   startTaskAgent,
   handleDispatchedTaskFinished,
   prepareDispatchedTaskRetry,
+  handleReplanFailedTask,
 } from './taskDispatcher.js';
 import {
   broadcastDiffSummary,
@@ -108,13 +109,14 @@ async function handleConnection(ws: WebSocket, request: any) {
 
   try {
     const session = await prisma.session.findUnique({
-      where: { id: sessionId }, select: { id: true, userId: true },
+      where: { id: sessionId }, select: { id: true, userId: true, permissionMode: true },
     });
     if (!session || session.userId !== userId) {
       sendTo(ws, { type: 'error', message: 'Session not found or access denied' });
       ws.close(4003, 'Access denied');
       return;
     }
+    sessionPermissionModes.set(sessionId, session.permissionMode || 'ask');
   } catch {
     sendTo(ws, { type: 'error', message: 'Failed to verify session' });
     ws.close(4000, 'Internal error');
@@ -224,6 +226,7 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'deploy_to_platform': handleDeployToPlatform(sessionId, data); break;
     case 'modify_task': handleModifyTask(sessionId, data); break;
     case 'retry_task': handleRetryTask(sessionId, data); break;
+    case 'replan_failed_task': handleReplanRequest(sessionId, data); break;
     case 'approval_approve': handleApprovalApprove(sessionId, ws, data); break;
     case 'approval_reject': handleApprovalReject(sessionId, ws, data); break;
     case 'approval_reply': handleApprovalReply(sessionId, ws, data); break;
@@ -315,6 +318,12 @@ async function handleChatMessage(
   const sandbox = sandboxes.get(sessionId);
   if (!sandbox) { broadcast(sessionId, { type: 'stream_error', error: 'No active sandbox' }); return; }
 
+  // Resolve trust mode from session permission mode.
+  // read_only/ask → trustMode=false (require permission for mutating tools)
+  // smart/trust → trustMode=true (auto-approve)
+  const sessionPermMode = sessionPermissionModes.get(sessionId) || 'ask';
+  const trustMode = sessionPermMode === 'smart' || sessionPermMode === 'trust';
+
   const isSlashCommand = prompt.startsWith('/');
 
   const mentions: { agentId: string; subPrompt: string; messageId: string }[] = isSlashCommand
@@ -354,7 +363,17 @@ async function handleChatMessage(
 
     const sessionAgents = agentStates.get(sessionId);
     if (sessionAgents && sessionAgents.size >= PER_SESSION_MAX) {
-      broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Max ${PER_SESSION_MAX} agents per session.` });
+      enqueuePerSession(sessionId, {
+        mention: { agentId: mention.agentId, subPrompt: mention.subPrompt, messageId: mention.messageId },
+        enqueuedAt: Date.now(),
+      });
+      const position = perSessionPendingQueues.get(sessionId)?.length ?? 0;
+      broadcast(sessionId, {
+        type: 'agent_queued',
+        agentMessageId: mention.messageId,
+        position,
+        message: `Session agent limit (${PER_SESSION_MAX}) reached — queued (position ${position}). Will execute when a slot frees.`,
+      });
       continue;
     }
 
@@ -370,6 +389,7 @@ async function handleChatMessage(
         broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: 'Failed to create message' });
         decRunningAgentCount();
         drainPendingQueue();
+        drainPerSessionQueue(sessionId);
         continue;
       }
     }
@@ -399,12 +419,12 @@ async function handleChatMessage(
             sessionMemberBlock = `\n## 当前群聊成员\n${memberLines}\n\n请根据成员专长分配任务。agentType 仅限以上成员。如需其他类型 Agent，在 plan 的 missingAgents 字段中列出：\n\`\`\`json\n"missingAgents": [{"name": "...", "displayName": "...", "description": "...", "reason": "..."}]\n\`\`\`\n`;
           }
         }
-        agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sessionMemberBlock}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
+        agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
         isPlannerAgent = agent.name === 'planner';
         if (sandbox) AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.settings as Record<string, unknown> | null);
       }
     } else {
-      agentPrompt = history ? `${history}\n\n---\nUser: ${mention.subPrompt}` : mention.subPrompt;
+      agentPrompt = history ? `${history}\n\n---\n${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}` : `${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}`;
     }
 
     let accumulatedContent = '';
@@ -426,162 +446,9 @@ async function handleChatMessage(
       diffAgentName,
       `Before ${diffAgentName} turn`,
     );
-    const existingProc = agentNameForProc ? agentProcesses.get(sessionId)?.get(agentNameForProc) : null;
-
-    // One-shot --resume mode (default): each message creates a new container
-    // but reuses the Claude Code session via --resume for context continuity.
-    // Persistent REPL (ENABLE_PERSISTENT_REPL=1) is available for testing but
-    // the `cat file - | claude` pattern may block on stdin EOF.
-    if (ENABLE_PERSISTENT_REPL && existingProc && existingProc.provider.isAlive()) {
-      console.log(`[ws] Reusing REPL process for agent=${agentNameForProc} msg=${mention.messageId}`);
-      agentCurrentMessage.set(agentNameForProc!, mention.messageId);
-      existingProc.provider.sendPrompt(mention.subPrompt);
-      clearTimeout(existingProc.timer);
-      const agentName = agentNameForProc!;
-      existingProc.timer = setTimeout(() => {
-        existingProc.provider.stop();
-        agentProcesses.get(sessionId)?.delete(agentName);
-        agentCurrentMessage.delete(agentName);
-      }, config.agent.timeoutMs);
-      if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
-      agentStates.get(sessionId)!.set(mention.messageId, {
-        process: existingProc.provider, timer: existingProc.timer, agentId: mention.agentId, agentName,
-      });
-      // incRunningAgentCount already called at concurrency check (line 285)
-      return;
-    }
-
-    if (ENABLE_PERSISTENT_REPL && agentNameForProc) {
-      const agentName = agentNameForProc;
-      const provider = ProviderFactory.create(config.agent.provider);
-      const safeEnv = buildSafeEnv();
-
-      provider.onEvent((ev) => {
-        const msgId = agentCurrentMessage.get(agentName) || mention.messageId;
-        switch (ev.type) {
-          case 'thinking': {
-            accumulatedContent += (ev.content || '');
-            broadcast(sessionId, { type: 'stream_chunk', content: ev.content || '', agentMessageId: msgId });
-            broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: (ev.content || '').slice(0, 120) }, agentMessageId: msgId, timestamp: Date.now() });
-            break;
-          }
-          case 'tool_use': {
-            const inputStr = JSON.stringify(ev.toolInput ?? {});
-            stateTracker.updateTool(msgId, ev.toolName || 'unknown', ev.toolInput || {});
-            const modPath = ev.toolInput?.file_path || ev.toolInput?.path || ev.toolInput?.filePath;
-            if (typeof modPath === 'string' && ['Write', 'Edit'].includes(ev.toolName || '')) {
-              trackFileMod(sessionId, agentName, modPath);
-            }
-            broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: ev.toolName, input: ev.toolInput, inputPreview: inputStr.slice(0, 80) }, agentMessageId: msgId, timestamp: Date.now() });
-            break;
-          }
-          case 'tool_result': {
-            const resultStr = typeof ev.content === 'string' ? ev.content : '';
-            broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { content: resultStr.slice(0, 200), resultPreview: resultStr.slice(0, 80) }, agentMessageId: msgId, timestamp: Date.now() });
-            break;
-          }
-          case 'subagent_start':
-            stateTracker.addSubagent(msgId, ev.toolName || 'unknown', ev.content || '');
-            broadcast(sessionId, { type: 'agent_status', status: 'subagent_start', details: { agentType: ev.toolName, description: ev.content }, agentMessageId: msgId, timestamp: Date.now() });
-            break;
-          case 'subagent_result':
-            broadcast(sessionId, { type: 'agent_status', status: 'subagent_result', details: { agentType: ev.toolName }, agentMessageId: msgId, timestamp: Date.now() });
-            break;
-          case 'permission_request': {
-            const pid = `${msgId}|::|${ev.toolName || 'unknown'}|::|${Date.now()}`;
-            broadcast(sessionId, { type: 'permission_request', permissionId: pid, tool: ev.toolName || '', path: ev.filePath, agentMessageId: msgId, timestamp: Date.now() });
-            broadcast(sessionId, { type: 'agent_status', status: 'permission_request', details: { tool: ev.toolName, path: ev.filePath, permissionId: pid }, agentMessageId: msgId, timestamp: Date.now() });
-            const timeout = setTimeout(() => {
-              console.log(`[ws] Permission timeout: ${pid}`);
-              permissionTimeouts.delete(pid);
-              const stMap = agentStates.get(sessionId);
-              if (stMap) { const st = stMap.get(msgId); if (st) st.process.write('n\n'); }
-            }, PERMISSION_TIMEOUT_MS);
-            permissionTimeouts.set(pid, timeout);
-            break;
-          }
-          case 'done': {
-            console.log(`[ws] Agent done (REPL): session=${sessionId} agentMsg=${msgId} exitCode=${ev.exitCode}`);
-            const finalContent = accumulatedContent || (ev.exitCode !== 0 ? '[Agent stopped]' : '[Agent finished]');
-            stateTracker.setDone(msgId);
-            if (agentNameForProc) MilestoneBroadcaster.classify({ sessionId, agentName: agentNameForProc, agentMessageId: msgId, eventType: 'done' });
-            void (async () => {
-              await prisma.message.update({ where: { id: msgId }, data: { content: finalContent, status: ev.exitCode === 0 ? 'done' : 'error' } }).catch(() => {});
-              broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: finalContent, exitCode: ev.exitCode ?? 0 });
-              broadcastDiffSummary(
-                sessionId,
-                msgId,
-                sandbox.hostWorkDir,
-                takeMessageBeforeVersion(msgId),
-                agentName,
-                finalContent.slice(0, 180),
-              );
-              broadcastStructuredArtifact(sessionId, agentName, finalContent);
-              const stateMap = agentStates.get(sessionId);
-              if (stateMap) {
-                const st = stateMap.get(msgId);
-                if (st) { clearTimeout(st.timer); stateMap.delete(msgId); decRunningAgentCount(); }
-                if (stateMap.size === 0) agentStates.delete(sessionId);
-              }
-              drainPendingQueue();
-              accumulatedContent = '';
-              const conflicts = detectConflicts(sessionId);
-              if (conflicts.length > 0) {
-                broadcast(sessionId, { type: 'conflict_detected', conflicts: conflicts.map(c => ({ filePath: c.filePath, agents: c.agents })) });
-                console.log(`[ws] Conflict detected: session=${sessionId} files=${conflicts.map(c => c.filePath).join(', ')}`);
-              }
-              const taskInfo = agentCurrentTask.get(agentName);
-              if (taskInfo) {
-                broadcast(sessionId, { type: ev.exitCode === 0 ? 'task_completed' : 'task_failed', planId: taskInfo.planId, taskId: taskInfo.taskId, agentName, output: finalContent.slice(0, 200) });
-                agentCurrentTask.delete(agentName);
-                const queue = agentTaskQueues.get(agentName);
-                if (queue) { queue.current = null; processNextInQueue(sessionId, agentName, queue); }
-                void handleDispatchedTaskFinished(sessionId, taskInfo.planId, taskInfo.taskId, ev.exitCode === 0);
-              }
-              if (ev.exitCode !== 0 && agentName) {
-                const sb = sandboxes.get(sessionId);
-                if (sb) {
-                  const { reassignQueuedTasks } = await import('./taskDispatcher.js');
-                  await reassignQueuedTasks(sessionId, agentName, {
-                    containerId: sb.containerId,
-                    workDir: sb.workDir,
-                    hostWorkDir: sb.hostWorkDir,
-                  });
-                }
-              }
-              agentCurrentMessage.delete(agentName);
-              startNextSequential(sessionId);
-            })();
-            break;
-          }
-          case 'error':
-            broadcast(sessionId, { type: 'stream_error', agentMessageId: msgId, error: ev.message || 'Unknown error' });
-            stateTracker.setError(msgId);
-            break;
-        }
-      });
-
-      if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
-      const timer = setTimeout(() => {
-        provider.stop();
-        agentProcesses.get(sessionId)?.delete(agentName);
-      }, config.agent.timeoutMs);
-      agentProcesses.get(sessionId)!.set(agentName, { provider, timer, agentId: mention.agentId });
-      if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
-      agentStates.get(sessionId)!.set(mention.messageId, { process: provider, timer, agentId: mention.agentId, agentName });
-      agentCurrentMessage.set(agentName, mention.messageId);
-
-      console.log(`[ws] Starting REPL provider: session=${sessionId} agent=${agentName} msg=${mention.messageId}`);
-      provider.start(sessionId, agentPrompt, sandbox.containerId, sandbox.workDir, { agentName, hostWorkDir: sandbox.hostWorkDir, env: safeEnv })
-        .catch((err) => {
-          console.error(`[ws] Provider start failed: session=${sessionId} agent=${agentName} error=${err.message}`);
-          broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed to start agent: ${err.message}` });
-        });
-      return;
-    }
-
-    // Fallback: one-shot agent process with --resume for persistent memory.
-    const agent = createOneShotAgentProcess();
+    // SDK-first: use Claude Agent SDK for typed streaming + native session persistence.
+    // Falls back to CLI spawn (docker run) if SDK is unavailable.
+    const agent = (await createSDKAgentProcess()) || createOneShotAgentProcess();
     if (agentNameForProc) {
       agent.onClaudeSession = (sid: string) => { agentClaudeSessions.set(`${sessionId}:${agentNameForProc}`, sid); };
     }
@@ -728,6 +595,7 @@ async function handleChatMessage(
               }
             }
             drainPendingQueue();
+            drainPerSessionQueue(sessionId);
             startNextSequential(sessionId);
           })();
           break;
@@ -738,6 +606,7 @@ async function handleChatMessage(
           broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: event.message });
           clearRunningAgent(sessionId, mention.messageId);
           drainPendingQueue();
+          drainPerSessionQueue(sessionId);
           break;
       }
     });
@@ -765,6 +634,7 @@ async function handleChatMessage(
         if (stateMap.size === 0) agentStates.delete(sessionId);
       }
       drainPendingQueue();
+      drainPerSessionQueue(sessionId);
     }, config.agent.timeoutMs);
 
     if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
@@ -789,7 +659,7 @@ async function handleChatMessage(
         agentPrompt,
         sandbox.containerId,
         sandbox.workDir,
-        data.trustMode ?? true,
+        trustMode,
         sandbox.hostWorkDir,
         mention.messageId,
         agentNameForProc ? agentClaudeSessions.get(`${sessionId}:${agentNameForProc}`) : undefined,
@@ -801,16 +671,18 @@ async function handleChatMessage(
           prisma.message.update({ where: { id: mention.messageId }, data: { status: 'error' } }).catch(() => {});
           clearRunningAgent(sessionId, mention.messageId);
           drainPendingQueue();
+          drainPerSessionQueue(sessionId);
         });
     } catch (err: any) {
       console.error(`[ws] Agent spawn error: ${err.message}`);
       clearRunningAgent(sessionId, mention.messageId);
       drainPendingQueue();
+      drainPerSessionQueue(sessionId);
     }
   }
 }
 
-/** Drain the pending queue: start waiting agents when slots free up. */
+/** Drain the GLOBAL pending queue: start waiting agents when slots free up. */
 function drainPendingQueue(): void {
   if (pendingAgentQueue.length === 0) return;
 
@@ -832,6 +704,40 @@ function drainPendingQueue(): void {
 
     console.log(`[ws] Dequeuing agent: session=${next.sessionId} msg=${next.mention.messageId}`);
     handleChatMessage(next.sessionId, {
+      content: next.mention.subPrompt,
+      mentions: [next.mention],
+    });
+  }
+}
+
+/** Drain the per-session pending queue: start waiting agents for a specific session when a slot frees. */
+function drainPerSessionQueue(sessionId: string): void {
+  const queue = perSessionPendingQueues.get(sessionId);
+  if (!queue || queue.length === 0) return;
+
+  const perSessionMax = config.agent.perSessionMax;
+  const now = Date.now();
+  const queueTimeout = config.agent.queueTimeoutMs;
+
+  while (queue.length > 0 && runningAgentCount < config.agent.maxConcurrent) {
+    const sessionAgents = agentStates.get(sessionId);
+    if (sessionAgents && sessionAgents.size >= perSessionMax) break; // session still at capacity
+
+    const next = dequeuePerSession(sessionId);
+    if (!next) break;
+
+    if (now - next.enqueuedAt > queueTimeout) {
+      broadcast(sessionId, {
+        type: 'stream_error',
+        agentMessageId: next.mention.messageId,
+        error: `Per-session queue timeout after ${queueTimeout / 1000}s.`,
+      });
+      continue;
+    }
+
+    console.log(`[ws] Dequeuing per-session agent: session=${sessionId} msg=${next.mention.messageId}`);
+    // handleChatMessage re-checks session capacity and may re-enqueue
+    handleChatMessage(sessionId, {
       content: next.mention.subPrompt,
       mentions: [next.mention],
     });
@@ -865,6 +771,7 @@ function handleStopAgent(sessionId: string, data: { agentMessageId: string }): v
   }
   decRunningAgentCount();
   drainPendingQueue();
+  drainPerSessionQueue(sessionId);
   if (stateMap.size === 0) agentStates.delete(sessionId);
   prisma.message.update({ where: { id: data.agentMessageId }, data: { status: 'done' } }).catch(() => {});
   broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });
@@ -873,12 +780,19 @@ function handleStopAgent(sessionId: string, data: { agentMessageId: string }): v
 function handlePermissionResponse(sessionId: string, data: { permissionId: string; allowed: boolean; message?: string }): void {
   const agentMessageId = data.permissionId.split('|::|')[0];
   if (!agentMessageId) { broadcast(sessionId, { type: 'stream_error', error: 'Invalid permissionId' }); return; }
-  const stateMap = agentStates.get(sessionId);
-  if (!stateMap) { broadcast(sessionId, { type: 'stream_error', error: 'No active agents for permission response' }); return; }
-  const st = stateMap.get(agentMessageId);
-  if (!st) { broadcast(sessionId, { type: 'stream_error', error: 'Agent not found for permission response' }); return; }
+  // Clear timeout regardless of agent state — prevents stale timeout from writing after death
   const timeout = permissionTimeouts.get(data.permissionId);
   if (timeout) { clearTimeout(timeout); permissionTimeouts.delete(data.permissionId); }
+  const stateMap = agentStates.get(sessionId);
+  if (!stateMap) {
+    console.log(`[ws] Permission response ignored: session=${sessionId} has no active agents`);
+    return;
+  }
+  const st = stateMap.get(agentMessageId);
+  if (!st) {
+    console.log(`[ws] Permission response ignored: agent already terminated for msg=${agentMessageId}`);
+    return;
+  }
   st.process.write(data.allowed ? 'y\n' : 'n\n');
 }
 
@@ -979,6 +893,13 @@ async function handleRetryTask(sessionId: string, data: { planId: string; taskId
   } else {
     broadcast(sessionId, { type: 'stream_error', error: `No agent found for type: ${taskNode.agentType}` });
   }
+}
+
+function handleReplanRequest(sessionId: string, data: { planId: string; taskId: string }): void {
+  console.log(`[ws] Replan request: planId=${data.planId} taskId=${data.taskId}`);
+  handleReplanFailedTask(sessionId, data.planId, data.taskId).catch((err: any) => {
+    broadcast(sessionId, { type: 'stream_error', error: `Re-plan failed: ${err.message}` });
+  });
 }
 
 // ---- Approval Gate handlers ----

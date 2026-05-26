@@ -11,6 +11,9 @@ import type { AbstractProvider } from '../agent/providers/base.js';
 /** sessionId → set of connected WebSockets */
 export const sessions = new Map<string, Set<WebSocket>>();
 
+/** sessionId → permission mode (read_only | ask | smart | trust) */
+export const sessionPermissionModes = new Map<string, string>();
+
 /** sessionId → active agent info (process + timer) */
 export interface AgentProcess {
   process: { write(input: string): void; kill?(): void; stop?(): void };
@@ -33,7 +36,7 @@ export let runningAgentCount = 0;
 export function incRunningAgentCount(): void { runningAgentCount++; }
 export function decRunningAgentCount(): void { runningAgentCount = Math.max(0, runningAgentCount - 1); }
 
-/** FIFO queue for agents waiting when concurrency limit is reached */
+/** FIFO queue for agents waiting when GLOBAL concurrency limit is reached */
 export interface PendingAgentRequest {
   sessionId: string;
   mention: { agentId: string; subPrompt: string; messageId: string };
@@ -47,6 +50,27 @@ export function enqueuePending(request: PendingAgentRequest): void {
 
 export function dequeuePending(): PendingAgentRequest | undefined {
   return pendingAgentQueue.shift();
+}
+
+/** Per-session FIFO queue when per-session agent limit (AGENT_PER_SESSION_MAX) is reached. */
+export interface PerSessionPendingRequest {
+  mention: { agentId: string; subPrompt: string; messageId: string };
+  enqueuedAt: number;
+}
+export const perSessionPendingQueues = new Map<string, PerSessionPendingRequest[]>();
+
+export function enqueuePerSession(sessionId: string, request: PerSessionPendingRequest): void {
+  const queue = perSessionPendingQueues.get(sessionId);
+  if (queue) queue.push(request);
+  else perSessionPendingQueues.set(sessionId, [request]);
+}
+
+export function dequeuePerSession(sessionId: string): PerSessionPendingRequest | undefined {
+  const queue = perSessionPendingQueues.get(sessionId);
+  if (!queue || queue.length === 0) return undefined;
+  const next = queue.shift()!;
+  if (queue.length === 0) perSessionPendingQueues.delete(sessionId);
+  return next;
 }
 
 /** Sessions with milestone broadcasting */
@@ -91,12 +115,10 @@ export const PERMISSION_TIMEOUT_MS =
   optionalPositiveInt('AGENTHUB_PERMISSION_TIMEOUT_MS') ??
   optionalPositiveInt('PERMISSION_TIMEOUT_MS') ??
   120_000;
-// REPL mode disabled (ENABLE_PERSISTENT_REPL defaults to false).
-// The `cat file - | claude` pattern blocks because stdin never receives EOF.
-// Current approach: one-shot `docker run --rm` + `--resume` per message.
-// This gives session continuity without a persistent container.
-// To re-enable REPL: implement PTY/FIFO-based stdin (see docs/superpowers/plans/2026-05-25-pty-repl-fix.md).
-export const ENABLE_PERSISTENT_REPL = process.env.AGENTHUB_ENABLE_PERSISTENT_REPL === '1';
+// REPL mode removed. Claude Agent SDK provides native session persistence via `resume`.
+// Agent startup now uses SDK-first: createSDKAgentProcess() → ClaudeSDKProcess.
+// Falls back to CLI spawn (createOneShotAgentProcess) if SDK is unavailable.
+// See: apps/api/src/agent/processFactory.ts
 
 /** Plan confirmation: planId:taskId → modified description */
 export const taskModifications = new Map<string, string>();
@@ -205,6 +227,7 @@ export function cleanupSessionResources(sessionId: string): void {
     DagPersistence.cleanup(sessionId).catch(() => {})
   );
 
+  perSessionPendingQueues.delete(sessionId);
   sessions.delete(sessionId);
 }
 

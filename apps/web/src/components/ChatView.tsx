@@ -1,12 +1,14 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import { api } from '../lib/api';
 import { useChat } from '../hooks/useChat';
 import { useResizablePanel } from '../hooks/useResizablePanel';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
+import { MessageActions } from './MessageActions';
 import { AgentStatusPanel } from './AgentStatusPanel';
 import { agentColor } from './AgentMentionPopup';
-import { Shield } from 'lucide-react';
+import { Shield, AlertTriangle, ChevronDown, Lock, Eye, Sparkles, Zap } from 'lucide-react';
 import { ConfirmationPanel } from './ConfirmationPanel';
 import { DiffCard } from './DiffCard';
 import { DeployCard } from './DeployCard';
@@ -96,7 +98,8 @@ export function ChatView() {
   const securityReports = useAppStore((s) => activeSessionId ? (s.securityReports[activeSessionId] ?? EMPTY_SECURITY_REPORTS) : EMPTY_SECURITY_REPORTS);
   const reviewReports = useAppStore((s) => activeSessionId ? (s.reviewReports[activeSessionId] ?? EMPTY_REVIEW_REPORTS) : EMPTY_REVIEW_REPORTS);
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
-  const { send, stopAgent, respondToPermission, confirmPlan } = useChat(activeSessionId ?? '');
+  const { send, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan } = useChat(activeSessionId ?? '');
+  const addToast = useAppStore((s) => s.addToast);
   const [resolvedPermissions] = useState<Set<string>>(() => new Set());
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
 
@@ -183,10 +186,87 @@ export function ChatView() {
     return String(n);
   }
 
+  const sessionPermissionModes = useAppStore((s) => s.sessionPermissionModes);
+  const setSessionPermissionMode = useAppStore((s) => s.setSessionPermissionMode);
+  const updateSessionInList = useAppStore((s) => s.updateSessionInList);
+  const [showPermDropdown, setShowPermDropdown] = useState(false);
+  const [showTrustWarning, setShowTrustWarning] = useState(false);
+
+  const getPermissionMode = (): string => {
+    if (!activeSessionId) return 'ask';
+    return sessionPermissionModes[activeSessionId] ?? (activeSession as any)?.permissionMode ?? 'ask';
+  };
+
+  const permissionMode = getPermissionMode();
+
+  const handleChangePermissionMode = async (mode: string) => {
+    if (!activeSessionId) return;
+    setShowPermDropdown(false);
+
+    if (mode === 'trust') {
+      setShowTrustWarning(true);
+      return;
+    }
+
+    await applyPermissionMode(mode);
+  };
+
+  const applyPermissionMode = async (mode: string) => {
+    if (!activeSessionId) return;
+    try {
+      await api.updateSession(activeSessionId, { permissionMode: mode });
+      setSessionPermissionMode(activeSessionId, mode);
+      updateSessionInList(activeSessionId, { permissionMode: mode as any });
+    } catch (err) {
+      console.error('Failed to update permission mode:', err);
+    }
+  };
+
+  const confirmTrustMode = async () => {
+    setShowTrustWarning(false);
+    await applyPermissionMode('trust');
+  };
+
+  const permLabels: Record<string, { label: string; icon: JSX.Element; color: string }> = {
+    read_only: { label: 'Read Only', icon: <Lock className="w-3.5 h-3.5" />, color: 'text-hub-tertiary' },
+    ask: { label: 'Ask', icon: <Shield className="w-3.5 h-3.5" />, color: 'text-hub-warning' },
+    smart: { label: 'Smart', icon: <Sparkles className="w-3.5 h-3.5" />, color: 'text-hub-accent' },
+    trust: { label: 'Trust', icon: <Zap className="w-3.5 h-3.5" />, color: 'text-hub-success' },
+  };
+
+  const currentPerm = permLabels[permissionMode] ?? permLabels.ask;
   const hasRunningAgent = activeSessionId ? isSessionStreaming(activeSessionId) : false;
   const { width: panelWidth, onMouseDown: onPanelResize } = useResizablePanel({
     defaultWidth: 288, minWidth: 220, maxWidth: 500, side: 'right',
   });
+
+  // Message action callbacks
+  const handleCopyMessage = useCallback(async (msg: Message) => {
+    if (!msg.content) return;
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      addToast('Copied', 'success');
+    } catch {
+      addToast('Failed to copy', 'error');
+    }
+  }, [addToast]);
+
+  const handleQuoteMessage = useCallback((msg: Message) => {
+    if (!msg.content) return;
+    const agentName = msg.agentId ? agentMap.get(msg.agentId)?.displayName : 'Agent';
+    const quote = `> ${agentName}: ${msg.content.slice(0, 200).replace(/\n/g, '\n> ')}\n\n`;
+    window.dispatchEvent(new CustomEvent('agenthub:prompt-insert', { detail: { prompt: quote } }));
+    addToast('Quoted', 'info');
+  }, [agentMap, addToast]);
+
+  const handleRegenerateMessage = useCallback((msg: Message) => {
+    regenerate(msg.id);
+  }, [regenerate]);
+
+  const handleDeleteMessage = useCallback((msg: Message) => {
+    deleteMessage(msg.id);
+    addToast('Message deleted', 'info');
+  }, [deleteMessage, addToast]);
 
   if (!activeSessionId) {
     return (
@@ -203,30 +283,83 @@ export function ChatView() {
     <div className="flex-1 flex h-full">
       {/* Chat area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Session header — show participants for group sessions */}
-        {activeSession?.type === 'group' && (
-          <div className="px-4 py-2 border-b border-hub flex items-center gap-2 bg-hub-surface">
-            <span className="text-[11px] text-hub-tertiary mr-1 font-medium">Participants</span>
-            <span className="text-[11px] px-2 py-0.5 rounded-full bg-hub-accent/10 border border-hub-accent/30 text-hub-accent font-medium">You</span>
-            {sessionAgents.map((a) => (
-              <span key={a.id}
-                className="text-xs px-2 py-0.5 rounded-full border text-hub-secondary"
-                style={{ borderColor: agentColor(a.name), backgroundColor: agentColor(a.name) + '20' }}
-              >
-                {a.displayName}
-              </span>
-            ))}
+        {/* Session header with permission mode indicator */}
+        <div className="px-4 py-2 border-b border-hub flex items-center gap-2 bg-hub-surface">
+          {/* Session title */}
+          <span className="text-xs text-hub-secondary font-medium truncate flex-1 min-w-0">
+            {activeSession?.title ?? 'Session'}
+          </span>
+
+          {/* Participants for group sessions */}
+          {activeSession?.type === 'group' && (
+            <>
+              <span className="text-[11px] text-hub-tertiary font-medium">Participants</span>
+              <span className="text-[11px] px-2 py-0.5 rounded-full bg-hub-accent/10 border border-hub-accent/30 text-hub-accent font-medium">You</span>
+              {sessionAgents.map((a) => (
+                <span key={a.id}
+                  className="text-xs px-2 py-0.5 rounded-full border text-hub-secondary"
+                  style={{ borderColor: agentColor(a.name), backgroundColor: agentColor(a.name) + '20' }}
+                >
+                  {a.displayName}
+                </span>
+              ))}
+            </>
+          )}
+
+          {/* Permission mode dropdown */}
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setShowPermDropdown(!showPermDropdown)}
+              className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition hover:bg-hub-hover ${currentPerm.color}`}
+              title="Permission mode"
+            >
+              {currentPerm.icon}
+              <span>{currentPerm.label}</span>
+              <ChevronDown className="w-3 h-3" />
+            </button>
+            {showPermDropdown && (
+              <div className="absolute top-full right-0 mt-1 bg-hub-raised border border-hub rounded-hub-lg shadow-xl z-50 w-36 overflow-hidden">
+                {Object.entries(permLabels).map(([key, { label, icon, color }]) => (
+                  <button
+                    key={key}
+                    onClick={() => handleChangePermissionMode(key)}
+                    className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition ${
+                      permissionMode === key ? 'bg-hub-active font-semibold' : 'hover:bg-hub-hover'
+                    } ${color}`}
+                  >
+                    {icon} {label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
         <div className="flex-1 overflow-y-auto chat-scroll">
           {messages.map((msg: any) => (
             <React.Fragment key={msg.id}>
-              <MessageBubble
-                message={msg}
-                isStreaming={msg.status === 'streaming'}
-                agentDisplayName={msg.agentId ? agentMap.get(msg.agentId)?.displayName : undefined}
-                agentName={msg.agentId ? agentMap.get(msg.agentId)?.name : undefined}
-              />
+              <div className={`flex ${msg.senderType === 'human' ? 'flex-row-reverse' : ''} relative group`}>
+                <div className="flex-1 min-w-0">
+                  <MessageBubble
+                    message={msg}
+                    isStreaming={msg.status === 'streaming'}
+                    agentDisplayName={msg.agentId ? agentMap.get(msg.agentId)?.displayName : undefined}
+                    agentName={msg.agentId ? agentMap.get(msg.agentId)?.name : undefined}
+                  />
+                </div>
+                {/* Message actions dropdown — show on hover for done/error messages */}
+                {msg.status !== 'streaming' && msg.status !== 'sending' && (
+                  <div className={`flex-shrink-0 flex items-start pt-2.5 ${msg.senderType === 'human' ? 'mr-3 order-first' : 'ml-1'}`}>
+                    <MessageActions
+                      message={msg}
+                      agentDisplayName={msg.agentId ? agentMap.get(msg.agentId)?.displayName : undefined}
+                      onCopy={() => handleCopyMessage(msg)}
+                      onQuote={() => handleQuoteMessage(msg)}
+                      onRegenerate={() => handleRegenerateMessage(msg)}
+                      onDelete={() => handleDeleteMessage(msg)}
+                    />
+                  </div>
+                )}
+              </div>
               {msg.senderType === 'agent' && renderAgentInfo(msg.id)}
               {diffCards.filter((card) => card.agentMessageId === msg.id).map((card) => (
                 <DiffCard key={card.id} sessionId={activeSessionId} title={card.title} files={card.files} />
@@ -260,7 +393,47 @@ export function ChatView() {
             <div className="w-4 h-full -ml-1.5" />
           </div>
           <div className="flex-1 min-w-0">
-            <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} />
+            <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} onReplanTask={sendReplan} />
+          </div>
+        </div>
+      )}
+
+      {/* Trust mode risk warning dialog */}
+      {showTrustWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowTrustWarning(false)}>
+          <div
+            className="bg-hub-raised border border-hub rounded-hub-xl shadow-2xl w-96 p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="w-5 h-5 text-hub-danger shrink-0" />
+              <h3 className="text-sm font-semibold text-hub-primary">Enable Trust Mode?</h3>
+            </div>
+            <div className="text-xs text-hub-tertiary mb-1 space-y-1.5">
+              <p>Trust mode grants the agent full autonomy:</p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>Auto-approves all file writes, edits, and deletions</li>
+                <li>Auto-approves all bash command execution</li>
+                <li>Skips permission confirmation prompts</li>
+              </ul>
+              <p className="text-hub-warning font-medium mt-2">
+                Only use this in Docker-sandboxed sessions or when you fully trust the agent's output.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button
+                onClick={() => setShowTrustWarning(false)}
+                className="px-4 py-1.5 text-xs font-medium text-hub-secondary hover:bg-hub-hover rounded-md transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmTrustMode}
+                className="px-4 py-1.5 text-xs font-medium bg-hub-danger text-white rounded-md hover:bg-hub-danger/80 transition"
+              >
+                Enable Trust
+              </button>
+            </div>
           </div>
         </div>
       )}

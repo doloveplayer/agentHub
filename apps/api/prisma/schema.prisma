@@ -22,6 +22,7 @@ model Session {
   id                 String         @id @default(uuid())
   title              String         @default("New Session")
   type               String         @default("solo")
+  permissionMode     String         @default("ask")
   userId             String
   sandboxContainerId String?
   user               User           @relation(fields: [userId], references: [id])

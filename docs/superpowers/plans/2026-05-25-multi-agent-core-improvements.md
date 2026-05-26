@@ -1,6 +1,6 @@
 # Multi-Agent Collaboration & Task Planning Core Improvements
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Harden the multi-agent task planning and execution pipeline with schema validation, DAG state persistence, fault tolerance, priority scheduling, and interactive plan editing.
 
@@ -39,13 +39,13 @@
 
 BullMQ is initialized but never used for execution (only drain + shutdown). Removing it eliminates Redis dependency for task scheduling and simplifies the architecture.
 
-- [ ] **Step 1: Delete TaskQueue.ts**
+- [x] **Step 1: Delete TaskQueue.ts**
 
 ```bash
 rm apps/api/src/agent/TaskQueue.ts
 ```
 
-- [ ] **Step 2: Remove `taskQueue` config block from config.ts**
+- [x] **Step 2: Remove `taskQueue` config block from config.ts**
 
 In `apps/api/src/config.ts`, delete lines 78-82:
 
@@ -60,7 +60,7 @@ In `apps/api/src/config.ts`, delete lines 78-82:
 
 Use Edit to remove the block.
 
-- [ ] **Step 3: Remove BullMQ import and init from index.ts**
+- [x] **Step 3: Remove BullMQ import and init from index.ts**
 
 In `apps/api/src/index.ts`, replace lines 149-167 (the entire BullMQ init block) with a comment:
 
@@ -93,7 +93,7 @@ process.on('SIGINT', () => {
 });
 ```
 
-- [ ] **Step 4: Remove `setTaskQueueManager` export from state.ts**
+- [x] **Step 4: Remove `setTaskQueueManager` export from state.ts**
 
 In `apps/api/src/ws/state.ts`, delete lines 84-85:
 ```typescript
@@ -102,7 +102,7 @@ export let taskQueueManager: any = null;
 export function setTaskQueueManager(tqm: any): void { taskQueueManager = tqm; }
 ```
 
-- [ ] **Step 5: Remove `setTaskQueueManager` export from handler.ts**
+- [x] **Step 5: Remove `setTaskQueueManager` export from handler.ts**
 
 In `apps/api/src/ws/handler.ts`, line 43:
 ```typescript
@@ -121,14 +121,14 @@ Remove line 27 (the `taskQueueManager` import):
   taskModifications, agentClaudeSessions,
 ```
 
-- [ ] **Step 6: TypeScript check**
+- [x] **Step 6: TypeScript check**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 Expected: No errors related to TaskQueue.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/api/src/agent/TaskQueue.ts apps/api/src/index.ts apps/api/src/config.ts apps/api/src/ws/state.ts apps/api/src/ws/handler.ts
@@ -147,7 +147,7 @@ git commit -m "chore: remove unused BullMQ task queue"
 
 **Goal:** Replace the two different hand-rolled JSON parsing implementations (one in `PlannerAgent.ts`, one in `turns.ts`) with a single Zod schema. Add one automatic retry on parse failure.
 
-- [ ] **Step 1: Create PlanValidator.ts**
+- [x] **Step 1: Create PlanValidator.ts**
 
 ```typescript
 import { z } from 'zod';
@@ -238,7 +238,7 @@ function extractJsonCandidates(raw: string): string[] {
 }
 ```
 
-- [ ] **Step 2: Refactor PlannerAgent.ts to use PlanValidator**
+- [x] **Step 2: Refactor PlannerAgent.ts to use PlanValidator**
 
 Replace the entire content of `apps/api/src/agent/PlannerAgent.ts`:
 
@@ -334,7 +334,7 @@ Output ONLY a valid JSON object (no markdown fences) with this schema:
 }
 ```
 
-- [ ] **Step 3: Replace `extractPlannerPlan` usage in handler.ts**
+- [x] **Step 3: Replace `extractPlannerPlan` usage in handler.ts**
 
 In `apps/api/src/ws/handler.ts`, line 11 and line 533:
 
@@ -357,7 +357,7 @@ const { extractAndValidate } = await import('../agent/PlanValidator.js');
 const plan = extractAndValidate(accumulatedContent);
 ```
 
-- [ ] **Step 4: Remove dead parsing functions from turns.ts**
+- [x] **Step 4: Remove dead parsing functions from turns.ts**
 
 In `apps/api/src/agent/turns.ts`, delete functions:
 - `extractPlannerPlan` (lines 74-86)
@@ -374,20 +374,20 @@ import type { AgentConfig, SessionAgentInfo, TaskPlan, TaskNode } from '@agenthu
 import type { AgentConfig, SessionAgentInfo, TaskNode } from '@agenthub/shared';
 ```
 
-- [ ] **Step 5: TypeScript check**
+- [x] **Step 5: TypeScript check**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 Expected: No errors. Fix any type mismatches.
 
-- [ ] **Step 6: Run existing tests**
+- [x] **Step 6: Run existing tests**
 
 ```bash
 cd apps/api && npx vitest run src/agent/core.test.ts src/agent/PlannerAgent.test.ts 2>/dev/null || npx tsx --test src/agent/core.test.ts 2>/dev/null || echo "No test runner configured — manual verification: tsc passes"
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/api/src/agent/PlanValidator.ts apps/api/src/agent/PlannerAgent.ts apps/api/src/agent/turns.ts apps/api/src/ws/handler.ts
@@ -406,7 +406,7 @@ git commit -m "feat: add Zod schema validation for Planner output with auto-retr
 
 **Goal:** Persist `DagExecutionState` to PostgreSQL so plan execution survives backend restarts. Every DAG state transition writes to DB.
 
-- [ ] **Step 1: Add PlanExecution model to Prisma schema**
+- [x] **Step 1: Add PlanExecution model to Prisma schema**
 
 In `apps/api/prisma/schema.prisma`, add after the `Agent` model:
 
@@ -426,14 +426,14 @@ model PlanExecution {
 }
 ```
 
-- [ ] **Step 2: Run Prisma migration**
+- [x] **Step 2: Run Prisma migration**
 
 ```bash
 cd apps/api && npx prisma migrate dev --name add_plan_execution
 ```
 Expected: Migration created and applied successfully.
 
-- [ ] **Step 3: Create DagPersistence.ts**
+- [x] **Step 3: Create DagPersistence.ts**
 
 ```typescript
 import { prisma } from '../db/prisma.js';
@@ -535,7 +535,7 @@ export class DagPersistence {
 }
 ```
 
-- [ ] **Step 4: Wire persistence into taskDispatcher.ts**
+- [x] **Step 4: Wire persistence into taskDispatcher.ts**
 
 In `apps/api/src/ws/taskDispatcher.ts`, add import:
 ```typescript
@@ -622,7 +622,7 @@ function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionSta
 }
 ```
 
-- [ ] **Step 5: Add startup recovery in handler.ts**
+- [x] **Step 5: Add startup recovery in handler.ts**
 
 In `apps/api/src/ws/handler.ts`, add after sandbox creation (around line 131, after `sendTo(ws, { type: 'connected', sessionId })`):
 
@@ -658,7 +658,7 @@ try {
 }
 ```
 
-- [ ] **Step 6: Add sandbox cleanup persistence cleanup**
+- [x] **Step 6: Add sandbox cleanup persistence cleanup**
 
 In `apps/api/src/ws/state.ts`, in `cleanupSessionResources` (line 146), add before `sessions.delete(sessionId)`:
 
@@ -669,14 +669,14 @@ import('../agent/DagPersistence.js').then(({ DagPersistence }) =>
 );
 ```
 
-- [ ] **Step 7: TypeScript check**
+- [x] **Step 7: TypeScript check**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 Expected: No errors.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add apps/api/prisma/schema.prisma apps/api/prisma/migrations/ apps/api/src/agent/DagPersistence.ts apps/api/src/ws/taskDispatcher.ts apps/api/src/ws/handler.ts apps/api/src/ws/state.ts
@@ -693,7 +693,7 @@ git commit -m "feat: persist DAG execution state to PostgreSQL with startup reco
 
 **Goal:** When an agent process crashes or times out, redistribute its queued (not-yet-started) tasks to other available agents of the same type. Already-running tasks are not transferred — they must be retried manually.
 
-- [ ] **Step 1: Add `reassignQueuedTasks` function to taskDispatcher.ts**
+- [x] **Step 1: Add `reassignQueuedTasks` function to taskDispatcher.ts**
 
 ```typescript
 import { prisma } from '../db/prisma.js';
@@ -790,7 +790,7 @@ async function reassignQueuedTasks(
 }
 ```
 
-- [ ] **Step 2: Call `reassignQueuedTasks` on agent failure**
+- [x] **Step 2: Call `reassignQueuedTasks` on agent failure**
 
 In `apps/api/src/ws/handler.ts`, in the one-shot agent `'done'` handler (around line 528), after the existing done handling, add:
 
@@ -844,7 +844,7 @@ if (stoppedAgentName) {
 }
 ```
 
-- [ ] **Step 3: Also handle agent timeout**
+- [x] **Step 3: Also handle agent timeout**
 
 In `apps/api/src/ws/handler.ts`, in the timeout handler for one-shot agents (around line 572, `setTimeout` callback), add before `clearRunningAgent`:
 
@@ -863,14 +863,14 @@ if (agentNameForProc) {
 }
 ```
 
-- [ ] **Step 4: TypeScript check**
+- [x] **Step 4: TypeScript check**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 Expected: No errors. Fix any import or type issues.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/ws/taskDispatcher.ts apps/api/src/ws/handler.ts
@@ -886,7 +886,7 @@ git commit -m "feat: reassign queued tasks to sibling agents on agent failure"
 
 **Goal:** Replace FIFO `tasks: TaskDispatchNode[]` with a priority-ordered queue. Tasks whose dependencies have just been satisfied (unblocked dependents) get placed at the front. Within the same dependency level, `high > medium > low` priority ordering applies.
 
-- [ ] **Step 1: Add priority insertion helper**
+- [x] **Step 1: Add priority insertion helper**
 
 In `apps/api/src/ws/taskDispatcher.ts`, add two helpers:
 
@@ -917,7 +917,7 @@ function sortByPriority(tasks: TaskDispatchNode[]): TaskDispatchNode[] {
 }
 ```
 
-- [ ] **Step 2: Use priority insertion in enqueueTaskAssignments**
+- [x] **Step 2: Use priority insertion in enqueueTaskAssignments**
 
 In `apps/api/src/ws/taskDispatcher.ts`, in `enqueueTaskAssignments` (line 361), change line 379 from:
 ```typescript
@@ -928,20 +928,20 @@ To:
 priorityInsert(queue.tasks, assignment.task);
 ```
 
-- [ ] **Step 3: Use priority sort in Fault Transfer**
+- [x] **Step 3: Use priority sort in Fault Transfer**
 
 In `reassignQueuedTasks` (added in Task 4), after collecting `orphanedTasks`, sort them:
 ```typescript
 const orphanedTasks = sortByPriority([...queue.tasks]);
 ```
 
-- [ ] **Step 4: TypeScript check**
+- [x] **Step 4: TypeScript check**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/ws/taskDispatcher.ts
@@ -959,7 +959,7 @@ git commit -m "feat: use priority-ordered task queue instead of FIFO"
 
 **Goal:** Let users edit any task field (title, description, agentType, dependsOn, expectedOutput, priority) in the confirmation panel before clicking "Confirm All". Currently only description editing is supported.
 
-- [ ] **Step 1: Add `updateTaskField` to appStore**
+- [x] **Step 1: Add `updateTaskField` to appStore**
 
 In `apps/web/src/store/appStore.ts`, add to the `AppState` interface (after `updateTaskStatus`):
 
@@ -987,7 +987,7 @@ updateTaskField: (planId, taskId, field, value) =>
   }),
 ```
 
-- [ ] **Step 2: Expand ConfirmationPanel to support full field editing**
+- [x] **Step 2: Expand ConfirmationPanel to support full field editing**
 
 Replace `apps/web/src/components/ConfirmationPanel.tsx`:
 
@@ -1173,7 +1173,7 @@ function InlineEdit({
 }
 ```
 
-- [ ] **Step 3: Update ChatView.tsx to pass `onUpdateField`**
+- [x] **Step 3: Update ChatView.tsx to pass `onUpdateField`**
 
 In `apps/web/src/components/ChatView.tsx`, in the `PlanRenderer` component (around line 25), add `onUpdateField` prop:
 
@@ -1192,7 +1192,7 @@ In `ConfirmationPanel` usage (line 42), add the new prop:
 />
 ```
 
-- [ ] **Step 4: Update useChat confirmPlan to send full task data**
+- [x] **Step 4: Update useChat confirmPlan to send full task data**
 
 In `apps/web/src/hooks/useChat.ts`, find the `confirmPlan` function. Update it to read the latest tasks from the store and send them as the payload:
 
@@ -1217,14 +1217,14 @@ const confirmPlan = useCallback((planId: string) => {
 }, [sessionId]);
 ```
 
-- [ ] **Step 5: TypeScript check**
+- [x] **Step 5: TypeScript check**
 
 ```bash
 cd apps/web && npx tsc --noEmit -p tsconfig.json
 ```
 Expected: No errors.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web/src/components/ConfirmationPanel.tsx apps/web/src/store/appStore.ts apps/web/src/components/ChatView.tsx apps/web/src/hooks/useChat.ts

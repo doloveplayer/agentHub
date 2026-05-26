@@ -1,21 +1,48 @@
 import { useEffect, useState } from 'react';
-import { Plus, MessageSquare, Trash2, Users, X } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
 
 interface Props { onCloseMobile?: () => void; }
 
+type LoadState = 'loading' | 'error' | 'done';
+
 export function SessionList({ onCloseMobile }: Props) {
-  const { sessions, activeSessionId, setSessions, setActiveSession, user, unreadCounts, clearUnread } = useAppStore();
+  const { sessions, activeSessionId, setSessions, setActiveSession, user, unreadCounts, clearUnread, sessionPermissionModes, setSessionPermissionMode } = useAppStore();
   const [showCreate, setShowCreate] = useState(false);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+
+  const loadSessions = () => {
+    setLoadState('loading');
+    api.getSessions()
+      .then((data) => {
+        setSessions(data);
+        // Populate session permission modes from loaded data
+        const modes: Record<string, string> = {};
+        for (const s of data) {
+          if (s.permissionMode) modes[s.id] = s.permissionMode;
+        }
+        useAppStore.setState((state) => ({
+          sessionPermissionModes: { ...state.sessionPermissionModes, ...modes },
+        }));
+        setLoadState('done');
+      })
+      .catch(() => {
+        setLoadState('error');
+      });
+  };
 
   useEffect(() => {
-    api.getSessions().then(setSessions).catch(console.error);
-  }, [setSessions]);
+    loadSessions();
+  }, []);
 
   const handleCreate = async (type: 'solo' | 'group') => {
     const session = await api.createSession(type === 'group' ? { type: 'group' } : {});
     setSessions([session, ...sessions]);
+    if (session.permissionMode) {
+      setSessionPermissionMode(session.id, session.permissionMode);
+    }
     setActiveSession(session.id);
     setShowCreate(false);
   };
@@ -29,12 +56,27 @@ export function SessionList({ onCloseMobile }: Props) {
     }));
   };
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
+  const handleDeleteClick = (id: string, title: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    await api.deleteSession(id);
-    setSessions(sessions.filter((s) => s.id !== id));
-    if (activeSessionId === id) setActiveSession(sessions[0]?.id ?? null);
+    setDeleteTarget({ id, title });
   };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    const { id } = deleteTarget;
+    await api.deleteSession(id);
+    const remaining = sessions.filter((s) => s.id !== id);
+    setSessions(remaining);
+    if (activeSessionId === id) {
+      // Find nearest session: prefer the one right after in the list, else first, else null
+      const idx = sessions.findIndex((s) => s.id === id);
+      const next = remaining[Math.min(idx, remaining.length - 1)];
+      setActiveSession(next?.id ?? null);
+    }
+    setDeleteTarget(null);
+  };
+
+  const cancelDelete = () => setDeleteTarget(null);
 
   return (
     <div className="w-full h-full bg-hub-surface border-r border-hub flex flex-col">
@@ -61,8 +103,29 @@ export function SessionList({ onCloseMobile }: Props) {
           )}
         </div>
       </div>
+
       <div className="flex-1 overflow-y-auto panel-scroll">
-        {sessions.map((s: any) => (
+        {loadState === 'loading' && (
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="w-5 h-5 text-hub-tertiary animate-spin" />
+            <span className="ml-2 text-sm text-hub-muted">Loading sessions...</span>
+          </div>
+        )}
+
+        {loadState === 'error' && (
+          <div className="flex flex-col items-center justify-center p-8 gap-3">
+            <AlertTriangle className="w-6 h-6 text-hub-warning" />
+            <p className="text-sm text-hub-muted">Failed to load sessions</p>
+            <button
+              onClick={loadSessions}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-hub-accent hover:bg-hub-accent/10 rounded-md transition"
+            >
+              <RefreshCw className="w-3 h-3" /> Retry
+            </button>
+          </div>
+        )}
+
+        {loadState === 'done' && sessions.map((s: any) => (
           <div
             key={s.id}
             onClick={() => handleSelect(s.id)}
@@ -96,17 +159,19 @@ export function SessionList({ onCloseMobile }: Props) {
               )}
             </div>
             <button
-              onClick={(e) => handleDelete(s.id, e)}
+              onClick={(e) => handleDeleteClick(s.id, s.title, e)}
               className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-hub-hover rounded-lg shrink-0 transition"
             >
               <Trash2 className="w-3 h-3 text-hub-tertiary" />
             </button>
           </div>
         ))}
-        {sessions.length === 0 && (
+
+        {loadState === 'done' && sessions.length === 0 && (
           <p className="text-hub-muted text-sm text-center p-6">No sessions yet</p>
         )}
       </div>
+
       <div className="p-3 border-t border-hub flex items-center gap-2.5">
         {user && (
           <>
@@ -115,6 +180,38 @@ export function SessionList({ onCloseMobile }: Props) {
           </>
         )}
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={cancelDelete}>
+          <div
+            className="bg-hub-raised border border-hub rounded-hub-xl shadow-2xl w-80 p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle className="w-5 h-5 text-hub-danger shrink-0" />
+              <h3 className="text-sm font-semibold text-hub-primary">Delete Session</h3>
+            </div>
+            <p className="text-xs text-hub-tertiary mb-4">
+              This will permanently delete <strong className="text-hub-secondary">{deleteTarget.title}</strong> and all its messages. This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={cancelDelete}
+                className="px-4 py-1.5 text-xs font-medium text-hub-secondary hover:bg-hub-hover rounded-md transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-1.5 text-xs font-medium bg-hub-danger text-white rounded-md hover:bg-hub-danger/80 transition"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

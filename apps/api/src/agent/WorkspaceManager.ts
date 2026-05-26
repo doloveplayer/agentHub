@@ -565,7 +565,7 @@ function parseDiffHunks(diff: string): DiffHunk[] {
       const newStart = Number(match[3]);
       const newLines = Number(match[4] ?? '1');
       current = {
-        id: `hunk-${oldStart}-${oldLines}-${newStart}-${newLines}`,
+        id: `hunk-${hunks.length}-${oldStart}-${oldLines}-${newStart}-${newLines}`,
         oldStart,
         oldLines,
         newStart,

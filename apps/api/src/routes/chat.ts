@@ -94,4 +94,19 @@ chat.post('/send', async (c) => {
   return c.json({ userMessageId: userMessage.id, agentMessages }, 201);
 });
 
+// DELETE /messages/:id — delete a message (must belong to user's session)
+chat.delete('/messages/:id', async (c) => {
+  const { userId } = c.get('user');
+  const messageId = c.req.param('id');
+
+  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  if (!message) return c.json({ error: 'Message not found' }, 404);
+
+  const session = await prisma.session.findUnique({ where: { id: message.sessionId } });
+  if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  await prisma.message.delete({ where: { id: messageId } });
+  return c.json({ ok: true });
+});
+
 export default chat;

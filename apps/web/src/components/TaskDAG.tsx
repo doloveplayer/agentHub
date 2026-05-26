@@ -2,7 +2,7 @@ import { useMemo, useState, useCallback } from 'react';
 import { ReactFlow, Handle, Position, type Node, type Edge, type Connection, Background } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { TaskState } from '../store/appStore';
-import { Pencil, Trash2, Plus, Save, X } from 'lucide-react';
+import { Pencil, Trash2, Plus, Save, X, RefreshCw } from 'lucide-react';
 
 const STATUS_STYLES: Record<string, { bg: string; border: string; text: string }> = {
   waiting: { bg: '#1e1e1e', border: '#3a3a3a', text: '#94a3b8' },
@@ -59,6 +59,7 @@ interface Props {
   onConnectDep?: (sourceId: string, targetId: string) => void;
   onEditTask?: (taskId: string) => void;
   onDeleteTask?: (taskId: string) => void;
+  onReplanTask?: (taskId: string) => void;
   /** Editable mode: show add-node toolbar and full config editing */
   editable?: boolean;
   onAddTask?: (task: { id: string; title: string; description: string; agentType: string; expectedOutput: string; priority: 'low' | 'medium' | 'high' }) => void;
@@ -73,7 +74,7 @@ interface AddNodeForm {
   priority: 'low' | 'medium' | 'high';
 }
 
-export function TaskDAG({ tasks, onTaskClick, onConnectDep, onEditTask, onDeleteTask, editable, onAddTask, onSavePlan }: Props) {
+export function TaskDAG({ tasks, onTaskClick, onConnectDep, onEditTask, onDeleteTask, onReplanTask, editable, onAddTask, onSavePlan }: Props) {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [addForm, setAddForm] = useState<AddNodeForm>({
@@ -268,7 +269,10 @@ export function TaskDAG({ tasks, onTaskClick, onConnectDep, onEditTask, onDelete
       </ReactFlow>
 
       {/* Right-click context menu */}
-      {contextMenu && (
+      {contextMenu && (() => {
+        const ctxTask = tasks.find(t => t.taskId === contextMenu.taskId);
+        const isFailed = ctxTask?.status === 'failed';
+        return (
         <div
           style={{ position: 'fixed', left: contextMenu.x, top: contextMenu.y, zIndex: 100 }}
           className="bg-hub-raised border border-hub rounded-hub-lg shadow-xl py-1 min-w-[160px] text-caption"
@@ -280,6 +284,14 @@ export function TaskDAG({ tasks, onTaskClick, onConnectDep, onEditTask, onDelete
           >
             <Pencil className="w-3 h-3" /> 编辑描述
           </button>
+          {isFailed && onReplanTask && (
+            <button
+              onClick={() => { onReplanTask(contextMenu.taskId); closeMenu(); }}
+              className="w-full text-left px-3 py-1.5 hover:bg-hub-accent/10 text-hub-accent flex items-center gap-2"
+            >
+              <RefreshCw className="w-3 h-3" /> 让 Main Agent 重新规划
+            </button>
+          )}
           <button
             onClick={() => { onDeleteTask?.(contextMenu.taskId); closeMenu(); }}
             className="w-full text-left px-3 py-1.5 hover:bg-hub-danger/10 text-hub-danger/80 flex items-center gap-2"
@@ -287,7 +299,8 @@ export function TaskDAG({ tasks, onTaskClick, onConnectDep, onEditTask, onDelete
             <Trash2 className="w-3 h-3" /> 删除任务
           </button>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

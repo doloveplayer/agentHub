@@ -41,6 +41,9 @@ export const api = {
 
   deleteSession: (id: string) => request<void>(`/sessions/${id}`, { method: 'DELETE' }),
 
+  updateSession: (id: string, body: { title?: string; permissionMode?: string; pinned?: boolean }) =>
+    request<any>(`/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+
   sendMessage: (sessionId: string, content: string, mentions?: { agentId: string; agentName: string; subPrompt: string }[]) =>
     request<SendResponse>('/chat/send', {
       method: 'POST',
@@ -115,4 +118,7 @@ export const api = {
 
   createReviewReport: (sessionId: string, content: string) =>
     request<{ report: any }>(`/review/${sessionId}/report`, { method: 'POST', body: JSON.stringify({ content }) }),
+
+  deleteMessage: (messageId: string) =>
+    request<{ ok: boolean }>(`/chat/messages/${messageId}`, { method: 'DELETE' }),
 };

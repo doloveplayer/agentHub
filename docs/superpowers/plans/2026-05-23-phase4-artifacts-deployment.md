@@ -60,7 +60,9 @@
   - 文件：`docker/nginx.conf`
 - [x] **iframe 内嵌预览**：右侧面板 Preview 标签页内嵌 iframe，不再常驻聊天区域底部
   - 文件：`apps/web/src/components/PreviewFrame.tsx` (简化) + `apps/web/src/components/AgentStatusPanel.tsx` (Preview 标签)
-- [ ] **HMR 自动刷新**：Vite HMR WebSocket 通过反向代理链路（待后续实现）
+- [x] **HMR 自动刷新**：Vite HMR WebSocket 通过反向代理链路
+  - HTML 响应注入 WebSocket polyfill 重写 HMR 连接路径 (`apps/api/src/routes/preview.ts`)
+  - HTTP upgrade 事件代理 WebSocket 到沙箱容器 (`apps/api/src/index.ts`)
 - [x] **截图对比卡片**：手动截取修改前后页面，以对比卡片发送
 
 ### 1.2 文档渲染

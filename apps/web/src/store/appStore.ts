@@ -68,6 +68,12 @@ export interface ReviewReportState {
   timestamp: number;
 }
 
+export interface Toast {
+  id: string;
+  message: string;
+  type: 'error' | 'info' | 'success';
+}
+
 interface AppState {
   token: string | null;
   user: { id: string; login: string; avatarUrl: string } | null;
@@ -78,6 +84,7 @@ interface AppState {
   agents: AgentConfig[];
   streamingMessages: Record<string, string[]>;
   trustMode: boolean;
+  sessionPermissionModes: Record<string, string>;
   orchestrationMode: 'parallel' | 'sequential';
   setOrchestrationMode: (mode: 'parallel' | 'sequential') => void;
   taskPlans: Record<string, TaskState[]>;
@@ -100,6 +107,8 @@ interface AppState {
   addAgentEvent: (messageId: string, event: AgentEvent) => void;
   addStreamingMessage: (sessionId: string, msgId: string) => void;
   setTrustMode: (mode: boolean) => void;
+  setSessionPermissionMode: (sessionId: string, mode: string) => void;
+  updateSessionInList: (sessionId: string, updates: Partial<Session>) => void;
   removeStreamingMessage: (sessionId: string, msgId: string) => void;
   isSessionStreaming: (sessionId: string) => boolean;
   setTaskPlan: (planId: string, tasks: TaskState[]) => void;
@@ -120,6 +129,10 @@ interface AppState {
   inboxNotifications: Record<string, number>;
   addInboxNotification: (agentName: string) => void;
   clearInboxNotifications: (agentName: string) => void;
+  toasts: Toast[];
+  addToast: (message: string, type?: 'error' | 'info' | 'success') => void;
+  deleteMessage: (sessionId: string, msgId: string) => void;
+  removeToast: (id: string) => void;
 }
 
 export interface TaskState {
@@ -147,6 +160,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   agents: [],
   streamingMessages: {},
   trustMode: true,
+  sessionPermissionModes: {},
   orchestrationMode: 'parallel' as const,
   taskPlans: {},
   planSummaries: {},
@@ -159,6 +173,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   agentTaskCounts: {},
   unreadCounts: {},
   inboxNotifications: {},
+  toasts: [],
 
   setToken: (token) => {
     if (token) localStorage.setItem('agenthub_token', token);
@@ -189,6 +204,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setTrustMode: (trustMode) => set({ trustMode }),
   setOrchestrationMode: (orchestrationMode) => set({ orchestrationMode }),
+
+  setSessionPermissionMode: (sessionId, mode) =>
+    set((state) => ({
+      sessionPermissionModes: { ...state.sessionPermissionModes, [sessionId]: mode },
+    })),
+
+  updateSessionInList: (sessionId, updates) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, ...updates } : s
+      ),
+    })),
 
   addStreamingMessage: (sessionId, msgId) => set((state) => {
     const existing = state.streamingMessages[sessionId] ?? [];
@@ -393,5 +420,32 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearInboxNotifications: (agentName) =>
     set((state) => ({
       inboxNotifications: { ...state.inboxNotifications, [agentName]: 0 },
+    })),
+
+  addToast: (message, type = 'error') => {
+    const id = 'toast-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+    set((state) => ({
+      toasts: [...state.toasts, { id, message, type }],
+    }));
+    // Auto-dismiss after 6 seconds
+    setTimeout(() => {
+      get().removeToast(id);
+    }, 6000);
+  },
+
+  deleteMessage: (sessionId, msgId) =>
+    set((state) => {
+      const sessionMsgs = state.messages[sessionId] ?? [];
+      return {
+        messages: {
+          ...state.messages,
+          [sessionId]: sessionMsgs.filter((m) => m.id !== msgId),
+        },
+      };
+    }),
+
+  removeToast: (id) =>
+    set((state) => ({
+      toasts: state.toasts.filter((t) => t.id !== id),
     })),
 }));

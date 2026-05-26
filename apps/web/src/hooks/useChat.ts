@@ -27,7 +27,7 @@ export function useChat(sessionId: string) {
   const agents = useAppStore((s) => s.agents);
   const trustMode = useAppStore((s) => s.trustMode);
   const orchestrationMode = useAppStore((s) => s.orchestrationMode);
-  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addSecurityReport, addReviewReport } = useAppStore();
+  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addSecurityReport, addReviewReport, addToast } = useAppStore();
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {
     if (!token || !sessionId) return Promise.reject(new Error('No token or sessionId'));
@@ -95,12 +95,22 @@ export function useChat(sessionId: string) {
               removeStreamingMessage(targetSessionId, data.agentMessageId);
               break;
             }
-            case 'stream_error':
-              console.error('[WS] Agent error:', data.error || data.message);
+            case 'stream_error': {
+              const errMsg = data.error || data.message || 'Unknown agent error';
+              console.error('[WS] Agent error:', errMsg);
+              addToast(errMsg, 'error');
               if (data.agentMessageId) {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                appendToMessage(targetSessionId, data.agentMessageId, `\n\n---\n**Error:** ${errMsg}`);
                 setMessageStatus(targetSessionId, data.agentMessageId, 'error');
                 removeStreamingMessage(targetSessionId, data.agentMessageId);
+              }
+              break;
+            }
+            case 'agent_queued':
+              if (data.agentMessageId) {
+                const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                appendToMessage(targetSessionId, data.agentMessageId, `\n\n---\n**Queued:** ${data.message || 'Waiting for available agent slot...'}`);
               }
               break;
             case 'connected':
@@ -278,6 +288,40 @@ export function useChat(sessionId: string) {
                 store.updateTaskStatus(data.planId, data.taskId, 'blocked');
               }
               break;
+            case 'replan_required':
+              if (data.planId && data.taskId) {
+                const replanStore = useAppStore.getState();
+                // Update the task status to reflect it needs manual intervention
+                replanStore.updateTaskField(data.planId, data.taskId, 'lastError', data.failedTask?.error || 'Replan required');
+                // Show a system message to notify the user
+                const replanMsg: Message = {
+                  id: 'replan-' + Date.now(),
+                  sessionId,
+                  senderType: 'agent',
+                  content: `## Replan Required\n\nTask "${data.failedTask?.title || data.taskId}" has failed after ${data.failedTask?.retryCount || 'multiple'} retries.\n\nError: ${data.failedTask?.error || 'Unknown error'}\n\nClick "让 Main Agent 重新规划" on the failed task node to request a new plan.`,
+                  status: 'done',
+                  createdAt: new Date().toISOString(),
+                };
+                replanStore.addMessage(sessionId, replanMsg);
+              }
+              break;
+            case 'manager_reviewing':
+              // Main Agent is analyzing the failure — frontend may show a spinner/indicator
+              break;
+            case 'manager_decision':
+              if (data.planId && data.taskId) {
+                const mdStore = useAppStore.getState();
+                const mdMsg: Message = {
+                  id: 'md-' + Date.now(),
+                  sessionId,
+                  senderType: 'agent',
+                  content: `## Main Agent Decision\n\nTask **${data.taskId}**: **${data.decision}**\n\nReason: ${data.reason}`,
+                  status: 'done',
+                  createdAt: new Date().toISOString(),
+                };
+                mdStore.addMessage(sessionId, mdMsg);
+              }
+              break;
             case 'plan_summary': {
               const store = useAppStore.getState();
               store.setPlanSummary(data.planId, {
@@ -360,15 +404,16 @@ export function useChat(sessionId: string) {
         if (socketPool.get(sessionId) === ws) socketPool.delete(sessionId);
       };
     });
-  }, [sessionId, token, appendToMessage, setMessageStatus, addAgentEvent, removeStreamingMessage]);
+  }, [sessionId, token, appendToMessage, setMessageStatus, addAgentEvent, removeStreamingMessage, addToast]);
 
   const send = useCallback(async (content: string, mentionedAgents: MentionTag[] = [], mode?: 'parallel' | 'sequential') => {
+    const msgId = 'temp-' + Date.now();
     const userMsg: Message = {
-      id: 'temp-' + Date.now(),
+      id: msgId,
       sessionId,
       senderType: 'human',
       content,
-      status: 'done',
+      status: 'sending',
       createdAt: new Date().toISOString(),
     };
     addMessage(sessionId, userMsg);
@@ -388,6 +433,7 @@ export function useChat(sessionId: string) {
 
     try {
       const result = await api.sendMessage(sessionId, content, mentions.length > 0 ? mentions : undefined);
+      setMessageStatus(sessionId, msgId, 'done');
 
       for (const am of result.agentMessages) {
         const agentMsg: Message = {
@@ -417,8 +463,39 @@ export function useChat(sessionId: string) {
       }));
     } catch (err: any) {
       console.error('[WS] Failed to send message:', err);
+      setMessageStatus(sessionId, msgId, 'error');
+      addToast(err.message || 'Failed to send message', 'error');
     }
-  }, [sessionId, agents, trustMode, orchestrationMode, addMessage, addStreamingMessage, ensureConnection]);
+  }, [sessionId, agents, trustMode, orchestrationMode, addMessage, addStreamingMessage, ensureConnection, setMessageStatus, addToast]);
+
+  const deleteMessage = useCallback(async (msgId: string) => {
+    try {
+      await api.deleteMessage(msgId);
+    } catch (err: any) {
+      console.error('[API] Failed to delete message:', err);
+    }
+    useAppStore.getState().deleteMessage(sessionId, msgId);
+  }, [sessionId]);
+
+  const regenerate = useCallback(async (agentMessageId: string) => {
+    const state = useAppStore.getState();
+    const sessionMsgs = state.messages[sessionId] ?? [];
+    const agentMsgIndex = sessionMsgs.findIndex((m) => m.id === agentMessageId);
+    if (agentMsgIndex < 0) return;
+
+    // Find the most recent human message before this agent message
+    let prevHumanMsg: Message | null = null;
+    for (let i = agentMsgIndex - 1; i >= 0; i--) {
+      if (sessionMsgs[i].senderType === 'human') {
+        prevHumanMsg = sessionMsgs[i];
+        break;
+      }
+    }
+    if (!prevHumanMsg) return;
+
+    // Re-send the previous user message
+    await send(prevHumanMsg.content);
+  }, [sessionId, send]);
 
   const respondToPermission = useCallback(async (permissionId: string, allowed: boolean) => {
     try {
@@ -432,6 +509,20 @@ export function useChat(sessionId: string) {
       console.error('[WS] Failed to send permission response:', err);
     }
   }, [ensureConnection]);
+
+  const sendReplan = useCallback(async (planId: string, taskId: string) => {
+    try {
+      const ws = await ensureConnection();
+      ws.send(JSON.stringify({
+        type: 'replan_failed_task',
+        planId,
+        taskId,
+      }));
+    } catch (err) {
+      console.error('[WS] Failed to send replan request:', err);
+      addToast('Failed to request re-plan', 'error');
+    }
+  }, [ensureConnection, addToast]);
 
   const confirmPlan = useCallback(async (planId: string) => {
     try {
@@ -473,5 +564,5 @@ export function useChat(sessionId: string) {
     if (sessionId) connect();
   }, [sessionId, connect]);
 
-  return { send, connect, stopAgent, respondToPermission, confirmPlan };
+  return { send, connect, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan };
 }

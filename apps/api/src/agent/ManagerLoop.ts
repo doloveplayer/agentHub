@@ -24,6 +24,9 @@ export interface FailureContext {
   error: string;
   output: string;
   upstreamResults: Array<{ taskId: string; output: string }>;
+  retryCount?: number;
+  fileTree?: string;
+  taskPrompt?: string;
 }
 
 const DECISION_OUTPUT_SCHEMA: Record<string, unknown> = {
@@ -71,6 +74,15 @@ export class ManagerLoop {
     failure: FailureContext,
     remainingTaskTitles: string[],
   ): Promise<ManagerDecision> {
+    const retryContext = failure.retryCount && failure.retryCount > 0
+      ? `该任务已失败 ${failure.retryCount} 次。` : '';
+    const fileTreeSection = failure.fileTree
+      ? `\n## Current file tree\n\`\`\`\n${failure.fileTree.slice(0, 2000)}\n\`\`\`\n`
+      : '';
+    const taskPromptSection = failure.taskPrompt
+      ? `\n## Original task prompt\n${failure.taskPrompt.slice(0, 1000)}\n`
+      : '';
+
     const prompt = [
       "You are the Main Agent (PM) for a DAG execution in AgentHub.",
       `Plan: ${planId} | Session: ${sessionId}`,
@@ -80,7 +92,10 @@ export class ManagerLoop {
       `- Agent: ${failure.failedAgentName}`,
       `- Error: ${failure.error}`,
       `- Output excerpt: ${failure.output.slice(0, 1500)}`,
+      retryContext ? `- Retry status: ${retryContext}` : '',
       "",
+      taskPromptSection,
+      fileTreeSection,
       "## Upstream completed tasks",
       ...(failure.upstreamResults.length > 0
         ? failure.upstreamResults.map(r => `- ${r.taskId}: ${r.output.slice(0, 300)}`)
@@ -101,7 +116,7 @@ export class ManagerLoop {
       '{ "action": "continue"|"replan"|"abort", "reason": "...", "nextTasks": [...] }',
       "",
       "For replan: each nextTask must have id, title, description, agentType, dependsOn (array of upstream task IDs), expectedOutput, priority.",
-    ].join("\n");
+    ].filter(Boolean).join("\n");
 
     const input: AgentTaskInput = {
       nodeRunId: `manager-${planId}-${Date.now()}`,

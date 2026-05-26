@@ -6,12 +6,15 @@ export interface User {
   email?: string;
 }
 
+export type PermissionMode = 'read_only' | 'ask' | 'smart' | 'trust';
+
 export interface Session {
   id: string;
   title: string;
   type?: 'solo' | 'group';
   userId: string;
   sandboxContainerId?: string;
+  permissionMode?: PermissionMode;
   agents?: SessionAgentInfo[];
   lastMessage?: { id: string; content: string; senderType: string; createdAt: string } | null;
   createdAt: string;
@@ -81,6 +84,7 @@ export interface TaskNode {
   dependsOn: string[];
   expectedOutput: string;
   priority: 'high' | 'medium' | 'low';
+  requiresApproval?: boolean;
 }
 
 export interface TaskPlan {
@@ -116,4 +120,19 @@ export interface DeployToPlatformEvent {
   target: 'docker' | 'vercel' | 'cloudflare';
   production?: boolean;
   confirmPhrase?: string;
+}
+
+export interface ReplanFailedTaskRequest {
+  type: 'replan_failed_task';
+  planId: string;
+  taskId: string;
+}
+
+export interface ReplanFailedTaskResult {
+  type: 'replan_result';
+  planId: string;
+  taskId: string;
+  action: 'continue' | 'replan' | 'abort';
+  reason: string;
+  nextTasks?: TaskNode[];
 }

@@ -127,7 +127,7 @@
   - 文件：`apps/web/src/components/` (Agent 管理页)
 - [ ] **用户 Provider 配置页**：每种 provider 的 API key / base URL 配置
   - 文件：新建 `apps/web/src/components/ProviderSettings.tsx`
-- [ ] **Agent 联系人卡片**：在 SessionList 和 ChatView 中展示头像、名称、能力标签（如"代码生成"/"代码审查"/"部署运维"）、在线状态
+- [x] **Agent 联系人卡片**：在 SessionList 和 ChatView 中展示头像、名称、能力标签（如"代码生成"/"代码审查"/"部署运维"）、在线状态
   - 文件：`apps/web/src/components/SessionList.tsx`, `ChatView.tsx`
 - [ ] **Agent Card 差异化渲染**：根据 `agent.provider` 渲染不同活动流区域
   - 文件：`apps/web/src/components/AgentCard.tsx`
@@ -196,13 +196,13 @@
 
 > **关联：** Tier 0 失败处理已知不足（重试耗尽后仅阻塞，未反馈 Main Agent）
 
-- [ ] **错误上下文收集**：任务重试耗尽时，自动收集：最后一次错误日志、任务 prompt、前置依赖产出、当前文件树
-- [ ] **`replan_failed_task` WS 消息**：将收集的上下文发给 Main Agent，Main Agent 分析失败原因并输出修正后的 TaskPlan（可为单个任务或子 DAG）
+- [x] **错误上下文收集**：任务重试耗尽时，自动收集：最后一次错误日志、任务 prompt、前置依赖产出、当前文件树
+- [x] **`replan_failed_task` WS 消息**：将收集的上下文发给 Main Agent，Main Agent 分析失败原因并输出修正后的 TaskPlan（可为单个任务或子 DAG）
   - 文件：`apps/api/src/ws/handler.ts` (新增消息类型)
-- [ ] **Main Agent 重新规划 prompt**：注入"该任务已失败 N 次，错误日志如下，请分析原因并给出修正方案"
-- [ ] **前端失败节点操作**：DAG 失败节点新增"让 Main Agent 重新规划"按钮（替代仅手动重试）
+- [x] **Main Agent 重新规划 prompt**：注入"该任务已失败 N 次，错误日志如下，请分析原因并给出修正方案"
+- [x] **前端失败节点操作**：DAG 失败节点新增"让 Main Agent 重新规划"按钮（替代仅手动重试）
   - 文件：`apps/web/src/components/TaskCard.tsx`, `TaskDAG.tsx`
-- [ ] **降级策略链**：自动重试 → 重新规划 → 人工介入（按优先级升级）
+- [x] **降级策略链**：自动重试 → 重新规划 → 人工介入（按优先级升级）
 
 ---
 
@@ -253,8 +253,8 @@
 > **2026-05-23 部分完成；部署状态卡片延后至 Phase 4 Tier 2**
 
 - [x] **复制消息**：`MessageBubble.tsx` 新增 hover 复制按钮（`navigator.clipboard.writeText`），2s 绿色勾确认
-- [ ] **部署状态卡片**：→ Phase 4 Tier 2（`deployment_status` WS 消息 + `DeployCard.tsx`）
-- [ ] **引用回复、删除、上下文管理**：→ Phase 4 Tier 3
+- [x] **部署状态卡片**：→ Phase 4 Tier 2（`deployment_status` WS 消息 + `DeployCard.tsx`）
+- [x] **引用回复、删除、上下文管理**：→ Phase 4 Tier 3（#31 消息操作菜单已实现）
 
 ---
 

@@ -1975,13 +1975,13 @@ Copy `.env.example` to `.env` and fill in real values.
 
 After all tasks complete, verify end-to-end:
 
-1. [ ] `docker compose up` starts all services without errors
-2. [ ] `bun run dev` in `apps/api` starts API on port 3000
-3. [ ] `bun run dev` in `apps/web` starts frontend on port 5173
-4. [ ] `curl http://localhost:3000/api/health` returns `{"status":"ok"}`
-5. [ ] Open browser → see Login page → click "Sign in with GitHub"
-6. [ ] After OAuth callback → redirected to chat page
-7. [ ] Create a new session → type a message → Agent bubble appears
-8. [ ] Agent stream outputs text character by character
-9. [ ] Refresh page → messages persist
-10. [ ] Create multiple sessions → switch between them → messages are isolated
+1. [x] `docker compose up` starts all services without errors
+2. [x] `bun run dev` in `apps/api` starts API on port 3000
+3. [x] `bun run dev` in `apps/web` starts frontend on port 5173
+4. [x] `curl http://localhost:3000/api/health` returns `{"status":"ok"}`
+5. [x] Open browser → see Login page → click "Sign in with GitHub"
+6. [x] After OAuth callback → redirected to chat page
+7. [x] Create a new session → type a message → Agent bubble appears
+8. [x] Agent stream outputs text character by character
+9. [x] Refresh page → messages persist
+10. [x] Create multiple sessions → switch between them → messages are isolated

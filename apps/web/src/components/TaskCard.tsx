@@ -8,10 +8,11 @@ interface Props {
   tasks: TaskState[];
   onConfirm?: () => void;
   onRetry?: (taskId: string) => void;
+  onReplan?: (taskId: string) => void;
   onPause?: () => void;
 }
 
-export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry, onPause }: Props) {
+export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry, onReplan, onPause }: Props) {
   const done = tasks.filter(t => t.status === 'done').length;
   const failed = tasks.filter(t => t.status === 'failed').length;
   const running = tasks.filter(t => t.status === 'running').length;
@@ -35,11 +36,11 @@ export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry
 
       {/* DAG visualization */}
       <div className="p-2">
-        <TaskDAG tasks={tasks} />
+        <TaskDAG tasks={tasks} onReplanTask={onReplan} />
       </div>
 
       {/* Action buttons */}
-      <div className="px-4 py-2 border-t border-hub flex gap-2">
+      <div className="px-4 py-2 border-t border-hub flex gap-2 flex-wrap">
         {onConfirm && (
           <button onClick={onConfirm}
             className="px-3 py-1.5 bg-hub-success hover:bg-hub-success/80 text-white text-xs rounded-md font-medium transition">
@@ -51,6 +52,14 @@ export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry
             <button key={t.taskId} onClick={() => onRetry(t.taskId)}
               className="px-3 py-1.5 bg-hub-danger hover:bg-hub-danger/80 text-white text-xs rounded-md font-medium transition">
               Retry {t.title}
+            </button>
+          ))
+        )}
+        {failed > 0 && onReplan && (
+          tasks.filter(t => t.status === 'failed').map(t => (
+            <button key={'replan-' + t.taskId} onClick={() => onReplan(t.taskId)}
+              className="px-3 py-1.5 bg-hub-accent hover:bg-hub-accent/80 text-white text-xs rounded-md font-medium transition">
+              让 Main Agent 重新规划 {t.title}
             </button>
           ))
         )}

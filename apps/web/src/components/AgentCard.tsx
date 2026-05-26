@@ -1,8 +1,31 @@
 import { useEffect, useRef, useState } from 'react';
 import { Square, Wrench } from 'lucide-react';
-import { agentColor } from './AgentMentionPopup';
 import { useAppStore } from '../store/appStore';
 import type { AgentEvent } from '../store/appStore';
+
+/** Derive capability tags from agent name / display name. */
+function deriveCapabilityTags(agentName?: string, displayName?: string): string[] {
+  const name = (agentName || displayName || '').toLowerCase();
+  const tags: string[] = [];
+  if (name.includes('code') || name.includes('codeagent')) tags.push('代码生成');
+  if (name.includes('review')) tags.push('代码审查');
+  if (name.includes('test')) tags.push('测试');
+  if (name.includes('devops') || name.includes('deploy') || name.includes('devagent')) tags.push('部署运维');
+  if (name.includes('planner') || name.includes('main')) tags.push('任务规划');
+  if (name.includes('frontend')) tags.push('前端开发');
+  if (name.includes('backend')) tags.push('后端开发');
+  if (name.includes('deps')) tags.push('依赖管理');
+  if (tags.length === 0) tags.push('通用');
+  return tags;
+}
+
+/** Generate a stable avatar color from a string. */
+function avatarColor(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 55%, 45%)`;
+}
 
 interface Props {
   agentId: string;
@@ -25,6 +48,12 @@ const EVENT_ICONS: Record<string, string> = {
   token_update: '📊',
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  running: '在线',
+  done: '完成',
+  idle: '在线',
+};
+
 export function AgentCard({ agentId, displayName, status, events, onStop, agentName, collapsed, viewMode }: Props) {
   const feedRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(true);
@@ -39,6 +68,11 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
     }
   }, [events.length, status]);
 
+  const capabilityTags = deriveCapabilityTags(agentName, displayName);
+  const avatarBg = avatarColor(agentName || displayName);
+  const avatarLetter = displayName.charAt(0).toUpperCase();
+  const statusLabel = STATUS_LABELS[status] || status;
+
   const isCollapsed = collapsed && !expanded;
 
   if (isCollapsed) {
@@ -47,12 +81,22 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
         onClick={() => setExpanded(true)}
         className="bg-hub-surface border-hub rounded-hub-lg mb-2 px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-hub-hover transition"
       >
-        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-          status === 'running' ? 'bg-hub-success agent-pulse' :
-          status === 'done' ? 'bg-hub-success' : 'bg-hub-muted'
-        }`} />
+        <div
+          className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0"
+          style={{ backgroundColor: avatarBg }}
+        >
+          {avatarLetter}
+        </div>
         <span className="text-caption font-medium text-hub-secondary truncate">{displayName}</span>
-        <span className="text-[10px] text-hub-muted ml-auto flex-shrink-0">{status}</span>
+        {capabilityTags.slice(0, 2).map(tag => (
+          <span key={tag} className="text-[9px] px-1 py-0.5 rounded-sm bg-hub-accent/10 text-hub-accent/80 flex-shrink-0 hidden sm:inline">
+            {tag}
+          </span>
+        ))}
+        <span className={`text-[10px] ml-auto flex-shrink-0 font-medium ${
+          status === 'running' ? 'text-hub-success' :
+          status === 'done' ? 'text-hub-muted' : 'text-hub-tertiary'
+        }`}>{statusLabel}</span>
       </div>
     );
   }
@@ -69,13 +113,22 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
     <div className="bg-hub-surface border-hub rounded-hub-lg mb-2.5 overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-hub">
-        <span
-          className={`w-2.5 h-2.5 rounded-full ${
-            status === 'running' ? 'bg-hub-success agent-pulse' :
-            status === 'done' ? 'bg-hub-success' : 'bg-hub-muted'
-          }`}
-        />
+        <div
+          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+          style={{ backgroundColor: avatarBg }}
+          title={displayName}
+        >
+          {avatarLetter}
+        </div>
         <span className="text-body font-semibold text-hub-primary truncate">{displayName}</span>
+        {/* Capability tags */}
+        <div className="flex items-center gap-0.5 flex-shrink-0">
+          {capabilityTags.map(tag => (
+            <span key={tag} className="text-[9px] px-1 py-0.5 rounded-sm bg-hub-accent/10 text-hub-accent/80">
+              {tag}
+            </span>
+          ))}
+        </div>
         {inboxCount > 0 && (
           <span
             className="text-[10px] px-1.5 py-0.5 rounded-full bg-hub-accent/20 text-hub-accent font-bold cursor-pointer hover:bg-hub-accent/30 transition"
@@ -108,7 +161,9 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
           </button>
         )}
         {status !== 'running' && (
-          <span className="ml-auto text-caption text-hub-muted flex-shrink-0 font-medium">{status}</span>
+          <span className={`ml-auto text-caption flex-shrink-0 font-medium ${
+            status === 'done' ? 'text-hub-muted' : 'text-hub-tertiary'
+          }`}>{statusLabel}</span>
         )}
       </div>
 

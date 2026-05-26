@@ -40,6 +40,7 @@ sessions.get('/', async (c) => {
       id: s.id,
       title: s.title,
       type: s.type,
+      permissionMode: s.permissionMode,
       userId: s.userId,
       sandboxContainerId: s.sandboxContainerId,
       agents: s.agents.map((sa) => ({
@@ -173,6 +174,43 @@ sessions.delete('/:id', async (c) => {
 
   await prisma.session.delete({ where: { id: sessionId } });
   return c.body(null, 204);
+});
+
+const updateSchema = z.object({
+  title: z.string().optional(),
+  permissionMode: z.enum(['read_only', 'ask', 'smart', 'trust']).optional(),
+  pinned: z.boolean().optional(),
+});
+
+// PATCH /:id — update session fields (title, permissionMode, etc.)
+sessions.patch('/:id', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('id');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const parsed = updateSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+
+  const updated = await prisma.session.update({
+    where: { id: sessionId },
+    data: parsed.data,
+  });
+
+  return c.json({
+    id: updated.id,
+    title: updated.title,
+    type: updated.type,
+    permissionMode: updated.permissionMode,
+    userId: updated.userId,
+    sandboxContainerId: updated.sandboxContainerId,
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  });
 });
 
 export default sessions;

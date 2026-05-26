@@ -1,6 +1,6 @@
 # Borrow HiveWard Features — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Borrow 5 proven modules from HiveWard (same-domain multi-agent orchestration platform) to fix AgentHub's core defects: static DAG execution, no runtime approval gate, fragile CLI spawn, single-platform lock-in, and read-only DAG visualization.
 
@@ -49,13 +49,13 @@ HiveWard's `claude-runtime.ts` wraps `@anthropic-ai/claude-agent-sdk`'s `query()
 
 **Design decision:** SDK runs on host with `cwd` pointing to Docker bind-mounted workspace. This eliminates per-message container startup while keeping filesystem isolation (container still exists for workspace). Agent process isolation is traded for SDK-level permission control which is more granular than our current trust-mode binary.
 
-- [ ] **Step 1: Install `@anthropic-ai/claude-agent-sdk`**
+- [x] **Step 1: Install `@anthropic-ai/claude-agent-sdk`**
 
 ```bash
 cd apps/api && npm install @anthropic-ai/claude-agent-sdk
 ```
 
-- [ ] **Step 2: Write ClaudeAgentSDK wrapper**
+- [x] **Step 2: Write ClaudeAgentSDK wrapper**
 
 ```typescript
 // apps/api/src/agent/ClaudeAgentSDK.ts
@@ -179,7 +179,7 @@ export class ClaudeAgentSDK {
 }
 ```
 
-- [ ] **Step 3: Implement permission mode mapping**
+- [x] **Step 3: Implement permission mode mapping**
 
 HiveWard maps `permissionProfile` (user-configured) → SDK `permissionMode` + `allowedTools`. Copy this mapping:
 
@@ -206,7 +206,7 @@ export function mapAllowedTools(profile: AgentPermissionProfile): string[] {
 }
 ```
 
-- [ ] **Step 4: Update processFactory to use ClaudeAgentSDK**
+- [x] **Step 4: Update processFactory to use ClaudeAgentSDK**
 
 ```typescript
 // apps/api/src/agent/processFactory.ts — replace ClaudeCodeProcess import
@@ -249,7 +249,7 @@ class ClaudeAgentSDKAdapter implements OneShotAgentProcess {
 }
 ```
 
-- [ ] **Step 5: Remove docker run overhead for one-shot tasks**
+- [x] **Step 5: Remove docker run overhead for one-shot tasks**
 
 Current `ClaudeCodeProcess.startDockerRun()` constructs `docker run ... agenthub-sandbox`. With SDK running on host and `cwd` pointing to bind-mounted workspace, Docker container only needs to exist for filesystem isolation — not for process execution. Update `dispatchTaskOneShot` in `taskDispatcher.ts`:
 
@@ -261,13 +261,13 @@ Current `ClaudeCodeProcess.startDockerRun()` constructs `docker run ... agenthub
 // The SDK uses hostWorkDir as cwd — container isolation is still provided for filesystem via bind mount.
 ```
 
-- [ ] **Step 6: Verify: TypeScript compilation**
+- [x] **Step 6: Verify: TypeScript compilation**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/api/package.json apps/api/package-lock.json
@@ -287,7 +287,7 @@ git commit -m "feat: add Claude Agent SDK wrapper replacing CLI spawn"
 
 HiveWard reference files: `packages/adapter/src/sdk-runtime/types.ts`, `packages/adapter/src/sdk-runtime/factory.ts`
 
-- [ ] **Step 1: Define AgentRuntime interface**
+- [x] **Step 1: Define AgentRuntime interface**
 
 ```typescript
 // apps/api/src/agent/AgentRuntime.ts
@@ -326,7 +326,7 @@ export interface AgentRuntime {
 }
 ```
 
-- [ ] **Step 2: Implement AgentRuntimeFactory**
+- [x] **Step 2: Implement AgentRuntimeFactory**
 
 ```typescript
 // apps/api/src/agent/AgentRuntimeFactory.ts
@@ -353,7 +353,7 @@ export class AgentRuntimeFactory {
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/api/src/agent/AgentRuntime.ts apps/api/src/agent/AgentRuntimeFactory.ts
@@ -374,7 +374,7 @@ HiveWard's `blueprintWorker.ts` Manager pattern: a Manager node runs its own Age
 
 **We don't copy HiveWard's full Manager/Slot/Handoff model.** That adds conceptual complexity. Instead, we extend the existing DAG with a lightweight "review-and-redispatch" loop: when a task fails, instead of blocking dependents, the Main Agent gets the error context and produces an updated sub-DAG.
 
-- [ ] **Step 1: Define ManagerLoop decision types**
+- [x] **Step 1: Define ManagerLoop decision types**
 
 ```typescript
 // apps/api/src/agent/ManagerLoop.ts
@@ -395,7 +395,7 @@ export interface FailureContext {
 }
 ```
 
-- [ ] **Step 2: Implement ManagerLoop.reviewAndDecide()**
+- [x] **Step 2: Implement ManagerLoop.reviewAndDecide()**
 
 This calls the Main Agent with failure context and gets a decision:
 
@@ -453,7 +453,7 @@ export class ManagerLoop {
 }
 ```
 
-- [ ] **Step 3: Wire ManagerLoop into handleDispatchedTaskFinished**
+- [x] **Step 3: Wire ManagerLoop into handleDispatchedTaskFinished**
 
 In `taskDispatcher.ts`, replace the current "block all dependents on failure" logic:
 
@@ -514,13 +514,13 @@ if (!success) {
 }
 ```
 
-- [ ] **Step 4: Verify: TypeScript compilation**
+- [x] **Step 4: Verify: TypeScript compilation**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/agent/ManagerLoop.ts apps/api/src/ws/taskDispatcher.ts
@@ -541,7 +541,7 @@ git commit -m "feat: add ManagerLoop for dynamic DAG re-planning on task failure
 
 This is critical for: deployment commands, database migrations, external API calls — any agent action with irreversible side effects.
 
-- [ ] **Step 1: Define ApprovalGate types**
+- [x] **Step 1: Define ApprovalGate types**
 
 ```typescript
 // apps/api/src/agent/ApprovalGate.ts
@@ -640,7 +640,7 @@ export interface ApprovalResult {
 }
 ```
 
-- [ ] **Step 2: Add approval field to TaskDispatchNode**
+- [x] **Step 2: Add approval field to TaskDispatchNode**
 
 ```typescript
 // In packages/shared/src/types.ts, add to TaskNode:
@@ -650,7 +650,7 @@ export interface TaskNode {
 }
 ```
 
-- [ ] **Step 3: Wire ApprovalGate into taskDispatcher**
+- [x] **Step 3: Wire ApprovalGate into taskDispatcher**
 
 In `dispatchTaskOneShot` and `startTaskAgent`, after agent finishes successfully, check `requiresApproval`:
 
@@ -679,7 +679,7 @@ if (task.requiresApproval && event.exitCode === 0) {
 }
 ```
 
-- [ ] **Step 4: Add WebSocket handler for approval actions**
+- [x] **Step 4: Add WebSocket handler for approval actions**
 
 In `handler.ts`, add cases for:
 ```typescript
@@ -695,7 +695,7 @@ case "approval_reply":
   break;
 ```
 
-- [ ] **Step 5: Build ApprovalPanel frontend component**
+- [x] **Step 5: Build ApprovalPanel frontend component**
 
 ```tsx
 // apps/web/src/components/ApprovalPanel.tsx
@@ -706,13 +706,13 @@ case "approval_reply":
 // Uses existing MessageBubble for reply rendering
 ```
 
-- [ ] **Step 6: Verify: TypeScript compilation**
+- [x] **Step 6: Verify: TypeScript compilation**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add apps/api/src/agent/ApprovalGate.ts apps/web/src/components/ApprovalPanel.tsx apps/api/src/ws/handler.ts apps/api/src/ws/taskDispatcher.ts
@@ -731,7 +731,7 @@ git commit -m "feat: add runtime approval gate for agent outputs"
 
 Making the DAG editable allows users to manually adjust the Main Agent's plan before execution, which is a frequently requested capability.
 
-- [ ] **Step 1: Add editable mode to TaskDAG**
+- [x] **Step 1: Add editable mode to TaskDAG**
 
 ```typescript
 // Extend TaskDAG.tsx with editable mode:
@@ -743,7 +743,7 @@ interface TaskDAGProps {
 }
 ```
 
-- [ ] **Step 2: Add node palette for drag-to-create**
+- [x] **Step 2: Add node palette for drag-to-create**
 
 ```tsx
 // Add a sidebar palette with draggable agent types:
@@ -754,7 +754,7 @@ const NODE_TYPES = [
 ];
 ```
 
-- [ ] **Step 3: Add edge creation with condition labels**
+- [x] **Step 3: Add edge creation with condition labels**
 
 ```tsx
 // On connection create, show condition selector:
@@ -763,7 +763,7 @@ const NODE_TYPES = [
 // Default to "success"
 ```
 
-- [ ] **Step 4: Sync edited DAG back to plan**
+- [x] **Step 4: Sync edited DAG back to plan**
 
 When user finishes editing, emit updated DAG back to backend as modified plan:
 
@@ -777,13 +777,13 @@ socket.send(JSON.stringify({
 }));
 ```
 
-- [ ] **Step 5: Verify: TypeScript compilation**
+- [x] **Step 5: Verify: TypeScript compilation**
 
 ```bash
 npx tsc --noEmit -p apps/web/tsconfig.json
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/web/src/components/BlueprintEditor.tsx apps/web/src/components/TaskDAG.tsx
