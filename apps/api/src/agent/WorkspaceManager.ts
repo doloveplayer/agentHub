@@ -1,6 +1,7 @@
 import { execFileSync, execSync } from 'child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, unlinkSync } from 'fs';
 import { dirname, relative, resolve } from 'path';
+import { tmpdir } from 'os';
 
 export interface Snapshot {
   /** git stash ref or branch name */
@@ -52,6 +53,12 @@ export interface FileConflict {
   filePath: string;
   agents: string[];
   ranges: { start: number; end: number }[];
+}
+
+export interface MergeResult {
+  filePath: string;
+  resolved: boolean;
+  agents: string[];
 }
 
 export class WorkspaceManager {
@@ -265,6 +272,113 @@ export class WorkspaceManager {
       console.error(`[workspace] rejectFileChanges failed: ${err.message?.slice(0, 120)}`);
       return false;
     }
+  }
+
+  /** Export a file's content from a specific version by ref */
+  static getFileAtVersion(workspacePath: string, ref: string, filePath: string): string | null {
+    const absPath = resolve(workspacePath);
+    try {
+      return runGit(absPath, ['show', `${ref}:${filePath}`]);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Attempt 3-way git merge for a file modified by two agents.
+   * Returns the merged content if successful, null if merge conflicts exist.
+   */
+  static tryAutoMergeFile(
+    workspacePath: string,
+    filePath: string,
+    baseContent: string,
+    oursContent: string,
+    theirsContent: string,
+  ): { resolved: boolean; content: string } {
+    const absPath = resolve(workspacePath);
+    const tmpPrefix = resolve(tmpdir(), `agenthub-merge-${Date.now()}`);
+    const baseFile = `${tmpPrefix}-base`;
+    const oursFile = `${tmpPrefix}-ours`;
+    const theirsFile = `${tmpPrefix}-theirs`;
+
+    try {
+      writeFileSync(baseFile, baseContent, 'utf8');
+      writeFileSync(oursFile, oursContent, 'utf8');
+      writeFileSync(theirsFile, theirsContent, 'utf8');
+
+      // git merge-file: ours base theirs → writes merged result into ours
+      execFileSync('git', ['merge-file', oursFile, baseFile, theirsFile], {
+        timeout: 10000,
+        stdio: 'pipe',
+      });
+
+      const merged = readFileSync(oursFile, 'utf8');
+      return { resolved: true, content: merged };
+    } catch (err: any) {
+      // git merge-file returns non-zero when there are conflicts
+      // The file still contains conflict markers we can use
+      if (err.status && err.status > 0) {
+        try {
+          const conflicted = readFileSync(oursFile, 'utf8');
+          return { resolved: false, content: conflicted };
+        } catch {
+          // file unreadable — fall through to return original oursContent
+        }
+      }
+      console.error(`[workspace] auto-merge failed for ${filePath}: ${err.message?.slice(0, 120)}`);
+      return { resolved: false, content: oursContent };
+    } finally {
+      // Clean up temp files
+      [baseFile, oursFile, theirsFile].forEach((f) => {
+        try { unlinkSync(f); } catch { /* ignore */ }
+      });
+    }
+  }
+
+  /**
+   * Attempt auto-merge for all detected conflicts.
+   * Uses 3-way git merge with the earliest agent's before-version as base.
+   */
+  static tryAutoMerge(
+    workspacePath: string,
+    conflicts: FileConflict[],
+    commonBaseRef: string,
+    agentRefs: Map<string, string>,
+  ): MergeResult[] {
+    const absPath = resolve(workspacePath);
+    const results: MergeResult[] = [];
+
+    for (const conflict of conflicts) {
+      const agentList = conflict.agents.slice(0, 2); // merge pairwise
+      if (agentList.length < 2) { results.push({ filePath: conflict.filePath, resolved: true, agents: agentList }); continue; }
+
+      const baseContent = WorkspaceManager.getFileAtVersion(absPath, commonBaseRef, conflict.filePath);
+      if (baseContent === null) { results.push({ filePath: conflict.filePath, resolved: false, agents: agentList }); continue; }
+
+      const oursContent = WorkspaceManager.getFileAtVersion(absPath, agentRefs.get(agentList[0]) ?? commonBaseRef, conflict.filePath);
+      const theirsContent = WorkspaceManager.getFileAtVersion(absPath, agentRefs.get(agentList[1]) ?? commonBaseRef, conflict.filePath);
+      if (oursContent === null || theirsContent === null) { results.push({ filePath: conflict.filePath, resolved: false, agents: agentList }); continue; }
+
+      const mergeResult = WorkspaceManager.tryAutoMergeFile(absPath, conflict.filePath, baseContent, oursContent, theirsContent);
+
+      if (mergeResult.resolved) {
+        // Write merged content back to workspace
+        try {
+          writeFileSync(resolve(absPath, conflict.filePath), mergeResult.content, 'utf8');
+          runGit(absPath, ['add', '--', conflict.filePath]);
+        } catch (err: any) {
+          console.error(`[workspace] failed to write merged ${conflict.filePath}: ${err.message?.slice(0, 120)}`);
+        }
+      }
+
+      results.push({
+        filePath: conflict.filePath,
+        resolved: mergeResult.resolved,
+        agents: agentList,
+      });
+    }
+
+    return results;
   }
 
   static detectConflicts(diffs: AgentFileDiff[]): FileConflict[] {

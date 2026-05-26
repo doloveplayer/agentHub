@@ -75,6 +75,7 @@ export const config = {
     queueTimeoutMs: optionalInt('AGENT_QUEUE_TIMEOUT_MS', 120_000),
     provider: optional('AGENTHUB_AGENT_PROVIDER', optional('AGENT_PROVIDER', 'claude-code')),
     contextWindowTokens: optionalInt('AGENT_CONTEXT_WINDOW_TOKENS', 200_000), // Claude Sonnet 4 default
+    perSessionMax: optionalInt('AGENT_PER_SESSION_MAX', 6),
   },
 
 } as const;

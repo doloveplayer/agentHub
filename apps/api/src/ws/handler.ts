@@ -327,7 +327,7 @@ async function handleChatMessage(
       ? data.mentions
       : [{ agentId: '', subPrompt: prompt, messageId: data.messageId || generateId() }];
 
-  const PER_SESSION_MAX = 3;
+  const PER_SESSION_MAX = config.agent.perSessionMax;
   const orchestrationMode = data.orchestrationMode || 'parallel';
 
   if (orchestrationMode === 'sequential' && mentions.length > 1) {

@@ -166,17 +166,49 @@ export function useChat(sessionId: string) {
             case 'conflict_detected': {
               const cfStore = useAppStore.getState();
               const conflictFiles = (data.conflicts || []).map((c: any) =>
-                `  • ${c.filePath} (${c.agents.join(', ')})`
+                `  - ${c.filePath} (${c.agents.join(', ')})`
               ).join('\n');
               const cfMsg: Message = {
                 id: 'cf-' + Date.now(),
                 sessionId,
                 senderType: 'agent',
-                content: `⚠️ 代码冲突检测：以下文件被多个 Agent 同时修改，请检查合并：\n${conflictFiles}`,
+                content: `## Conflict Detected\n\nMultiple agents modified the same files:\n${conflictFiles}`,
                 status: 'done',
                 createdAt: new Date().toISOString(),
               };
               cfStore.addMessage(sessionId, cfMsg);
+              break;
+            }
+            case 'conflict_resolved': {
+              const crStore = useAppStore.getState();
+              const mergedFiles = (data.files || []).map((f: any) =>
+                `  - ${f.filePath} (auto-merged from ${f.agents.join(', ')})`
+              ).join('\n');
+              const crMsg: Message = {
+                id: 'cr-' + Date.now(),
+                sessionId,
+                senderType: 'agent',
+                content: `## Auto-Merge Succeeded\n\nNon-overlapping changes automatically merged:\n${mergedFiles}`,
+                status: 'done',
+                createdAt: new Date().toISOString(),
+              };
+              crStore.addMessage(sessionId, crMsg);
+              break;
+            }
+            case 'conflict_unresolved': {
+              const cuStore = useAppStore.getState();
+              const conflictingFiles = (data.files || []).map((f: any) =>
+                `  - ${f.filePath} (conflict between ${f.agents.join(', ')})`
+              ).join('\n');
+              const cuMsg: Message = {
+                id: 'cu-' + Date.now(),
+                sessionId,
+                senderType: 'agent',
+                content: `## Manual Merge Required\n\nChanges overlap and could not be auto-merged:\n${conflictingFiles}\n\nPlease check the affected files and resolve conflicts manually.`,
+                status: 'done',
+                createdAt: new Date().toISOString(),
+              };
+              cuStore.addMessage(sessionId, cuMsg);
               break;
             }
             case 'inbox_update':
