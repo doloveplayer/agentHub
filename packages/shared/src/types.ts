@@ -80,7 +80,7 @@ export interface TaskNode {
   id: string;
   title: string;
   description: string;
-  agentType: 'CodeAgent' | 'ReviewAgent' | 'DevOpsAgent' | 'TestAgent' | 'DepsAgent';
+  agentType: 'code-agent' | 'review-agent' | 'test-agent';
   dependsOn: string[];
   expectedOutput: string;
   priority: 'high' | 'medium' | 'low';
