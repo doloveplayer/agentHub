@@ -17,7 +17,7 @@ export interface AgentEvent {
     tool?: string;
     path?: string;
     permissionId?: string;
-    tokenUsage?: { input: number; output: number; cacheRead?: number; contextPct?: number };
+    tokenUsage?: { input: number; output: number; cacheRead?: number; cacheCreate?: number; contextPct?: number };
   };
 }
 
