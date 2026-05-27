@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { User, Copy, Check, Quote, Wand2, Loader2, AlertCircle, MoreHorizontal } from 'lucide-react';
-import Editor from '@monaco-editor/react';
+import { User, Copy, Check, Quote, Loader2, AlertCircle, MoreHorizontal } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
@@ -167,42 +166,69 @@ const markdownComponents: Components = {
     );
   },
   code: ({ inline, className, children, ...props }: any) => {
-    const code = String(children ?? '').replace(/\n$/, '');
-    const language = /language-(\w+)/.exec(className ?? '')?.[1] ?? 'plaintext';
-    if (inline) return <code className={className} {...props}>{children}</code>;
-    return <InlineCodeEditor code={code} language={language} />;
+    const codeStr = String(children ?? '').replace(/\n$/, '');
+    if (inline) {
+      return <code className="bg-hub-raised px-1 py-0.5 rounded text-[12px] font-mono" {...props}>{children}</code>;
+    }
+    const language = /language-(\w+)/.exec(className ?? '')?.[1] ?? '';
+    return <FoldableCodeBlock language={language} code={codeStr} />;
   },
 };
 
-function InlineCodeEditor({ code, language }: { code: string; language: string }) {
-  const [value, setValue] = useState(code);
-  const height = Math.min(420, Math.max(120, code.split('\n').length * 20 + 44));
+function FoldableCodeBlock({ language, code }: { language: string; code: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const lines = code.split('\n');
+  const shouldFold = lines.length > 6;
+  const displayLines = expanded || !shouldFold ? lines : lines.slice(0, 6);
+  const displayCode = displayLines.join('\n');
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
+  };
+
   return (
-    <div className="my-3 overflow-hidden rounded-md border border-hub bg-hub-code">
-      <div className="flex items-center justify-between border-b border-hub px-3 py-1.5">
-        <span className="font-mono text-[11px] text-hub-tertiary">{language}</span>
-        <button
-          onClick={() => insertPrompt(`请修改并应用这段代码：\n\n\`\`\`${language}\n${value}\n\`\`\``)}
-          className="inline-flex h-7 w-7 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
-          title="让 Agent 修改这段代码"
-        >
-          <Wand2 className="h-3.5 w-3.5" />
-        </button>
+    <div className="relative my-2 rounded-lg overflow-hidden bg-[#1a1a2e] border border-hub">
+      {/* Header bar */}
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[#16162a] border-b border-hub text-[11px] text-hub-tertiary">
+        <span className="font-mono text-hub-muted">{language || 'code'}</span>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => insertPrompt(`请修改并应用这段代码：\n\n\`\`\`${language}\n${code}\n\`\`\``)}
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
+            title="让 Agent 修改这段代码"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button
+            onClick={handleCopy}
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
+            title="Copy"
+          >
+            {copied
+              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            }
+          </button>
+        </div>
       </div>
-      <Editor
-        height={`${height}px`}
-        language={language}
-        value={value}
-        theme="vs-dark"
-        onChange={(next) => setValue(next ?? '')}
-        options={{
-          minimap: { enabled: false },
-          scrollBeyondLastLine: false,
-          wordWrap: 'on',
-          fontSize: 12,
-          lineNumbersMinChars: 3,
-        }}
-      />
+      {/* Code area */}
+      <pre className="p-3 text-[12px] leading-relaxed overflow-x-auto font-mono text-hub-primary">
+        <code>{displayCode}</code>
+      </pre>
+      {/* Fold toggle */}
+      {shouldFold && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="w-full py-1.5 text-[11px] text-hub-link hover:bg-[#1e1e36] transition border-t border-hub"
+        >
+          {expanded ? '收起' : `展开全部 (${lines.length} 行)`}
+        </button>
+      )}
     </div>
   );
 }
