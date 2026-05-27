@@ -612,7 +612,7 @@ async function handleChatMessage(
                 if (validated) {
                   const planId = `plan-${Date.now()}`;
                   broadcast(sessionId, {
-                    type: 'plan_ready',
+                    type: 'plan_result',
                     planId,
                     planTitle: validated.planTitle,
                     summary: validated.summary,
@@ -1139,7 +1139,7 @@ async function preActivateGroupAgents(
                   if (validated) {
                     const planId = `plan-${Date.now()}`;
                     broadcast(sessionId, {
-                      type: 'plan_ready',
+                      type: 'plan_result',
                       planId,
                       planTitle: validated.planTitle,
                       summary: validated.summary,
