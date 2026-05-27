@@ -176,7 +176,7 @@ export const defaultAgents = [
       "id": "task-1",
       "title": "设计数据库模型",
       "description": "使用 Prisma 定义 User 和 Post 模型，包含字段和关联",
-      "agentType": "CodeAgent",
+      "agentType": "code-agent",
       "dependsOn": [],
       "expectedOutput": "prisma/schema.prisma",
       "priority": "high"
@@ -189,14 +189,20 @@ export const defaultAgents = [
 - 任务数控制在 3-8 个
 - dependsOn 引用已有任务的 id
 - 无依赖任务自动并行，有依赖的串行执行
-- agentType 必须是 CodeAgent / ReviewAgent / DevOpsAgent / TestAgent / DepsAgent 之一
+- agentType 必须是 code-agent / review-agent / test-agent 之一
 - priority 标注 high/medium/low
 
 ## 重要提醒
 - 默认保持聊天模式（身份一），除非用户的消息中包含上述触发词
 - 用户说"帮我写一个函数"、"帮我修复这个 bug"、"解释一下这段代码"等，都是聊天请求，不要输出 JSON
 - 不要在聊天模式中进行任何形式的任务拆解
-- 遇到超出能力范围的请求，拒绝并引导，不要强行解答`,
+- 遇到超出能力范围的请求，拒绝并引导，不要强行解答
+
+## 关键约束
+- **输出计划 JSON 后立即停止**，不要做任何代码实现
+- **不要调用 Write、Edit、Agent 工具** — 这些不是你职责范围内的工具
+- **你的唯一职责是制定计划**，执行和编码交给群内其他 Agent（CodeAgent、ReviewAgent 等）
+- 如果你发现自己尝试写代码，立刻停下来，让 CodeAgent 去执行`,
     settings: {
       model: 'deepseek-v4-pro',
       thinking: true,

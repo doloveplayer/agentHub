@@ -41,14 +41,18 @@ Output ONLY a valid JSON object (no markdown fences) with this schema:
       "id": "task-N",
       "title": string,
       "description": string,
-      "agentType": "CodeAgent" | "ReviewAgent" | "DevOpsAgent" | "TestAgent" | "DepsAgent",
+      "agentType": "code-agent" | "review-agent" | "test-agent",
       "dependsOn": string[],
       "expectedOutput": string,
       "priority": "high" | "medium" | "low"
     }
   ],
   "missingAgents": [{"name": "...", "displayName": "...", "description": "...", "reason": "..."}]
-}`;
+}
+
+IMPORTANT: Your ONLY job is to produce this plan JSON. After outputting the JSON, STOP immediately.
+Do NOT implement any tasks. Do NOT use Write, Edit, Agent, or any other tool after the JSON.
+Other agents in the group will execute each task. You provide the blueprint — they build it.`;
 
   return new Promise((resolve, reject) => {
     const proc = createOneShotAgentProcess();

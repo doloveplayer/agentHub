@@ -4,7 +4,7 @@ export const TaskNodeSchema = z.object({
   id: z.string().min(1),
   title: z.string().min(1),
   description: z.string().default(''),
-  agentType: z.enum(['CodeAgent', 'ReviewAgent', 'DevOpsAgent', 'TestAgent', 'DepsAgent']),
+  agentType: z.enum(['code-agent', 'review-agent', 'test-agent']),
   dependsOn: z.array(z.string()).default([]),
   expectedOutput: z.string().default(''),
   priority: z.enum(['high', 'medium', 'low']).default('medium'),

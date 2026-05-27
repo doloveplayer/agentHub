@@ -238,6 +238,7 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
   switch (data.type) {
     case 'chat':       handleChatMessage(sessionId, data); break;
     case 'permission_response': handlePermissionResponse(sessionId, data); break;
+    case 'permission_mode_change': handlePermissionModeChange(sessionId, data); break;
     case 'stop_agent': handleStopAgent(sessionId, data); break;
     case 'confirm_plan': handleConfirmPlan(sessionId, data); break;
     case 'deploy_to_platform': handleDeployToPlatform(sessionId, data); break;
@@ -470,6 +471,7 @@ async function handleChatMessage(
 
     if (useRepl && agentNameForProc) {
       // REPL path: reuse the persistent provider
+      replProvider.updateTrustMode(trustMode);
       agentCurrentMessage.set(agentNameForProc, mention.messageId);
       console.log(`[ws] REPL sendPrompt: session=${sessionId} agent=${agentNameForProc} msg=${mention.messageId}`);
       try {
@@ -515,7 +517,7 @@ async function handleChatMessage(
           }
           if (agentNameForProc && sandbox) {
             const agentType = agentNameToType.get(agentNameForProc) ?? agentNameForProc;
-            agentCoordinator.onToolUse({
+            const result = agentCoordinator.onToolUse({
               sessionId,
               agentName: agentNameForProc,
               agentType,
@@ -524,6 +526,18 @@ async function handleChatMessage(
               resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
               broadcast,
             }, event as any);
+            // If coordinator delegated, wake up the target REPL agent to check inbox
+            if (!result.allowed && result.delegateTo) {
+              const targetName = resolveAgentNameInSession(sessionId, result.delegateTo);
+              if (targetName) {
+                const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
+                if (targetProvider?.isAlive()) {
+                  const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentNameForProc}. Check your inbox at /workspace/_inbox_${targetName}.jsonl and respond with your plan.`;
+                  targetProvider.sendPrompt(inboxPrompt);
+                  console.log(`[ws] Inbox wake-up: ${agentNameForProc} delegated to ${targetName}`);
+                }
+              }
+            }
           }
           broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: event.toolName, input: event.input, inputPreview: JSON.stringify(event.input ?? {}).slice(0, 80) }, agentMessageId: mention.messageId, timestamp: Date.now() });
           break;
@@ -626,6 +640,14 @@ async function handleChatMessage(
               const planId = `plan-${Date.now()}`;
               broadcast(sessionId, { type: 'plan_result', planId, planTitle: plan.planTitle, summary: plan.summary, tasks: toTaskStates(plan, planId), agentMessageId: mention.messageId });
               console.log(`[ws] Planner plan_result broadcast: planId=${planId} tasks=${plan.tasks.length}`);
+              // Auto-dispatch tasks (one-shot path)
+              dispatchTasksToAgents(sessionId, planId, plan.tasks.map(t => ({
+                id: t.id, title: t.title, description: t.description,
+                agentType: t.agentType, dependsOn: t.dependsOn,
+                expectedOutput: t.expectedOutput, priority: t.priority || 'medium',
+              })), sandbox, plan.planTitle).catch((err: any) => {
+                console.error(`[ws] Plan auto-dispatch (one-shot) failed: ${err.message}`);
+              });
             }
           }
           const finalContent = accumulatedContent || (event.exitCode !== 0 ? '[Agent stopped]' : '[Agent finished]');
@@ -871,6 +893,22 @@ function handlePermissionResponse(sessionId: string, data: { permissionId: strin
   st.process.write(data.allowed ? 'y\n' : 'n\n');
 }
 
+function handlePermissionModeChange(sessionId: string, data: { mode: string }): void {
+  if (!data.mode) return;
+  sessionPermissionModes.set(sessionId, data.mode);
+  const trustMode = data.mode === 'smart' || data.mode === 'trust';
+  // Sync to all online REPL providers in this session
+  const procMap = agentProcesses.get(sessionId);
+  if (procMap) {
+    for (const [, entry] of procMap) {
+      if (entry.provider.updateTrustMode) {
+        entry.provider.updateTrustMode(trustMode);
+      }
+    }
+  }
+  console.log(`[ws] Permission mode changed: session=${sessionId.slice(0, 8)} mode=${data.mode} trustMode=${trustMode}`);
+}
+
 // ---- Plan handling ----
 
 function applyTaskModifications(tasks: any[]): any[] {
@@ -902,7 +940,7 @@ async function handleConfirmPlan(sessionId: string, data: { planId: string; task
   const normalized = applyTaskModifications(data.tasks.map((t: any) => ({ ...t, planId: data.planId })));
   const tasks: TaskDispatchNode[] = normalized.map((t: any) => ({
     id: t.taskId || t.id, title: t.title, description: t.description || '',
-    agentType: t.agentType || 'CodeAgent', dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn : [],
+    agentType: t.agentType || 'code-agent', dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn : [],
     expectedOutput: t.expectedOutput || '', priority: t.priority || 'medium',
   }));
 
@@ -952,7 +990,7 @@ async function handleRetryTask(sessionId: string, data: { planId: string; taskId
     const queue = agentTaskQueues.get(agentName);
     const dispatchNode: TaskDispatchNode = {
       id: taskNode.id, title: taskNode.title, description: taskNode.description || '',
-      agentType: taskNode.agentType || 'CodeAgent', dependsOn: [],
+      agentType: taskNode.agentType || 'code-agent', dependsOn: [],
       expectedOutput: taskNode.expectedOutput || '', priority: (taskNode.priority as 'high' | 'medium' | 'low') || 'medium',
     };
     prepareDispatchedTaskRetry(sessionId, data.planId, dispatchNode.id);
@@ -1030,7 +1068,7 @@ async function preActivateGroupAgents(
 ): Promise<void> {
   const sessionAgents = await prisma.sessionAgent.findMany({
     where: { sessionId },
-    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true } } },
+    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, settings: true } } },
   });
   if (sessionAgents.length === 0) return;
 
@@ -1052,33 +1090,78 @@ async function preActivateGroupAgents(
 
   console.log(`[ws] Pre-activating ${sessionAgents.length} agents for group session=${sessionId.slice(0, 8)}`);
 
-  // Start agents sequentially to avoid memory spike from simultaneous SDK init
-  for (const sa of sessionAgents) {
+  // Start agents in parallel — each runs in its own Docker container, no shared state.
+  await Promise.all(sessionAgents.map(async (sa) => {
     try {
       const provider = ProviderFactory.create('claude-code');
       const agentName = sa.agent.name;
 
       // Full event handler: routes REPL output to the correct messageId.
       // Uses agentCurrentMessage to track which message the agent is responding to.
+      const replAccumulatedContent = new Map<string, string>();
       provider.onEvent((event) => {
         const msgId = agentCurrentMessage.get(agentName) || `standby-${agentName}`;
         switch (event.type) {
-          case 'thinking':
+          case 'thinking': {
+            // Track accumulated content for plan extraction
+            if (event.content) {
+              const prev = replAccumulatedContent.get(agentName) || '';
+              replAccumulatedContent.set(agentName, prev + event.content);
+            }
             broadcast(sessionId, { type: 'stream_chunk', content: event.content || '', agentMessageId: msgId });
             broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: (event.content || '').slice(0, 120) }, agentMessageId: msgId, timestamp: Date.now() });
             break;
-          case 'tool_use':
+          }
+          case 'tool_use': {
             stateTracker.updateTool(msgId, event.toolName || '', event.toolInput || {});
             if (agentName && sandbox) {
-              agentCoordinator.onToolUse({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, { type: 'tool_use', toolName: event.toolName || '', input: (event.toolInput || {}) as Record<string, unknown> });
+              const result = agentCoordinator.onToolUse({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, { type: 'tool_use', toolName: event.toolName || '', input: (event.toolInput || {}) as Record<string, unknown> });
+              // If coordinator delegated, wake up the target REPL agent to check inbox
+              if (!result.allowed && result.delegateTo) {
+                const targetName = resolveAgentNameInSession(sessionId, result.delegateTo);
+                if (targetName) {
+                  const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
+                  if (targetProvider?.isAlive()) {
+                    const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentName}. Check your inbox at /workspace/_inbox_${targetName}.jsonl and respond with your plan.\n\nRead the inbox file now and execute the task.`;
+                    targetProvider.sendPrompt(inboxPrompt);
+                    console.log(`[ws] Inbox wake-up (REPL): ${agentName} delegated to ${targetName}`);
+                  }
+                }
+              }
             }
             broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: event.toolName, input: event.toolInput, inputPreview: JSON.stringify(event.toolInput || {}).slice(0, 80) }, agentMessageId: msgId, timestamp: Date.now() });
             break;
+          }
           case 'tool_result':
             broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { content: (event.content || '').slice(0, 200) }, agentMessageId: msgId, timestamp: Date.now() });
             break;
           case 'done': {
             stateTracker.setDone(msgId);
+            // Planner plan extraction + auto-dispatch (REPL path)
+            if (agentName === 'planner' && event.exitCode === 0) {
+              const plannerContent = replAccumulatedContent.get(agentName) || '';
+              if (plannerContent) {
+                const plan = extractAndValidate(plannerContent);
+                if (plan) {
+                  const planId = `plan-${Date.now()}`;
+                  broadcast(sessionId, { type: 'plan_result', planId, planTitle: plan.planTitle, summary: plan.summary, tasks: toTaskStates(plan, planId), agentMessageId: msgId });
+                  console.log(`[ws] Planner plan_result (REPL): planId=${planId} tasks=${plan.tasks.length}`);
+                  // Auto-dispatch tasks to agents
+                  dispatchTasksToAgents(sessionId, planId, plan.tasks.map(t => ({
+                    id: t.id, title: t.title, description: t.description,
+                    agentType: t.agentType, dependsOn: t.dependsOn,
+                    expectedOutput: t.expectedOutput, priority: t.priority || 'medium',
+                  })), sandbox, plan.planTitle).catch((err: any) => {
+                    console.error(`[ws] Plan auto-dispatch failed: ${err.message}`);
+                  });
+                }
+              }
+              // Stop planner from continuing — prevent it from trying to implement
+              replAccumulatedContent.delete(agentName);
+              provider.stopChild?.();
+            } else {
+              replAccumulatedContent.delete(agentName);
+            }
             if (agentName) MilestoneBroadcaster.classify({ sessionId, agentName, agentMessageId: msgId, eventType: 'done' });
             broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: '', exitCode: event.exitCode ?? 0 });
             // Scan for NEEDS HELP intents in recent output
@@ -1093,6 +1176,16 @@ async function preActivateGroupAgents(
             break;
         }
       });
+
+      // Initialize agent directory: CLAUDE.md + settings.json for persistent identity
+      AgentDirectoryManager.initialize(
+        sandbox.hostWorkDir,
+        agentName,
+        sa.agent.systemPrompt,
+        sa.agent.settings as Record<string, unknown> | null,
+      );
+      // Ensure inbox file exists so agent can be contacted from the start
+      InboxManager.init(sandbox.hostWorkDir, agentName);
 
       await provider.start(
         sessionId,
@@ -1114,7 +1207,7 @@ async function preActivateGroupAgents(
     } catch (err: any) {
       console.error(`[ws] Failed to activate agent ${sa.agent.name}: ${err.message}`);
     }
-  }
+  }));
 
   console.log(`[ws] Group agents ready: session=${sessionId.slice(0, 8)} count=${sessionAgents.length}`);
 }

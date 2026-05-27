@@ -76,7 +76,7 @@ export function toTaskStates(plan: TaskPlan, planId: string): TaskStatePayload[]
     taskId: task.id || `task-${index + 1}`,
     planId,
     title: task.title || `Task ${index + 1}`,
-    agentType: task.agentType || 'CodeAgent',
+    agentType: task.agentType || 'code-agent',
     status: 'waiting',
     dependsOn: Array.isArray(task.dependsOn) ? task.dependsOn : [],
     expectedOutput: task.expectedOutput || '',
