@@ -74,20 +74,16 @@ function sortByPriority(tasks: TaskDispatchNode[]): TaskDispatchNode[] {
 }
 
 function resolveAgentNameInSession(sessionId: string, agentType: string): string | null {
-  // Check active task queues
-  const queueNames = [...agentTaskQueues.keys()];
-  for (const name of queueNames) {
-    if (name === agentType) return name;
-  }
-  // Check running agent processes
+  const normalized = agentType.toLowerCase();
   const procMap = agentProcesses.get(sessionId);
   if (procMap) {
     for (const [name] of procMap) {
-      if (name === agentType) return name;
+      if (name.toLowerCase() === normalized) return name;
     }
   }
-  // Not yet started — trust agentType as the agent name.
-  // Built-in agents use name===type. Custom agents register with their name.
+  for (const [name] of agentTaskQueues) {
+    if (name.toLowerCase() === normalized) return name;
+  }
   return agentType;
 }
 
