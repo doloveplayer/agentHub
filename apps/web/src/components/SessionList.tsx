@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, MessageSquare, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
 
@@ -12,6 +12,8 @@ export function SessionList({ onCloseMobile }: Props) {
   const [showCreate, setShowCreate] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
 
   const loadSessions = () => {
     setLoadState('loading');
@@ -59,6 +61,24 @@ export function SessionList({ onCloseMobile }: Props) {
   const handleDeleteClick = (id: string, title: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setDeleteTarget({ id, title });
+  };
+
+  const handleStartRename = (id: string, title: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingId(id);
+    setEditingTitle(title);
+  };
+
+  const handleSaveRename = async (id: string) => {
+    const trimmed = editingTitle.trim();
+    if (trimmed && trimmed !== sessions.find(s => s.id === id)?.title) {
+      try {
+        await api.updateSession(id, { title: trimmed });
+        useAppStore.getState().updateSessionInList(id, { title: trimmed });
+      } catch { /* ignore */ }
+    }
+    setEditingId(null);
+    setEditingTitle('');
   };
 
   const confirmDelete = async () => {
@@ -140,7 +160,28 @@ export function SessionList({ onCloseMobile }: Props) {
             )}
             <div className="min-w-0 flex-1">
               <div className="text-sm text-hub-secondary truncate flex items-center gap-1.5">
-                <span className="truncate">{s.title}</span>
+                {editingId === s.id ? (
+                  <input
+                    value={editingTitle}
+                    onChange={(e) => setEditingTitle(e.target.value)}
+                    onBlur={() => handleSaveRename(s.id)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRename(s.id); if (e.key === 'Escape') { setEditingId(null); setEditingTitle(''); } }}
+                    autoFocus
+                    onClick={(e) => e.stopPropagation()}
+                    className="bg-hub-input border border-hub-accent rounded px-1.5 py-0.5 text-sm text-hub-primary w-full outline-none"
+                  />
+                ) : (
+                  <>
+                    <span className="truncate">{s.title}</span>
+                    <button
+                      onClick={(e) => handleStartRename(s.id, s.title, e)}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-hub-hover rounded shrink-0 transition"
+                      title="Rename"
+                    >
+                      <Pencil className="w-3 h-3 text-hub-tertiary" />
+                    </button>
+                  </>
+                )}
                 {s.type === 'group' && s.agents && (
                   <span className="text-[10px] text-hub-tertiary shrink-0">
                     ({s.agents.length})

@@ -25,7 +25,7 @@ export interface PortForwardInfo {
 const portForwards = new Map<string, { server: http.Server; info: PortForwardInfo }>();
 
 export class SandboxManager {
-  static async create(sessionId: string): Promise<SandboxInfo> {
+  static async create(sessionId: string, memoryMb?: number): Promise<SandboxInfo> {
     const hostWorkDir = resolve(SANDBOXES_ROOT, sessionId);
     if (!existsSync(hostWorkDir)) {
       mkdirSync(hostWorkDir, { recursive: true });
@@ -35,6 +35,8 @@ export class SandboxManager {
 
     // Clean up any stale container with same name
     await this.cleanupContainer(containerName);
+
+    const mem = memoryMb ?? config.sandbox.soloMemoryMb;
 
     const container = await docker.createContainer({
       name: containerName,
@@ -46,7 +48,7 @@ export class SandboxManager {
       Tty: false,
       OpenStdin: false,
       HostConfig: {
-        Memory: 512 * 1024 * 1024,
+        Memory: mem * 1024 * 1024,
         Binds: [`${hostWorkDir}:/workspace`],
       },
     });

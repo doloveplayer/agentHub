@@ -65,13 +65,15 @@ export const config = {
     hostDockerSocket: optional('HOST_DOCKER_SOCKET', '/var/run/docker.sock'),
     image: optional('SANDBOX_IMAGE', 'agenthub-sandbox:latest'),
     root: optional('SANDBOXES_ROOT', resolve(PROJECT_ROOT, '.sandboxes')),
+    soloMemoryMb: optionalInt('SOLO_SANDBOX_MEMORY_MB', 512),
+    groupMemoryMb: optionalInt('GROUP_SANDBOX_MEMORY_MB', 2048),
   },
 
   frontendUrl: optional('FRONTEND_URL', 'http://localhost:5175'),
 
   agent: {
     timeoutMs: optionalInt('AGENT_TIMEOUT_MS', 300_000),  // 5 min default
-    maxConcurrent: optionalInt('MAX_CONCURRENT_AGENTS', 5),
+    maxConcurrent: optionalInt('MAX_CONCURRENT_AGENTS', 2),
     queueTimeoutMs: optionalInt('AGENT_QUEUE_TIMEOUT_MS', 120_000),
     provider: optional('AGENTHUB_AGENT_PROVIDER', optional('AGENT_PROVIDER', 'claude-code')),
     contextWindowTokens: optionalInt('AGENT_CONTEXT_WINDOW_TOKENS', 200_000), // Claude Sonnet 4 default

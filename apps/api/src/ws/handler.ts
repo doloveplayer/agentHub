@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
 import { createSDKAgentProcess, createOneShotAgentProcess } from '../agent/processFactory.js';
+import { ProviderFactory } from '../agent/providers/factory.js';
 import { InboxManager } from '../agent/InboxManager.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import { stateTracker } from '../agent/StateTracker.js';
@@ -8,6 +9,8 @@ import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
 import { selectDefaultAgent, toTaskStates } from '../agent/turns.js';
 import { getApprovalGate } from '../agent/ApprovalGate.js';
 import { extractAndValidate } from '../agent/PlanValidator.js';
+import { IntentParser } from '../agent/IntentParser.js';
+import { InboxWakeup } from '../agent/InboxWakeup.js';
 import { prisma } from '../db/prisma.js';
 import { verifyToken } from '../lib/jwt.js';
 import { config } from '../config.js';
@@ -20,6 +23,7 @@ import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDete
 import {
   sessions, sessionPermissionModes, agentStates, agentProcesses, sandboxes,
   runningAgentCount, incRunningAgentCount, decRunningAgentCount,
+  preActivatingSessions,
   pendingAgentQueue, enqueuePending, dequeuePending,
   perSessionPendingQueues, enqueuePerSession, dequeuePerSession,
   sessionsWithMilestones, sequentialQueues,
@@ -85,6 +89,7 @@ async function handleConnection(ws: WebSocket, request: any) {
   // Register message handler FIRST — before any async DB queries.
   const earlyMessages: { data: any }[] = [];
   let sandboxReady = false;
+  let sessionType: string | null = null;
   ws.on('message', (raw) => {
     let data: any;
     try { data = JSON.parse(raw.toString()); } catch { return; }
@@ -109,7 +114,7 @@ async function handleConnection(ws: WebSocket, request: any) {
 
   try {
     const session = await prisma.session.findUnique({
-      where: { id: sessionId }, select: { id: true, userId: true, permissionMode: true },
+      where: { id: sessionId }, select: { id: true, userId: true, permissionMode: true, type: true },
     });
     if (!session || session.userId !== userId) {
       sendTo(ws, { type: 'error', message: 'Session not found or access denied' });
@@ -117,6 +122,7 @@ async function handleConnection(ws: WebSocket, request: any) {
       return;
     }
     sessionPermissionModes.set(sessionId, session.permissionMode || 'ask');
+    sessionType = session.type;
   } catch {
     sendTo(ws, { type: 'error', message: 'Failed to verify session' });
     ws.close(4000, 'Internal error');
@@ -127,7 +133,7 @@ async function handleConnection(ws: WebSocket, request: any) {
   sessions.get(sessionId)!.add(ws);
 
   try {
-    const sb = await getOrCreateSandbox(sessionId);
+    const sb = await getOrCreateSandbox(sessionId, sessionType);
     await prisma.session.update({
       where: { id: sessionId }, data: { sandboxContainerId: sb.containerId },
     }).catch(() => {});
@@ -135,6 +141,17 @@ async function handleConnection(ws: WebSocket, request: any) {
     if (!sessionsWithMilestones.has(sessionId)) {
       sessionsWithMilestones.add(sessionId);
       MilestoneBroadcaster.on(sessionId, (event) => { broadcast(sessionId, event); });
+    }
+
+    // Group session: pre-activate all agents so they're online and listening.
+    // Must await so REPL providers are ready before any chat messages arrive.
+    if (sessionType === 'group') {
+      preActivatingSessions.add(sessionId);
+      try {
+        await preActivateGroupAgents(sessionId, sb);
+      } finally {
+        preActivatingSessions.delete(sessionId);
+      }
     }
   } catch (err: any) {
     console.error(`[ws] Sandbox creation failed: session=${sessionId} error=${err.message}`);
@@ -419,7 +436,7 @@ async function handleChatMessage(
             sessionMemberBlock = `\n## 当前群聊成员\n${memberLines}\n\n请根据成员专长分配任务。agentType 仅限以上成员。如需其他类型 Agent，在 plan 的 missingAgents 字段中列出：\n\`\`\`json\n"missingAgents": [{"name": "...", "displayName": "...", "description": "...", "reason": "..."}]\n\`\`\`\n`;
           }
         }
-        agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
+        agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostWorkDir) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
         isPlannerAgent = agent.name === 'planner';
         if (sandbox) AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.settings as Record<string, unknown> | null);
       }
@@ -446,8 +463,25 @@ async function handleChatMessage(
       diffAgentName,
       `Before ${diffAgentName} turn`,
     );
-    // SDK-first: use Claude Agent SDK for typed streaming + native session persistence.
-    // Falls back to CLI spawn (docker run) if SDK is unavailable.
+    // Group session: try REPL provider first (pre-activated agents are already online).
+    // Falls back to one-shot for solo sessions or if REPL is unavailable.
+    const replProvider = agentProcesses.get(sessionId)?.get(agentNameForProc || '')?.provider;
+    const useRepl = replProvider && replProvider.isAlive();
+
+    if (useRepl && agentNameForProc) {
+      // REPL path: reuse the persistent provider
+      agentCurrentMessage.set(agentNameForProc, mention.messageId);
+      console.log(`[ws] REPL sendPrompt: session=${sessionId} agent=${agentNameForProc} msg=${mention.messageId}`);
+      try {
+        replProvider.sendPrompt(agentPrompt);
+      } catch (err: any) {
+        console.error(`[ws] REPL sendPrompt failed: ${err.message}`);
+        broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed: ${err.message}` });
+      }
+      return; // Event handler already registered in preActivateGroupAgents
+    }
+
+    // One-shot fallback (solo sessions or REPL unavailable)
     const agent = (await createSDKAgentProcess()) || createOneShotAgentProcess();
     if (agentNameForProc) {
       agent.onClaudeSession = (sid: string) => { agentClaudeSessions.set(`${sessionId}:${agentNameForProc}`, sid); };
@@ -526,13 +560,21 @@ async function handleChatMessage(
           permissionTimeouts.set(pid, timeout);
           break;
         }
+        case 'token_usage':
+          {
+            const input = event.inputTokens || 0;
+            const output = event.outputTokens || 0;
+            const cacheRead = event.cacheReadTokens || 0;
+            const cacheCreate = event.cacheCreateTokens || 0;
+            const contextPct = input > 0 ? Math.round((input / config.agent.contextWindowTokens) * 100) : 0;
+            stateTracker.updateTokenUsage(mention.messageId, { input, output, cacheRead, cacheCreate });
+            broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input, output, cacheRead, cacheCreate, contextPct } }, agentMessageId: mention.messageId, timestamp: Date.now() });
+          }
+          break;
         case 'system':
           {
-            const sysInput = (event as any).inputTokens || 0;
-            const sysOutput = (event as any).outputTokens || 0;
-            const contextPct = sysInput > 0 ? Math.round((sysInput / config.agent.contextWindowTokens) * 100) : 0;
-            stateTracker.updateTokenUsage(mention.messageId, { input: sysInput, output: sysOutput, cacheRead: 0, cacheCreate: 0 });
-            broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input: sysInput, output: sysOutput, contextPct } }, agentMessageId: mention.messageId, timestamp: Date.now() });
+            // System events carry init metadata (sessionId, etc.) — no token usage.
+            // Token usage arrives via dedicated token_usage events from SDK assistant messages.
           }
           break;
         case 'done': {
@@ -544,6 +586,39 @@ async function handleChatMessage(
           }
           stateTracker.setDone(mention.messageId);
           if (agentNameForProc) MilestoneBroadcaster.classify({ sessionId, agentName: agentNameForProc, agentMessageId: mention.messageId, eventType: 'done' });
+          // Parse NEEDS HELP intents from agent output and route to target agents
+          if (agentNameForProc && sandbox && accumulatedContent) {
+            const intents = IntentParser.scan(accumulatedContent);
+            for (const intent of intents) {
+              const targetName = resolveAgentNameInSession(sessionId, intent.targetAgentName);
+              if (targetName && targetName !== agentNameForProc) {
+                InboxManager.write(sandbox.hostWorkDir, targetName, {
+                  type: 'intervention_request',
+                  id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  from: agentNameForProc,
+                  to: targetName,
+                  summary: `${agentNameForProc} needs help: ${intent.description}`,
+                  risk: 'high',
+                  timestamp: Date.now(),
+                });
+                // Real-time REPL delivery: if target agent is online, send inbox content immediately
+                const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
+                if (targetProvider && targetProvider.isAlive()) {
+                  const inboxPrompt = `\n## Inbox message from ${agentNameForProc}\n${intent.description}\n\nRespond if this needs your attention.`;
+                  targetProvider.sendPrompt(inboxPrompt);
+                  console.log(`[ws] NEEDS HELP delivered via REPL: ${agentNameForProc} → ${targetName}`);
+                }
+                broadcast(sessionId, {
+                  type: 'inbox_update',
+                  agentName: targetName,
+                  fromAgent: agentNameForProc,
+                  summary: intent.description,
+                  timestamp: Date.now(),
+                });
+                console.log(`[ws] NEEDS HELP routed: ${agentNameForProc} → ${targetName}: ${intent.description.slice(0, 80)}`);
+              }
+            }
+          }
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
           if (isPlannerAgent && event.exitCode === 0 && accumulatedContent) {
             const plan = extractAndValidate(accumulatedContent);
@@ -944,3 +1019,103 @@ export function attachWebSocket(server: Server): void {
 export function handleWebSocket(ws: WebSocket, request: any): void {
   handleConnection(ws, request);
 }
+
+/**
+ * Pre-activate all agents in a group session so they're online and listening.
+ * Each agent gets a standby prompt and a persistent REPL process.
+ */
+async function preActivateGroupAgents(
+  sessionId: string,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+): Promise<void> {
+  const sessionAgents = await prisma.sessionAgent.findMany({
+    where: { sessionId },
+    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true } } },
+  });
+  if (sessionAgents.length === 0) return;
+
+  const standbyPrompt = (displayName: string, agentName: string) =>
+    [
+      `## Standby mode`,
+      `You are **${displayName}** (${agentName}), an active member of this group chat.`,
+      ``,
+      `Other agents may send you messages via your inbox at /workspace/_inbox_${agentName}.jsonl.`,
+      `Check it after receiving this prompt and respond if any messages are waiting.`,
+      ``,
+      `Monitor the conversation. Speak up when:`,
+      `- Another agent explicitly requests your help ("NEEDS HELP from @${displayName}")`,
+      `- You see an issue in your domain that needs attention`,
+      `- The user or planner asks for your expertise`,
+      ``,
+      `Stay concise. If nothing needs your attention, just acknowledge you're online.`,
+    ].join('\n');
+
+  console.log(`[ws] Pre-activating ${sessionAgents.length} agents for group session=${sessionId.slice(0, 8)}`);
+
+  // Start agents sequentially to avoid memory spike from simultaneous SDK init
+  for (const sa of sessionAgents) {
+    try {
+      const provider = ProviderFactory.create('claude-code');
+      const agentName = sa.agent.name;
+
+      // Full event handler: routes REPL output to the correct messageId.
+      // Uses agentCurrentMessage to track which message the agent is responding to.
+      provider.onEvent((event) => {
+        const msgId = agentCurrentMessage.get(agentName) || `standby-${agentName}`;
+        switch (event.type) {
+          case 'thinking':
+            broadcast(sessionId, { type: 'stream_chunk', content: event.content || '', agentMessageId: msgId });
+            broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: (event.content || '').slice(0, 120) }, agentMessageId: msgId, timestamp: Date.now() });
+            break;
+          case 'tool_use':
+            stateTracker.updateTool(msgId, event.toolName || '', event.toolInput || {});
+            if (agentName && sandbox) {
+              agentCoordinator.onToolUse({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, { type: 'tool_use', toolName: event.toolName || '', input: (event.toolInput || {}) as Record<string, unknown> });
+            }
+            broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: event.toolName, input: event.toolInput, inputPreview: JSON.stringify(event.toolInput || {}).slice(0, 80) }, agentMessageId: msgId, timestamp: Date.now() });
+            break;
+          case 'tool_result':
+            broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { content: (event.content || '').slice(0, 200) }, agentMessageId: msgId, timestamp: Date.now() });
+            break;
+          case 'done': {
+            stateTracker.setDone(msgId);
+            if (agentName) MilestoneBroadcaster.classify({ sessionId, agentName, agentMessageId: msgId, eventType: 'done' });
+            broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: '', exitCode: event.exitCode ?? 0 });
+            // Scan for NEEDS HELP intents in recent output
+            if (agentName && sandbox && msgId) {
+              // Intent scanning handled in sendPrompt caller
+            }
+            agentCoordinator.onAgentDone({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, event.exitCode ?? 0, '');
+            break;
+          }
+          case 'error':
+            broadcast(sessionId, { type: 'stream_error', agentMessageId: msgId, error: event.message || 'Unknown error' });
+            break;
+        }
+      });
+
+      await provider.start(
+        sessionId,
+        standbyPrompt(sa.agent.displayName, agentName),
+        sandbox.containerId,
+        sandbox.workDir,
+        { agentName, hostWorkDir: sandbox.hostWorkDir, trustMode: true },
+      );
+
+      // Register in agentProcesses for lifecycle tracking
+      if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
+      agentProcesses.get(sessionId)!.set(agentName, {
+        provider,
+        timer: setTimeout(() => {}, config.agent.timeoutMs),
+        agentId: sa.agent.id,
+      });
+
+      console.log(`[ws] Agent activated: ${agentName} for session=${sessionId.slice(0, 8)}`);
+    } catch (err: any) {
+      console.error(`[ws] Failed to activate agent ${sa.agent.name}: ${err.message}`);
+    }
+  }
+
+  console.log(`[ws] Group agents ready: session=${sessionId.slice(0, 8)} count=${sessionAgents.length}`);
+}
+

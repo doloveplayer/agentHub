@@ -26,7 +26,7 @@ const EMPTY_REVIEW_REPORTS: any[] = [];
 
 /** Renders ConfirmationPanel below a Planner agent's message (DAG lives in sidebar Tasks tab) */
 function PlanRenderer({
-  planFromMessage, taskPlans, confirmedPlans, setConfirmedPlans, setTaskPlan, confirmPlan,
+  planFromMessage, taskPlans, confirmedPlans, setConfirmedPlans, setTaskPlan, confirmPlan, renderedPlanIds,
 }: {
   planFromMessage: any;
   taskPlans: Record<string, any[]>;
@@ -34,10 +34,14 @@ function PlanRenderer({
   setConfirmedPlans: React.Dispatch<React.SetStateAction<Set<string>>>;
   setTaskPlan: (planId: string, tasks: any[]) => void;
   confirmPlan: (planId: string) => void;
+  renderedPlanIds: React.MutableRefObject<Set<string>>;
 }) {
-  const unconfirmedPlans = Object.entries(taskPlans).filter(([pid]) =>
-    pid.startsWith('plan-') && !confirmedPlans.has(pid)
-  );
+  const unconfirmedPlans = Object.entries(taskPlans).filter(([pid]) => {
+    if (!pid.startsWith('plan-') || confirmedPlans.has(pid)) return false;
+    if (renderedPlanIds.current.has(pid)) return false; // already rendered by another PlanRenderer instance
+    renderedPlanIds.current.add(pid);
+    return true;
+  });
 
   return (
     <>
@@ -102,6 +106,7 @@ export function ChatView() {
   const addToast = useAppStore((s) => s.addToast);
   const [resolvedPermissions] = useState<Set<string>>(() => new Set());
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
+  const renderedPlanIds = useRef(new Set<string>());
 
   // Agents lookup by id
   const agentMap = new Map<string, AgentConfig>();
@@ -364,10 +369,11 @@ export function ChatView() {
               {diffCards.filter((card) => card.agentMessageId === msg.id).map((card) => (
                 <DiffCard key={card.id} sessionId={activeSessionId} title={card.title} files={card.files} />
               ))}
-              {/* Planner task plan: render after the Planner agent's message */}
+              {/* Planner task plan: render after the Planner agent's message. Use ref to avoid duplicate panels when multiple planner messages exist. */}
               {msg.senderType === 'agent' && msg.agentId && agentMap.get(msg.agentId)?.name === 'planner' && msg.status === 'done' && (
                 <PlanRenderer planFromMessage={msg} taskPlans={taskPlans} confirmedPlans={confirmedPlans}
-                  setConfirmedPlans={setConfirmedPlans} setTaskPlan={setTaskPlan} confirmPlan={confirmPlan} />
+                  setConfirmedPlans={setConfirmedPlans} setTaskPlan={setTaskPlan} confirmPlan={confirmPlan}
+                  renderedPlanIds={renderedPlanIds} />
               )}
             </React.Fragment>
           ))}

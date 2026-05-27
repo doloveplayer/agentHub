@@ -226,6 +226,20 @@ export function useChat(sessionId: string) {
                 useAppStore.getState().addInboxNotification(data.agentName);
               }
               break;
+            case 'inbox_wake_up':
+              if (data.agentName && data.count > 0) {
+                useAppStore.getState().addInboxNotification(data.agentName);
+                const wakeMsg: Message = {
+                  id: 'wake-' + Date.now(),
+                  sessionId,
+                  senderType: 'agent',
+                  content: data.suggestion || `@${data.agentName} has ${data.count} unread messages.`,
+                  status: 'done',
+                  createdAt: new Date().toISOString(),
+                };
+                useAppStore.getState().addMessage(sessionId, wakeMsg);
+              }
+              break;
             case 'permission_violation':
               if (data.agentMessageId) {
                 addAgentEvent(data.agentMessageId, {

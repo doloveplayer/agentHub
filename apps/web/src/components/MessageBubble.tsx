@@ -53,7 +53,7 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
       >
         {isHuman ? <User className="w-4 h-4" /> : initial}
       </div>
-      <div className={`max-w-[72%] ${isHuman ? 'items-end' : 'items-start'}`}>
+      <div className={`${isHuman ? 'max-w-[72%] items-end' : 'max-w-[85%] items-start'}`}>
         <div className={`flex items-center gap-2 mb-1 ${isHuman ? 'flex-row-reverse' : ''}`}>
           <span className="text-xs text-hub-tertiary font-medium">{label}</span>
           {time && <span className="text-[10px] text-hub-muted">{time}</span>}
@@ -86,7 +86,7 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
             </button>
           )}
         </div>
-        <div className={`rounded-hub-2xl px-4 py-2.5 text-sm leading-relaxed ${
+        <div className={`rounded-hub-2xl px-4 py-2.5 text-sm leading-relaxed w-fit max-w-full ${
           isHuman
             ? message.status === 'error' ? 'bg-hub-accent border border-hub-danger/40 text-white rounded-tr-hub-md' : 'bg-hub-accent text-white rounded-tr-hub-md'
             : message.status === 'error' ? 'bg-hub-raised border border-hub-danger/40 text-hub-primary rounded-tl-hub-md' : 'bg-hub-raised border border-hub text-hub-primary rounded-tl-hub-md'

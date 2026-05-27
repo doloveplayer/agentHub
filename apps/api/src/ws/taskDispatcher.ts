@@ -16,6 +16,7 @@ import * as fs from 'fs';
 
 import { createSDKAgentProcess, createOneShotAgentProcess } from '../agent/processFactory.js';
 
+
 /** Resolve trustMode boolean from session's permission mode. */
 function resolveTrustMode(sessionId: string): boolean {
   const mode = sessionPermissionModes.get(sessionId) || 'ask';
@@ -165,104 +166,95 @@ export async function processNextInQueue(
     broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: procInfo.agentId, taskMessageId });
     procInfo.provider.sendPrompt(taskPrompt);
   } else {
-    // One-shot fallback: start a ClaudeCodeProcess directly for the task
-    await dispatchTaskOneShot(sessionId, agentName, task, queue);
+    // No REPL provider running — start one, then sendPrompt
+    await startReplForTask(sessionId, agentName, task, queue);
   }
 }
 
-async function dispatchTaskOneShot(
+/**
+ * Start a new REPL provider for a task (replaces one-shot dispatch).
+ * Registers it in agentProcesses so subsequent tasks reuse it.
+ */
+async function startReplForTask(
   sessionId: string,
   agentName: string,
   task: TaskDispatchNode,
   queue: AgentTaskQueue,
 ): Promise<void> {
   const sandbox = sandboxes.get(sessionId);
-  if (!sandbox) { console.log(`[ws] Task dispatch: no sandbox for session ${sessionId}`); return; }
+  if (!sandbox) return;
   const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, systemPrompt: true } });
-  if (!agent) { console.log(`[ws] Task dispatch: agent ${agentName} not found in DB`); return; }
+  if (!agent) return;
+
+  const taskMsgId = buildTaskMessageId(queue.planId, task.id);
   const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({
     sessionId, agentName: agent.name, agentType: agent.name,
-    messageId: buildTaskMessageId(queue.planId, task.id),
-    hostWorkDir: sandbox.hostWorkDir,
-    resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
-    broadcast,
+    messageId: taskMsgId, hostWorkDir: sandbox.hostWorkDir,
+    resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type), broadcast,
   });
   const fullPrompt = `${agent.systemPrompt}${languageConsistencyPrompt(detectLanguage(task.description || task.title))}\n\n---\n\n${buildTaskPrompt(task)}\n${coordinationPrompt}`;
-  const proc = (await createSDKAgentProcess()) || createOneShotAgentProcess();
-  const taskMsgId = buildTaskMessageId(queue.planId, task.id);
-  let output = '';
 
-  proc.onEvent((event) => {
-    switch (event.type) {
-      case 'text':
-        output += event.content;
-        broadcast(sessionId, { type: 'stream_chunk', content: event.content, agentMessageId: taskMsgId });
-        break;
-      case 'done':
-        broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent: output || '[Task completed]', exitCode: event.exitCode });
+  try {
+    const { ProviderFactory } = await import('../agent/providers/factory.js');
+    const provider = ProviderFactory.create('claude-code');
 
-        if ((task as any).requiresApproval && event.exitCode === 0) {
-          // Pause for human review before marking task complete
-          const gate = getApprovalGate();
-          const request = gate.submit(task.id, queue.planId, agentName, output.slice(0, 2000));
-          broadcast(sessionId, {
-            type: 'approval_required',
-            planId: queue.planId,
-            taskId: task.id,
-            agentName,
-            approvalId: request.id,
-            output: output.slice(0, 500),
-            replies: [],
-          });
-          (async () => {
-            const decision = await gate.waitForDecision(task.id);
-            gate.remove(task.id);
-            if (!decision.approved) {
-              broadcast(sessionId, { type: 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: `Rejected: ${decision.comment || 'No comment'}` });
-              broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent: output, exitCode: 1 });
-              stateTracker.setDone(taskMsgId);
-              agentCurrentTask.delete(agentName);
-              queue.current = null;
-              void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, false);
-            } else {
-              broadcast(sessionId, { type: 'task_completed', planId: queue.planId, taskId: task.id, agentName, output: output.slice(0, 200) });
-              broadcast(sessionId, { type: 'approval_resolved', taskId: task.id, approved: true });
-              stateTracker.setDone(taskMsgId);
-              agentCurrentTask.delete(agentName);
-              queue.current = null;
-              processNextInQueue(sessionId, agentName, queue);
-              void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, true);
-            }
-          })().catch((err: any) => {
-            console.error(`[ws] ApprovalGate error: ${err.message}`);
-          });
+    let output = '';
+    provider.onEvent((event) => {
+      switch (event.type) {
+        case 'thinking':
+          output += event.content || '';
+          broadcast(sessionId, { type: 'stream_chunk', content: event.content || '', agentMessageId: taskMsgId });
           break;
-        }
-
-        broadcast(sessionId, { type: event.exitCode === 0 ? 'task_completed' : 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: output.slice(0, 200) });
-        stateTracker.setDone(taskMsgId);
-        agentCurrentTask.delete(agentName);
-        queue.current = null;
-        processNextInQueue(sessionId, agentName, queue);
-        void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, event.exitCode === 0);
-        break;
-      case 'error':
-        broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: event.message });
-        stateTracker.setError(taskMsgId);
-        break;
-    }
-  });
-
-  broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
-  console.log(`[ws] Task dispatch (one-shot fallback): agent=${agentName} task=${task.id}`);
-  proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, resolveTrustMode(sessionId), sandbox.hostWorkDir, taskMsgId, undefined, agentName)
-    .catch((err: any) => {
-      console.error(`[ws] Task one-shot failed: ${err.message}`);
-      broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: `Task failed: ${err.message}` });
+        case 'done':
+          broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent: output, exitCode: event.exitCode ?? 0 });
+          broadcast(sessionId, { type: event.exitCode === 0 ? 'task_completed' : 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: output.slice(0, 200) });
+          stateTracker.setDone(taskMsgId);
+          agentCurrentTask.delete(agentName);
+          agentCurrentMessage.delete(agentName);
+          queue.current = null;
+          processNextInQueue(sessionId, agentName, queue);
+          void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, event.exitCode === 0);
+          break;
+        case 'error':
+          broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: event.message || 'Unknown error' });
+          agentCurrentTask.delete(agentName);
+          agentCurrentMessage.delete(agentName);
+          queue.current = null;
+          processNextInQueue(sessionId, agentName, queue);
+          break;
+      }
     });
+
+    await provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
+      agentName, hostWorkDir: sandbox.hostWorkDir, trustMode: true,
+    });
+
+    if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
+    agentProcesses.get(sessionId)!.set(agentName, {
+      provider, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id,
+    });
+    agentCurrentMessage.set(agentName, taskMsgId);
+
+    const taskMsg = await prisma.message.create({
+      data: { id: taskMsgId, sessionId, senderType: 'agent', agentId: agent.id, content: '', status: 'streaming' },
+    }).catch(() => null);
+    if (taskMsg) {
+      if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
+      agentStates.get(sessionId)!.set(taskMsg.id, { process: provider, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id, agentName });
+      incRunningAgentCount();
+    }
+    broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
+    console.log(`[ws] Task REPL started: agent=${agentName} task=${task.id}`);
+  } catch (err: any) {
+    console.error(`[ws] Task REPL start failed: ${err.message}`);
+    broadcast(sessionId, { type: 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: `Failed to start: ${err.message}` });
+    agentCurrentTask.delete(agentName);
+    queue.current = null;
+    void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, false);
+  }
 }
 
-// startTaskAgent kept for backwards compatibility — redirects to one-shot dispatch
+// startTaskAgent — main entry point for task dispatch. Uses REPL providers from agentProcesses.
 export async function startTaskAgent(
   sessionId: string,
   agent: { id: string; name: string; displayName: string; systemPrompt: string },
@@ -271,126 +263,9 @@ export async function startTaskAgent(
   const queue = agentTaskQueues.get(agent.name);
   if (!queue || queue.tasks.length === 0) return;
 
-  const task = queue.tasks.shift()!;
-  queue.current = task;
-  agentCurrentTask.set(agent.name, { planId: queue.planId, taskId: task.id });
-  markTaskRunningForPlan(sessionId, queue.planId, task.id);
-
-  const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({
-    sessionId, agentName: agent.name, agentType: agent.name,
-    messageId: buildTaskMessageId(queue.planId, task.id),
-    hostWorkDir: sandbox.hostWorkDir,
-    resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
-    broadcast,
-  });
-  const fullPrompt = `${agent.systemPrompt}${languageConsistencyPrompt(detectLanguage(task.description || task.title))}\n\n---\n\n${buildTaskPrompt(task)}\n${coordinationPrompt}`;
-  const taskMsgId = buildTaskMessageId(queue.planId, task.id);
-  let output = '';
-
-  recordMessageBeforeVersion(
-    taskMsgId, sandbox.hostWorkDir, sessionId, agent.name,
-    `Before ${agent.name} task ${task.id}`,
-  );
-
-  const proc = (await createSDKAgentProcess()) || createOneShotAgentProcess();
-  proc.onEvent((event) => {
-    switch (event.type) {
-      case 'text':
-        output += event.content;
-        broadcast(sessionId, { type: 'stream_chunk', content: event.content, agentMessageId: taskMsgId });
-        break;
-      case 'tool_use':
-        broadcast(sessionId, { type: 'agent_status', status: 'tool_use',
-          details: { toolName: event.toolName, input: event.input }, agentMessageId: taskMsgId, timestamp: Date.now() });
-        {
-          const agentType = agent.name;
-          const filePath = (event as any).input?.file_path || (event as any).input?.path || (event as any).input?.filePath;
-          agentCoordinator.onToolUse({
-            sessionId,
-            agentName: agent.name,
-            agentType,
-            messageId: taskMsgId,
-            hostWorkDir: sandbox.hostWorkDir,
-            resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
-            broadcast,
-          }, { type: 'tool_use', toolName: (event as any).toolName || '', input: (event as any).input || {} } as any);
-        }
-        break;
-      case 'system': {
-        const sysEvent = event as any;
-        const sysInput = sysEvent.inputTokens || 0;
-        const sysOutput = sysEvent.outputTokens || 0;
-        const contextPct = sysInput > 0 ? Math.round((sysInput / config.agent.contextWindowTokens) * 100) : 0;
-        broadcast(sessionId, { type: 'agent_status', status: 'token_update',
-          details: { tokenUsage: { input: sysInput, output: sysOutput, contextPct } },
-          agentMessageId: taskMsgId, timestamp: Date.now() });
-        break;
-      }
-      case 'done': {
-        const fullContent = output || (event.exitCode === 0 ? '[Task completed]' : '[Task failed]');
-        broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent, exitCode: event.exitCode ?? 0 });
-        broadcastDiffSummary(
-          sessionId, taskMsgId, sandbox.hostWorkDir,
-          takeMessageBeforeVersion(taskMsgId), agent.name, fullContent,
-        );
-        {
-          const agentType = agent.name;
-          const summary = fullContent.slice(0, 200);
-          agentCoordinator.onAgentDone({
-            sessionId, agentName: agent.name, agentType,
-            messageId: taskMsgId,
-            hostWorkDir: sandbox.hostWorkDir,
-            resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
-            broadcast,
-          }, event.exitCode ?? 0, summary);
-        }
-        broadcast(sessionId, {
-          type: event.exitCode === 0 ? 'task_completed' : 'task_failed',
-          planId: queue.planId, taskId: task.id, agentName: agent.name,
-          output: event.exitCode === 0 ? 'done' : `exit code ${event.exitCode}`,
-        });
-        stateTracker.setDone(taskMsgId);
-        agentCurrentTask.delete(agent.name);
-        agentCurrentMessage.delete(agent.name);
-        queue.current = null;
-        processNextInQueue(sessionId, agent.name, queue);
-        void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, event.exitCode === 0);
-        break;
-      }
-      case 'error':
-        broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: event.message || 'Unknown error' });
-        stateTracker.setError(taskMsgId);
-        break;
-    }
-  });
-
-  // Skip if this task message already exists (prevents re-dispatch on reconnect)
-  const existingMsg = await prisma.message.findUnique({ where: { id: taskMsgId } }).catch(() => null);
-  if (existingMsg && existingMsg.status !== 'streaming') {
-    console.log(`[ws] Task dispatch: skipping already-completed task ${task.id} for ${agent.name}`);
-    queue.current = null;
-    agentCurrentTask.delete(agent.name);
-    processNextInQueue(sessionId, agent.name, queue);
-    return;
-  }
-
-  const taskMsg = await prisma.message.create({
-    data: { id: taskMsgId, sessionId, senderType: 'agent', agentId: agent.id, content: '', status: 'streaming' },
-  }).catch(() => null);
-
-  if (taskMsg) {
-    if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
-    agentStates.get(sessionId)!.set(taskMsg.id, { process: proc, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id, agentName: agent.name });
-    incRunningAgentCount();
-  }
-
-  broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName: agent.name, agentId: agent.id, taskMessageId: taskMsgId });
-  console.log(`[ws] Task dispatch (one-shot): agent=${agent.name} task=${task.id}`);
-  proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, resolveTrustMode(sessionId), sandbox.hostWorkDir, taskMsgId, undefined, agent.name)
-    .catch((err: any) => {
-      console.error(`[ws] Task one-shot failed: ${err.message}`);
-      broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: `Task failed: ${err.message}` });
-    });
+  // All task dispatch goes through REPL providers via processNextInQueue.
+  // It checks agentProcesses for an existing provider; if none, startReplForTask creates one.
+  await processNextInQueue(sessionId, agent.name, queue);
 }
 
 export async function dispatchTasksToAgents(

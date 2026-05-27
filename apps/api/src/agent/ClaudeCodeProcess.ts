@@ -240,15 +240,17 @@ export class ClaudeCodeProcess {
       this.partialLine = lines.pop() ?? '';
       for (const line of lines) {
         if (!line.trim()) continue;
-        const event = EventParser.parseLine(line);
-        if (event) {
-          // Extract Claude session ID from system init event for --resume
-          if (event.type === 'system' && event.subtype === 'init' && event.sessionId && this.onClaudeSession) {
-            this.onClaudeSession(event.sessionId);
+        const events = EventParser.parseLine(line);
+        if (events.length > 0) {
+          for (const event of events) {
+            // Extract Claude session ID from system init event for --resume
+            if (event.type === 'system' && event.subtype === 'init' && event.sessionId && this.onClaudeSession) {
+              this.onClaudeSession(event.sessionId);
+            }
+            if (this.proxyPermissionIfNeeded(event)) continue;
+            if (event.type === 'done') this.emitDone(event.exitCode);
+            else this.emit(event);
           }
-          if (this.proxyPermissionIfNeeded(event)) continue;
-          if (event.type === 'done') this.emitDone(event.exitCode);
-          else this.emit(event);
         } else if (unknownEventCount < MAX_UNKNOWN_LOG) {
           // Skip known structural events that we intentionally ignore
           try {
@@ -284,8 +286,10 @@ export class ClaudeCodeProcess {
       if (!this.killed) {
         // Flush remaining partial line if any
         if (this.partialLine.trim()) {
-          const event = EventParser.parseLine(this.partialLine);
-          if (event && event.type !== 'done' && !this.proxyPermissionIfNeeded(event)) this.emit(event);
+          const events = EventParser.parseLine(this.partialLine);
+          for (const event of events) {
+            if (event.type !== 'done' && !this.proxyPermissionIfNeeded(event)) this.emit(event);
+          }
         }
         this.emitDone(code ?? 1);
       }

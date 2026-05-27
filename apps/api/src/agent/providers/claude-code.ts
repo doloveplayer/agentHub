@@ -108,13 +108,14 @@ export class ClaudeCodeProvider implements AbstractProvider {
         this.partialLine = lines.pop() ?? '';
         for (const line of lines) {
           if (!line.trim()) continue;
-          const event = EventParser.parseLine(line);
-          if (!event) continue;
-          if (event.type === 'system' && event.sessionId) {
-            this.claudeSessionId = event.sessionId;
+          const events = EventParser.parseLine(line);
+          for (const event of events) {
+            if (event.type === 'system' && event.sessionId) {
+              this.claudeSessionId = event.sessionId;
+            }
+            const unified = parsedToUnified(event);
+            if (unified) this.emit(unified);
           }
-          const unified = parsedToUnified(event);
-          if (unified) this.emit(unified);
         }
       });
 
@@ -133,11 +134,11 @@ export class ClaudeCodeProvider implements AbstractProvider {
         this.pendingCleanup = null;
         if (!this.killed) {
           if (this.partialLine.trim()) {
-            const event = EventParser.parseLine(this.partialLine);
-            if (event && event.type === 'system' && event.sessionId) {
-              this.claudeSessionId = event.sessionId;
-            }
-            if (event) {
+            const events = EventParser.parseLine(this.partialLine);
+            for (const event of events) {
+              if (event.type === 'system' && event.sessionId) {
+                this.claudeSessionId = event.sessionId;
+              }
               const unified = parsedToUnified(event);
               if (unified && unified.type !== 'done') this.emit(unified);
             }

@@ -143,37 +143,49 @@ import { EventParser } from './EventParser.js';
 
 describe('EventParser', () => {
   it('parses assistant text', () => {
-    const ev = EventParser.parseLine('{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}');
-    assert.ok(ev);
-    assert.strictEqual(ev!.type, 'text');
-    if (ev!.type === 'text') assert.strictEqual(ev!.content, 'hello');
+    const evs = EventParser.parseLine('{"type":"assistant","message":{"content":[{"type":"text","text":"hello"}]}}');
+    assert.ok(evs.length > 0);
+    assert.strictEqual(evs[0].type, 'text');
+    if (evs[0].type === 'text') assert.strictEqual(evs[0].content, 'hello');
   });
 
   it('parses tool_use', () => {
-    const ev = EventParser.parseLine('{"type":"tool_use","name":"Write","input":{"file_path":"/test.ts"}}');
-    assert.ok(ev);
-    assert.strictEqual(ev!.type, 'tool_use');
+    const evs = EventParser.parseLine('{"type":"tool_use","name":"Write","input":{"file_path":"/test.ts"}}');
+    assert.ok(evs.length > 0);
+    assert.strictEqual(evs[0].type, 'tool_use');
   });
 
   it('parses result as done', () => {
-    const ev = EventParser.parseLine('{"type":"result","subtype":"success"}');
-    assert.ok(ev);
-    assert.strictEqual(ev!.type, 'done');
+    const evs = EventParser.parseLine('{"type":"result","subtype":"success"}');
+    assert.ok(evs.length > 0);
+    assert.strictEqual(evs[0].type, 'done');
   });
 
-  it('returns null for structural events', () => {
-    assert.strictEqual(EventParser.parseLine('{"type":"content_block_stop"}'), null);
+  it('returns empty array for structural events', () => {
+    assert.strictEqual(EventParser.parseLine('{"type":"content_block_stop"}').length, 0);
   });
 
   it('handles non-JSON as text', () => {
-    const ev = EventParser.parseLine('raw stdout output');
-    assert.ok(ev);
-    assert.strictEqual(ev!.type, 'text');
+    const evs = EventParser.parseLine('raw stdout output');
+    assert.ok(evs.length > 0);
+    assert.strictEqual(evs[0].type, 'text');
   });
 
   it('ignores empty lines', () => {
-    assert.strictEqual(EventParser.parseLine(''), null);
-    assert.strictEqual(EventParser.parseLine('  '), null);
+    assert.strictEqual(EventParser.parseLine('').length, 0);
+    assert.strictEqual(EventParser.parseLine('  ').length, 0);
+  });
+
+  it('extracts token usage from assistant message', () => {
+    const evs = EventParser.parseLine('{"type":"assistant","message":{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1500,"output_tokens":200}}}');
+    const tokenEv = evs.find(e => e.type === 'token_usage');
+    assert.ok(tokenEv);
+    if (tokenEv?.type === 'token_usage') {
+      assert.strictEqual(tokenEv.inputTokens, 1500);
+      assert.strictEqual(tokenEv.outputTokens, 200);
+    }
+    const textEv = evs.find(e => e.type === 'text');
+    assert.ok(textEv);
   });
 });
 

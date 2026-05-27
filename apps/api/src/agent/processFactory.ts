@@ -55,6 +55,7 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
   private pendingCleanup: (() => void) | null = null;
   private partialLine = '';
   private runSeq = 0;
+  private doneReceived = false;  // guard against double-done (SDK result + close handler)
   private mapPermissionMode: (profile: string) => any;
   private mapAllowedTools: (profile: string) => string[];
 
@@ -92,6 +93,7 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
     agentConfigId?: string,
   ): Promise<void> {
     this.killed = false;
+    this.doneReceived = false;
     this.partialLine = '';
     this.pendingCleanup = null;
     EventParser.resetDeltaState();
@@ -123,12 +125,14 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
         this.partialLine = lines.pop() ?? '';
         for (const line of lines) {
           if (!line.trim()) continue;
-          const event = EventParser.parseLine(line);
-          if (!event) continue;
-          if (event.type === 'system' && event.sessionId && this._onClaudeSession) {
-            this._onClaudeSession(event.sessionId);
+          const events = EventParser.parseLine(line);
+          for (const event of events) {
+            if (event.type === 'system' && event.sessionId && this._onClaudeSession) {
+              this._onClaudeSession(event.sessionId);
+            }
+            if (event.type === 'done') this.doneReceived = true;
+            this.emit(event);
           }
-          this.emit(event);
         }
       });
 
@@ -146,13 +150,18 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
         if (!this.killed) {
           // Flush remaining partial line
           if (this.partialLine.trim()) {
-            const event = EventParser.parseLine(this.partialLine);
-            if (event && event.type === 'system' && event.sessionId && this._onClaudeSession) {
-              this._onClaudeSession(event.sessionId);
+            const events = EventParser.parseLine(this.partialLine);
+            for (const event of events) {
+              if (event.type === 'system' && event.sessionId && this._onClaudeSession) {
+                this._onClaudeSession(event.sessionId);
+              }
+              if (event.type === 'done') this.doneReceived = true;
+              if (event.type !== 'done') this.emit(event);
             }
-            if (event && event.type !== 'done') this.emit(event);
           }
-          this.emit({ type: 'done', exitCode: code ?? 1 });
+          if (!this.doneReceived) {
+            this.emit({ type: 'done', exitCode: code ?? 1 });
+          }
           resolve();
         }
       });

@@ -3,6 +3,7 @@
 
 import { WebSocket } from 'ws';
 import { SandboxManager } from '../agent/SandboxManager.js';
+import { config } from '../config.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import type { AbstractProvider } from '../agent/providers/base.js';
 
@@ -157,10 +158,11 @@ export function generateId(): string {
   return crypto.randomUUID();
 }
 
-export async function getOrCreateSandbox(sessionId: string) {
+export async function getOrCreateSandbox(sessionId: string, sessionType?: string | null) {
   let sandbox = sandboxes.get(sessionId);
   if (!sandbox) {
-    sandbox = await SandboxManager.create(sessionId);
+    const memoryMb = sessionType === 'group' ? config.sandbox.groupMemoryMb : config.sandbox.soloMemoryMb;
+    sandbox = await SandboxManager.create(sessionId, memoryMb);
     sandboxes.set(sessionId, sandbox);
   }
   return sandbox;
@@ -231,11 +233,18 @@ export function cleanupSessionResources(sessionId: string): void {
   sessions.delete(sessionId);
 }
 
+/** Track sessions where pre-activation is still in progress to avoid premature cleanup. */
+export const preActivatingSessions = new Set<string>();
+
 export function cleanupSessionClient(sessionId: string, ws: WebSocket): void {
   const conns = sessions.get(sessionId);
   if (!conns) return;
   conns.delete(ws);
   if (conns.size > 0) return;
+  if (preActivatingSessions.has(sessionId)) {
+    console.log(`[ws] Client left but pre-activation in progress for session=${sessionId.slice(0, 8)}, deferring cleanup`);
+    return;
+  }
   console.log(`[ws] Last client left session=${sessionId}, cleaning up...`);
   cleanupSessionResources(sessionId);
 }
