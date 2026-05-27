@@ -627,6 +627,18 @@ async function handleChatMessage(
                     })),
                     timestamp: Date.now(),
                   });
+                  // Auto-dispatch tasks to agents
+                  const taskNodes: TaskDispatchNode[] = validated.tasks.map(t => ({
+                    id: t.id, title: t.title, description: t.description,
+                    agentType: t.agentType, dependsOn: t.dependsOn,
+                    expectedOutput: t.expectedOutput, priority: t.priority as 'high' | 'medium' | 'low',
+                  }));
+                  addDispatchedPlan(planId);
+                  dispatchTasksToAgents(sessionId, planId, taskNodes, {
+                    containerId: sandbox.containerId, workDir: sandbox.workDir, hostWorkDir: sandbox.hostWorkDir,
+                  }, validated.planTitle).catch((err: any) => {
+                    console.error(`[ws] Auto-dispatch failed: ${err.message}`);
+                  });
                 }
               } catch (err: any) {
                 console.error(`[ws] Failed to parse embedded plan: ${err.message}`);
@@ -1154,13 +1166,25 @@ async function preActivateGroupAgents(
                       })),
                       timestamp: Date.now(),
                     });
-                  }
-                } catch (err: any) {
-                  console.error(`[ws] Failed to parse embedded plan: ${err.message}`);
+                  // Auto-dispatch tasks to agents
+                  const taskNodes: TaskDispatchNode[] = validated.tasks.map(t => ({
+                    id: t.id, title: t.title, description: t.description,
+                    agentType: t.agentType, dependsOn: t.dependsOn,
+                    expectedOutput: t.expectedOutput, priority: t.priority as 'high' | 'medium' | 'low',
+                  }));
+                  addDispatchedPlan(planId);
+                  dispatchTasksToAgents(sessionId, planId, taskNodes, {
+                    containerId: sandbox.containerId, workDir: sandbox.workDir, hostWorkDir: sandbox.hostWorkDir,
+                  }, validated.planTitle).catch((err: any) => {
+                    console.error(`[ws] Auto-dispatch failed: ${err.message}`);
+                  });
                 }
+              } catch (err: any) {
+                console.error(`[ws] Failed to parse embedded plan: ${err.message}`);
               }
-              // Stop planner from continuing — prevent it from trying to implement
-              provider.stopChild?.();
+            }
+            // Stop planner from continuing — prevent it from trying to implement
+            provider.stopChild?.();
             }
             if (agentName) MilestoneBroadcaster.classify({ sessionId, agentName, agentMessageId: msgId, eventType: 'done' });
             broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: doneContent, exitCode: event.exitCode ?? 0 });
