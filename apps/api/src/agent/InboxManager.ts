@@ -38,6 +38,9 @@ export class InboxManager {
    * Inbox files live at {hostWorkDir}/_inbox_{agentName}.jsonl
    */
   static write(hostWorkDir: string, targetAgentName: string, entry: InboxEntry): void {
+    if (entry.summary && entry.summary.length > 500) {
+      console.warn(`[inbox] Large summary (${entry.summary.length} chars) from ${entry.from} to ${targetAgentName}`);
+    }
     const inboxPath = resolve(hostWorkDir, `_inbox_${norm(targetAgentName)}.jsonl`);
     const line = JSON.stringify(entry) + '\n';
     try {

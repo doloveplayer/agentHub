@@ -15,7 +15,7 @@ import { prisma } from '../db/prisma.js';
 import { verifyToken } from '../lib/jwt.js';
 import { config } from '../config.js';
 import { isDeployTarget, normalizeTarget, startDeployment } from '../routes/deploy.js';
-import { parseReviewReport, parseTestOutput, parseNpmAuditJson } from '../artifacts/ArtifactTools.js';
+import { parseReviewReport, parseTestOutput } from '../artifacts/ArtifactTools.js';
 import { agentCoordinator } from '../agent/AgentCoordinator.js';
 import { permissionProfiles, type AgentCapability } from '../agent/PermissionProfiles.js';
 import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDetection.js';
@@ -261,16 +261,6 @@ function broadcastStructuredArtifact(sessionId: string, agentName: string, conte
     if (report.total > 0 || report.cases.length > 0) {
       broadcast(sessionId, { type: 'test_report', report, exitCode: report.failed > 0 ? 1 : 0, timestamp: Date.now() });
     }
-  }
-  if (agentName === 'deps-agent') {
-    try {
-      const jsonStart = content.indexOf('{');
-      const jsonEnd = content.lastIndexOf('}');
-      if (jsonStart >= 0 && jsonEnd > jsonStart) {
-        const report = parseNpmAuditJson(content.slice(jsonStart, jsonEnd + 1));
-        if (report.total > 0) broadcast(sessionId, { type: 'security_report', report, exitCode: 0, timestamp: Date.now() });
-      }
-    } catch { /* content was not npm audit JSON */ }
   }
 }
 
@@ -1121,38 +1111,64 @@ async function preActivateGroupAgents(
             break;
           case 'done': {
             stateTracker.setDone(msgId);
+            // Capture accumulated content before deletion (for plan extraction + intent scanning)
+            const doneContent = replAccumulatedContent.get(agentName) || '';
+            replAccumulatedContent.delete(agentName);
             // Planner plan extraction + auto-dispatch (REPL path)
-            if (agentName === 'planner' && event.exitCode === 0) {
-              const plannerContent = replAccumulatedContent.get(agentName) || '';
-              if (plannerContent) {
-                const plan = extractAndValidate(plannerContent);
-                if (plan) {
-                  const planId = `plan-${Date.now()}`;
-                  broadcast(sessionId, { type: 'plan_result', planId, planTitle: plan.planTitle, summary: plan.summary, tasks: toTaskStates(plan, planId), agentMessageId: msgId });
-                  console.log(`[ws] Planner plan_result (REPL): planId=${planId} tasks=${plan.tasks.length}`);
-                  // Auto-dispatch tasks to agents
-                  dispatchTasksToAgents(sessionId, planId, plan.tasks.map(t => ({
-                    id: t.id, title: t.title, description: t.description,
-                    agentType: t.agentType, dependsOn: t.dependsOn,
-                    expectedOutput: t.expectedOutput, priority: t.priority || 'medium',
-                  })), sandbox, plan.planTitle).catch((err: any) => {
-                    console.error(`[ws] Plan auto-dispatch failed: ${err.message}`);
-                  });
-                }
+            if (agentName === 'planner' && event.exitCode === 0 && doneContent) {
+              const plan = extractAndValidate(doneContent);
+              if (plan) {
+                const planId = `plan-${Date.now()}`;
+                broadcast(sessionId, { type: 'plan_result', planId, planTitle: plan.planTitle, summary: plan.summary, tasks: toTaskStates(plan, planId), agentMessageId: msgId });
+                console.log(`[ws] Planner plan_result (REPL): planId=${planId} tasks=${plan.tasks.length}`);
+                // Auto-dispatch tasks to agents
+                dispatchTasksToAgents(sessionId, planId, plan.tasks.map(t => ({
+                  id: t.id, title: t.title, description: t.description,
+                  agentType: t.agentType, dependsOn: t.dependsOn,
+                  expectedOutput: t.expectedOutput, priority: t.priority || 'medium',
+                })), sandbox, plan.planTitle).catch((err: any) => {
+                  console.error(`[ws] Plan auto-dispatch failed: ${err.message}`);
+                });
               }
               // Stop planner from continuing — prevent it from trying to implement
-              replAccumulatedContent.delete(agentName);
               provider.stopChild?.();
-            } else {
-              replAccumulatedContent.delete(agentName);
             }
             if (agentName) MilestoneBroadcaster.classify({ sessionId, agentName, agentMessageId: msgId, eventType: 'done' });
-            broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: '', exitCode: event.exitCode ?? 0 });
-            // Scan for NEEDS HELP intents in recent output
-            if (agentName && sandbox && msgId) {
-              // Intent scanning handled in sendPrompt caller
+            broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: doneContent, exitCode: event.exitCode ?? 0 });
+            // Scan complete agent output for cross-agent intents (on done event, not streaming chunks)
+            if (agentName && sandbox && doneContent) {
+              const intents = IntentParser.scan(doneContent);
+              for (const intent of intents) {
+                const targetName = resolveAgentNameInSession(sessionId, intent.targetAgentName);
+                if (targetName && targetName !== agentName) {
+                  InboxManager.write(sandbox.hostWorkDir, targetName, {
+                    type: 'intervention_request',
+                    id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    from: agentName,
+                    to: targetName,
+                    summary: `${agentName} needs help: ${intent.description}`,
+                    risk: 'high',
+                    timestamp: Date.now(),
+                  });
+                  // Real-time REPL delivery: if target agent is online, send inbox content immediately
+                  const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
+                  if (targetProvider?.isAlive()) {
+                    const inboxPrompt = `\n## Inbox message from ${agentName}\n${intent.description}\n\nRespond if this needs your attention.`;
+                    targetProvider.sendPrompt(inboxPrompt);
+                    console.log(`[ws] NEEDS HELP delivered via REPL: ${agentName} → ${targetName}`);
+                  }
+                  broadcast(sessionId, {
+                    type: 'inbox_update',
+                    agentName: targetName,
+                    fromAgent: agentName,
+                    summary: intent.description,
+                    timestamp: Date.now(),
+                  });
+                  console.log(`[ws] NEEDS HELP routed: ${agentName} → ${targetName}: ${intent.description.slice(0, 80)}`);
+                }
+              }
             }
-            agentCoordinator.onAgentDone({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, event.exitCode ?? 0, '');
+            agentCoordinator.onAgentDone({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, event.exitCode ?? 0, doneContent.slice(0, 200));
             break;
           }
           case 'error':
