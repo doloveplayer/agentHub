@@ -51,24 +51,6 @@ const BUILTIN_PROFILES: Record<string, AgentCapability> = {
     notifyOnToolUse: [],
     notifyOnComplete: ['code-agent', 'planner'],
   },
-  'devops-agent': {
-    description: 'DevOps agent — handles deployment and infrastructure',
-    writePatterns: ['**/Dockerfile', '**/docker-compose*', '**/*.yml', '**/*.yaml', '**/*.conf', '**/*.toml', '**/.env*', '**/nginx/**', '**/k8s/**', '**/terraform/**'],
-    readPatterns: ['**/*'],
-    allowedTools: [],
-    forbiddenTools: [],
-    notifyOnToolUse: [],
-    notifyOnComplete: ['code-agent', 'planner'],
-  },
-  'deps-agent': {
-    description: 'Dependency agent — audits and upgrades dependencies',
-    writePatterns: ['**/package.json', '**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml', '**/Cargo.toml', '**/Cargo.lock', '**/go.mod', '**/go.sum', '**/requirements.txt', '**/Pipfile', '**/Pipfile.lock', '**/pyproject.toml', '**/Gemfile', '**/Gemfile.lock'],
-    readPatterns: ['**/*'],
-    allowedTools: [],
-    forbiddenTools: ['Write', 'Edit'],
-    notifyOnToolUse: [],
-    notifyOnComplete: ['code-agent', 'test-agent', 'planner'],
-  },
 };
 
 export const CUSTOM_AGENT_DEFAULT: AgentCapability = {

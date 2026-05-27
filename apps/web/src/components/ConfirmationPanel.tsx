@@ -10,7 +10,12 @@ interface Props {
   onCancel: () => void;
 }
 
-const AGENT_TYPES = ['CodeAgent', 'ReviewAgent', 'DevOpsAgent', 'TestAgent', 'DepsAgent'];
+const AGENT_TYPES = ['code-agent', 'review-agent', 'test-agent'] as const;
+const AGENT_TYPE_LABELS: Record<string, string> = {
+  'code-agent': 'CodeAgent',
+  'review-agent': 'ReviewAgent',
+  'test-agent': 'TestAgent',
+};
 const PRIORITIES = ['high', 'medium', 'low'];
 
 export function ConfirmationPanel({ tasks, onConfirm, onUpdateTask, onUpdateField, onCancel }: Props) {
@@ -47,7 +52,7 @@ export function ConfirmationPanel({ tasks, onConfirm, onUpdateTask, onUpdateFiel
                     onChange={(e) => { onUpdateField(t.id, 'agentType', e.target.value); setEditingId(null); setEditField(null); }}
                     className="text-[10px] bg-hub-input text-hub-secondary rounded px-1 py-0.5 border border-hub"
                   >
-                    {AGENT_TYPES.map((at) => <option key={at} value={at}>{at}</option>)}
+                    {AGENT_TYPES.map((at) => <option key={at} value={at}>{AGENT_TYPE_LABELS[at] || at}</option>)}
                   </select>
                 ) : (
                   <span
