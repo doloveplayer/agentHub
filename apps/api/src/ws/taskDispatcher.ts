@@ -73,7 +73,7 @@ function sortByPriority(tasks: TaskDispatchNode[]): TaskDispatchNode[] {
   });
 }
 
-function resolveAgentNameInSession(sessionId: string, agentType: string): string | null {
+export function resolveAgentNameInSession(sessionId: string, agentType: string): string | null {
   const normalized = agentType.toLowerCase();
   const procMap = agentProcesses.get(sessionId);
   if (procMap) {

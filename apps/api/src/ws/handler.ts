@@ -43,6 +43,7 @@ import {
   handleDispatchedTaskFinished,
   prepareDispatchedTaskRetry,
   handleReplanFailedTask,
+  resolveAgentNameInSession,
 } from './taskDispatcher.js';
 import {
   broadcastDiffSummary,
@@ -215,22 +216,6 @@ async function handleConnection(ws: WebSocket, request: any) {
     for (const em of earlyMessages) handleMessage(ws, sessionId, em.data);
     earlyMessages.length = 0;
   }
-}
-
-function resolveAgentNameInSession(sessionId: string, agentType: string): string | null {
-  const normalized = agentType.toLowerCase();
-  const procMap = agentProcesses.get(sessionId);
-  if (procMap) {
-    for (const [name] of procMap) {
-      if (name.toLowerCase() === normalized) return name;
-    }
-  }
-  // Also check task queues
-  for (const [name] of agentTaskQueues) {
-    if (name.toLowerCase() === normalized) return name;
-  }
-  // Not yet started — trust agentType as the agent name.
-  return agentType;
 }
 
 function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
@@ -531,7 +516,7 @@ async function handleChatMessage(
               if (targetName) {
                 const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
                 if (targetProvider?.isAlive()) {
-                  const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentNameForProc}. Check your inbox at /workspace/_inbox_${targetName}.jsonl and respond with your plan.`;
+                  const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentNameForProc}. Check your inbox at /workspace/_inbox_${targetName.toLowerCase()}.jsonl and respond with your plan.`;
                   targetProvider.sendPrompt(inboxPrompt);
                   console.log(`[ws] Inbox wake-up: ${agentNameForProc} delegated to ${targetName}`);
                 }
@@ -1076,7 +1061,7 @@ async function preActivateGroupAgents(
       `## Standby mode`,
       `You are **${displayName}** (${agentName}), an active member of this group chat.`,
       ``,
-      `Other agents may send you messages via your inbox at /workspace/_inbox_${agentName}.jsonl.`,
+      `Other agents may send you messages via your inbox at /workspace/_inbox_${agentName.toLowerCase()}.jsonl.`,
       `Check it after receiving this prompt and respond if any messages are waiting.`,
       ``,
       `Monitor the conversation. Speak up when:`,
@@ -1121,7 +1106,7 @@ async function preActivateGroupAgents(
                 if (targetName) {
                   const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
                   if (targetProvider?.isAlive()) {
-                    const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentName}. Check your inbox at /workspace/_inbox_${targetName}.jsonl and respond with your plan.\n\nRead the inbox file now and execute the task.`;
+                    const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentName}. Check your inbox at /workspace/_inbox_${targetName.toLowerCase()}.jsonl and respond with your plan.\n\nRead the inbox file now and execute the task.`;
                     targetProvider.sendPrompt(inboxPrompt);
                     console.log(`[ws] Inbox wake-up (REPL): ${agentName} delegated to ${targetName}`);
                   }
