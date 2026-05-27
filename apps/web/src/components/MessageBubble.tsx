@@ -8,6 +8,17 @@ import type { Message } from '@agenthub/shared';
 import { agentColor } from './AgentMentionPopup';
 import { safeMarkdownUrl } from '../lib/markdown';
 
+/** Safely convert any value to a displayable string — prevents `[object Object]` rendering. */
+function safeContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (content === null || content === undefined) return '';
+  try {
+    return JSON.stringify(content, null, 2);
+  } catch {
+    return String(content);
+  }
+}
+
 interface Props {
   message: Message;
   isStreaming?: boolean;
@@ -18,7 +29,7 @@ interface Props {
 const AGENT_ICONS: Record<string, string> = {
   'code-agent': 'C',
   'review-agent': 'R',
-  'devops-agent': 'D',
+
 };
 
 export function MessageBubble({ message, isStreaming, agentDisplayName, agentName }: Props) {
@@ -27,9 +38,10 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
   const nameForKey = agentName || message.agentId || 'agent';
 
   const handleCopy = async () => {
-    if (!message.content) return;
+    const text = safeContent(message.content);
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(message.content);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch { /* clipboard unavailable */ }
@@ -100,7 +112,7 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
                 urlTransform={(url) => safeMarkdownUrl(url)}
                 components={markdownComponents}
               >
-                {message.content}
+                {safeContent(message.content)}
               </ReactMarkdown>
             </div>
           ) : isStreaming ? (

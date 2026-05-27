@@ -5,6 +5,17 @@ import { api } from '../lib/api';
 import { parseMentions } from '../lib/mentionParser';
 import type { Message, AgentConfig } from '@agenthub/shared';
 
+/** Safely convert any value to a string — prevents `[object Object]` when stream_chunk carries a non-string payload. */
+function safeContent(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === null || value === undefined) return '';
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 const socketPool = new Map<string, WebSocket>();
 
 function findMessageSessionId(agentMessageId: string | undefined, fallback: string): string {
@@ -73,7 +84,7 @@ export function useChat(sessionId: string) {
             case 'stream_chunk':
               {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
-                appendToMessage(targetSessionId, data.agentMessageId, data.content);
+                appendToMessage(targetSessionId, data.agentMessageId, safeContent(data.content));
               // Increment unread for inactive sessions (different tab)
                 if (useAppStore.getState().activeSessionId !== targetSessionId) {
                   incrementUnread(targetSessionId);
@@ -88,7 +99,7 @@ export function useChat(sessionId: string) {
                 const state = useAppStore.getState();
                 const msg = state.messages[targetSessionId]?.find(m => m.id === data.agentMessageId);
                 if (msg && !msg.content) {
-                  appendToMessage(targetSessionId, data.agentMessageId, data.fullContent);
+                  appendToMessage(targetSessionId, data.agentMessageId, safeContent(data.fullContent));
                 }
               }
               setMessageStatus(targetSessionId, data.agentMessageId, data.exitCode === 0 ? 'done' : 'error');
@@ -96,7 +107,7 @@ export function useChat(sessionId: string) {
               break;
             }
             case 'stream_error': {
-              const errMsg = data.error || data.message || 'Unknown agent error';
+              const errMsg = safeContent(data.error) || safeContent(data.message) || 'Unknown agent error';
               console.error('[WS] Agent error:', errMsg);
               addToast(errMsg, 'error');
               if (data.agentMessageId) {
@@ -578,5 +589,5 @@ export function useChat(sessionId: string) {
     if (sessionId) connect();
   }, [sessionId, connect]);
 
-  return { send, connect, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan };
+  return { send, connect, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan };
 }

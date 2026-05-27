@@ -24,6 +24,23 @@ const EMPTY_TEST_REPORTS: any[] = [];
 const EMPTY_SECURITY_REPORTS: any[] = [];
 const EMPTY_REVIEW_REPORTS: any[] = [];
 
+/**
+ * Safely convert any value to a displayable string.
+ * Objects/arrays are JSON-stringified; primitives are cast normally;
+ * null/undefined become empty string.
+ * This prevents `[object Object]` when a non-string value ends up
+ * in message content (e.g. from a stream_chunk carrying an object payload).
+ */
+function safeContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (content === null || content === undefined) return '';
+  try {
+    return JSON.stringify(content, null, 2);
+  } catch {
+    return String(content);
+  }
+}
+
 /** Renders ConfirmationPanel below a Planner agent's message (DAG lives in sidebar Tasks tab) */
 function PlanRenderer({
   planFromMessage, taskPlans, confirmedPlans, setConfirmedPlans, setTaskPlan, confirmPlan, renderedPlanIds,
@@ -102,7 +119,7 @@ export function ChatView() {
   const securityReports = useAppStore((s) => activeSessionId ? (s.securityReports[activeSessionId] ?? EMPTY_SECURITY_REPORTS) : EMPTY_SECURITY_REPORTS);
   const reviewReports = useAppStore((s) => activeSessionId ? (s.reviewReports[activeSessionId] ?? EMPTY_REVIEW_REPORTS) : EMPTY_REVIEW_REPORTS);
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
-  const { send, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan } = useChat(activeSessionId ?? '');
+  const { send, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan } = useChat(activeSessionId ?? '');
   const addToast = useAppStore((s) => s.addToast);
   const [resolvedPermissions] = useState<Set<string>>(() => new Set());
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
@@ -122,7 +139,7 @@ export function ChatView() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, agentEvents]);
 
-  const renderAgentInfo = (messageId: string) => {
+  const renderAgentInfo = (messageId: string, isStreaming: boolean) => {
     const events = agentEvents[messageId];
     if (!events || events.length === 0) return null;
 
@@ -160,7 +177,7 @@ export function ChatView() {
                 <div>Tool: <span className="text-hub-secondary font-mono">{ev.details.tool ?? 'unknown'}</span></div>
                 {ev.details.path && <div>Path: <span className="text-hub-secondary font-mono">{ev.details.path}</span></div>}
               </div>
-              {!resolved ? (
+              {!resolved && isStreaming ? (
                 <div className="flex gap-2">
                   <button
                     onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, true); }}
@@ -176,7 +193,9 @@ export function ChatView() {
                   </button>
                 </div>
               ) : (
-                <span className="text-xs text-hub-muted italic">Response sent</span>
+                <span className="text-xs text-hub-muted italic">
+                  {resolved ? 'Response sent' : 'Agent terminated — request expired'}
+                </span>
               )}
             </div>
           );
@@ -222,6 +241,11 @@ export function ChatView() {
       await api.updateSession(activeSessionId, { permissionMode: mode });
       setSessionPermissionMode(activeSessionId, mode);
       updateSessionInList(activeSessionId, { permissionMode: mode as any });
+      // Notify backend to sync REPL providers
+      try {
+        const ws = await ensureConnection();
+        ws.send(JSON.stringify({ type: 'permission_mode_change', mode }));
+      } catch { /* WS may not be connected yet — session update is sufficient */ }
     } catch (err) {
       console.error('Failed to update permission mode:', err);
     }
@@ -247,9 +271,10 @@ export function ChatView() {
 
   // Message action callbacks
   const handleCopyMessage = useCallback(async (msg: Message) => {
-    if (!msg.content) return;
+    const text = safeContent(msg.content);
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(msg.content);
+      await navigator.clipboard.writeText(text);
       addToast('Copied', 'success');
     } catch {
       addToast('Failed to copy', 'error');
@@ -257,9 +282,10 @@ export function ChatView() {
   }, [addToast]);
 
   const handleQuoteMessage = useCallback((msg: Message) => {
-    if (!msg.content) return;
+    const text = safeContent(msg.content);
+    if (!text) return;
     const agentName = msg.agentId ? agentMap.get(msg.agentId)?.displayName : 'Agent';
-    const quote = `> ${agentName}: ${msg.content.slice(0, 200).replace(/\n/g, '\n> ')}\n\n`;
+    const quote = `> ${agentName}: ${text.slice(0, 200).replace(/\n/g, '\n> ')}\n\n`;
     window.dispatchEvent(new CustomEvent('agenthub:prompt-insert', { detail: { prompt: quote } }));
     addToast('Quoted', 'info');
   }, [agentMap, addToast]);
@@ -365,7 +391,7 @@ export function ChatView() {
                   </div>
                 )}
               </div>
-              {msg.senderType === 'agent' && renderAgentInfo(msg.id)}
+              {msg.senderType === 'agent' && renderAgentInfo(msg.id, msg.status === 'streaming')}
               {diffCards.filter((card) => card.agentMessageId === msg.id).map((card) => (
                 <DiffCard key={card.id} sessionId={activeSessionId} title={card.title} files={card.files} />
               ))}
