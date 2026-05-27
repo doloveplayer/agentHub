@@ -60,9 +60,9 @@ export function FaceTerminalLog({ events }: { events: AgentEvent[] }) {
           case 'tool_result':
             return <div key={i} className="text-hub-success">{`[${time}] RESULT ${(details.resultPreview || details.content || '').slice(0, 80)}`}</div>;
           case 'subagent_start':
-            return <div key={i} className="text-hub-link">{`[${time}] AGENT  ${details.agentType || '?'} started`}</div>;
+            return <div key={i} className="text-hub-link">{`[${time}] SUBAGENT  ${details.agentType || '?'} started`}</div>;
           case 'subagent_result':
-            return <div key={i} className="text-hub-success/80">{`[${time}] AGENT  ${details.agentType || '?'} done`}</div>;
+            return <div key={i} className="text-hub-success/80">{`[${time}] SUBAGENT  ${details.agentType || '?'} done`}</div>;
           case 'permission_request':
             return <div key={i} className="text-hub-warning">{`[${time}] PERM   ${details.tool || '?'}`}</div>;
           default:
@@ -96,7 +96,7 @@ export function FaceDashboard({
   thinkingLevel: string;
   toolCount: number;
 }) {
-  const barColor = contextPct > 80 ? 'bg-hub-danger' : contextPct > 50 ? 'bg-hub-warning' : 'bg-hub-success';
+  const barColor = contextPct >= 80 ? 'bg-hub-danger' : contextPct >= 50 ? 'bg-hub-warning' : 'bg-hub-success';
   const totalTokens = inputTokens + outputTokens + cacheTokens;
   const inputPct = totalTokens > 0 ? (inputTokens / totalTokens) * 100 : 0;
   const outputPct = totalTokens > 0 ? (outputTokens / totalTokens) * 100 : 0;
