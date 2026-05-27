@@ -19,6 +19,7 @@ export interface ProviderConfig {
   env?: Record<string, string>;
   agentName?: string;
   hostWorkDir?: string;
+  trustMode?: boolean;
 }
 
 export type EventHandler = (event: UnifiedAgentEvent) => void;

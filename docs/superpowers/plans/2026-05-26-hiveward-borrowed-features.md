@@ -47,7 +47,9 @@ packages/shared/src/
 
 HiveWard's `claude-runtime.ts` wraps `@anthropic-ai/claude-agent-sdk`'s `query()` which returns an async iterable of typed `SDKMessage`. Session management (`resume`), permissions (`permissionMode`), tools (`allowedTools`), structured output (`outputFormat`), and thinking control are all SDK-native.
 
-**Design decision:** SDK runs on host with `cwd` pointing to Docker bind-mounted workspace. This eliminates per-message container startup while keeping filesystem isolation (container still exists for workspace). Agent process isolation is traded for SDK-level permission control which is more granular than our current trust-mode binary.
+**Design decision:** SDK runs inside the sandbox Docker container via `docker exec`. The sandbox image (`agenthub-sandbox:latest`) now includes `@anthropic-ai/claude-agent-sdk` globally installed. A runner script (`sdk-runner.mjs`) inside the container reads the prompt from a bind-mounted file, calls `query()`, and streams JSON messages to stdout. The host side spawns `docker exec` and parses stdout via `EventParser`. This preserves filesystem isolation (Docker container boundaries) while retaining SDK benefits: typed events, native session persistence, structured output.
+
+**Update (2026-05-26):** Original design ran SDK on host with `cwd` pointing to bind-mounted workspace. This was revised to run SDK inside Docker because: (a) host-based SDK has no filesystem isolation — `bypassPermissions` allows writing anywhere on host, (b) `/workspace/**` permission paths in `settings.json` don't match host paths, (c) Docker isolation provides defense-in-depth that SDK permission modes alone cannot guarantee. See `apps/api/src/agent/SDKContainer.ts` and `docker/sdk-runner.mjs` for implementation.
 
 - [x] **Step 1: Install `@anthropic-ai/claude-agent-sdk`**
 
@@ -251,15 +253,7 @@ class ClaudeAgentSDKAdapter implements OneShotAgentProcess {
 
 - [x] **Step 5: Remove docker run overhead for one-shot tasks**
 
-Current `ClaudeCodeProcess.startDockerRun()` constructs `docker run ... agenthub-sandbox`. With SDK running on host and `cwd` pointing to bind-mounted workspace, Docker container only needs to exist for filesystem isolation — not for process execution. Update `dispatchTaskOneShot` in `taskDispatcher.ts`:
-
-```typescript
-// In dispatchTaskOneShot(), replace:
-//   proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, true, sandbox.hostWorkDir, ...)
-// With:
-//   proc.start(sessionId, fullPrompt, sandbox.containerId, sandbox.hostWorkDir ?? sandbox.workDir, true, sandbox.hostWorkDir, ...)
-// The SDK uses hostWorkDir as cwd — container isolation is still provided for filesystem via bind mount.
-```
+SDK now runs inside the sandbox container via `docker exec` instead of on host. The `SDKContainer.spawnSDKInDocker()` helper spawns `docker exec -i {containerId} node /usr/local/bin/sdk-runner.mjs`, writing the prompt to a bind-mounted file and parsing stdout JSON via `EventParser`. This provides true filesystem isolation (Docker container) while retaining SDK-native session persistence and structured output.
 
 - [x] **Step 6: Verify: TypeScript compilation**
 

@@ -7,7 +7,36 @@ export const defaultAgents = [
     settings: {
       model: 'deepseek-v4-flash',
       permissions: {
-        deny: ['Bash(rm -rf:*)', 'Bash(sudo:*)', 'Bash(chmod 777:*)', 'Bash(>: /dev/sda:*)'],
+        allow: [
+          'Read(/workspace/**)',
+          'Write(/workspace/**)',
+          'Edit(/workspace/**)',
+          'Bash(ls:/workspace/**)',
+          'Bash(cat:/workspace/**)',
+          'Bash(find:/workspace/**)',
+          'Bash(git:*:*)',
+          'Bash(npm:*:*)',
+          'Bash(npx:*:*)',
+          'Bash(node:*:*)',
+          'Bash(mkdir:*:*)',
+          'Bash(touch:*:*)',
+        ],
+        deny: [
+          'Bash(rm -rf:*)',
+          'Bash(sudo:*)',
+          'Bash(chmod 777:*)',
+          'Bash(>: /dev/sda:*)',
+          'Read(/etc/**)',
+          'Write(/etc/**)',
+          'Read(/proc/**)',
+          'Write(/proc/**)',
+          'Read(/sys/**)',
+          'Write(/sys/**)',
+          'Read(/root/**)',
+          'Write(/root/**)',
+          'Read(/var/**)',
+          'Write(/var/**)',
+        ],
       },
     },
   },
@@ -19,8 +48,11 @@ export const defaultAgents = [
     settings: {
       model: 'deepseek-v4-flash',
       permissions: {
-        allow: ['Read(/workspace/**)', 'Bash(npm:*:*)', 'Bash(npx:*:*)', 'Bash(node:*:*)', 'Bash(git:*:*)'],
-        deny: ['Write(/workspace/**)', 'Edit(/workspace/**)'],
+        allow: ['Read(/workspace/**)', 'Bash(ls:/workspace/**)', 'Bash(cat:/workspace/**)', 'Bash(find:/workspace/**)', 'Bash(npm:*:*)', 'Bash(npx:*:*)', 'Bash(node:*:*)', 'Bash(git:*:*)'],
+        deny: [
+          'Write(/workspace/**)', 'Edit(/workspace/**)',
+          'Read(/etc/**)', 'Read(/proc/**)', 'Read(/sys/**)', 'Read(/root/**)', 'Read(/var/**)',
+        ],
       },
     },
   },
@@ -32,7 +64,26 @@ export const defaultAgents = [
     settings: {
       model: 'deepseek-v4-flash',
       permissions: {
-        deny: ['Bash(rm -rf /:*)', 'Bash(sudo:*)', 'Bash(chmod 777:*)'],
+        allow: [
+          'Read(/workspace/**)',
+          'Write(/workspace/**)',
+          'Edit(/workspace/**)',
+          'Bash(ls:/workspace/**)',
+          'Bash(cat:/workspace/**)',
+          'Bash(find:/workspace/**)',
+          'Bash(git:*:*)',
+          'Bash(npm:*:*)',
+          'Bash(npx:*:*)',
+          'Bash(node:*:*)',
+          'Bash(docker:*:*)',
+        ],
+        deny: [
+          'Bash(rm -rf /:*)', 'Bash(sudo:*)', 'Bash(chmod 777:*)',
+          'Read(/etc/**)', 'Write(/etc/**)',
+          'Read(/proc/**)', 'Write(/proc/**)',
+          'Read(/sys/**)', 'Write(/sys/**)',
+          'Read(/root/**)', 'Write(/root/**)',
+        ],
       },
     },
   },
@@ -44,8 +95,17 @@ export const defaultAgents = [
     settings: {
       model: 'deepseek-v4-flash',
       permissions: {
-        allow: ['Write(/workspace/**/*.test.*:*)', 'Write(/workspace/**/*.spec.*:*)', 'Bash(npm test:*)', 'Bash(npx jest:*)', 'Bash(npx vitest:*)'],
-        deny: ['Write(/workspace/src/**)', 'Bash(rm -rf:*)'],
+        allow: [
+          'Read(/workspace/**)',
+          'Write(/workspace/**/*.test.*:*)', 'Write(/workspace/**/*.spec.*:*)',
+          'Write(/workspace/**/__tests__/**)', 'Write(/workspace/**/tests/**)',
+          'Bash(ls:/workspace/**)', 'Bash(cat:/workspace/**)',
+          'Bash(npm test:*)', 'Bash(npx jest:*)', 'Bash(npx vitest:*)',
+        ],
+        deny: [
+          'Write(/workspace/src/**)', 'Bash(rm -rf:*)',
+          'Read(/etc/**)', 'Read(/proc/**)', 'Read(/sys/**)', 'Read(/root/**)', 'Read(/var/**)',
+        ],
       },
     },
   },
@@ -57,8 +117,15 @@ export const defaultAgents = [
     settings: {
       model: 'deepseek-v4-flash',
       permissions: {
-        allow: ['Read(/workspace/**)', 'Bash(npm audit:*)', 'Bash(npm ls:*)', 'Bash(npm outdated:*)', 'Bash(npx:*)'],
-        deny: ['Write(/workspace/**)', 'Edit(/workspace/**)', 'Bash(npm install:*)', 'Bash(npm update:*)'],
+        allow: [
+          'Read(/workspace/**)',
+          'Bash(ls:/workspace/**)', 'Bash(cat:/workspace/**)',
+          'Bash(npm audit:*)', 'Bash(npm ls:*)', 'Bash(npm outdated:*)', 'Bash(npx:*)',
+        ],
+        deny: [
+          'Write(/workspace/**)', 'Edit(/workspace/**)', 'Bash(npm install:*)', 'Bash(npm update:*)',
+          'Read(/etc/**)', 'Read(/proc/**)', 'Read(/sys/**)', 'Read(/root/**)', 'Read(/var/**)',
+        ],
       },
     },
   },
@@ -134,8 +201,18 @@ export const defaultAgents = [
       model: 'deepseek-v4-pro',
       thinking: true,
       permissions: {
-        allow: ['Read(/workspace/**)', 'Bash(ls:*)', 'Bash(cat:*)', 'Bash(git:*:*)', 'Bash(find:*:*)'],
-        deny: ['Write(/workspace/**)', 'Edit(/workspace/**)', 'Bash(npm install:*)', 'Bash(npm uninstall:*)'],
+        allow: [
+          'Read(/workspace/**)',
+          'Bash(ls:/workspace/**)',
+          'Bash(cat:/workspace/**)',
+          'Bash(git:*:*)',
+          'Bash(find:/workspace/**)',
+        ],
+        deny: [
+          'Write(/workspace/**)', 'Edit(/workspace/**)',
+          'Bash(npm install:*)', 'Bash(npm uninstall:*)',
+          'Read(/etc/**)', 'Read(/proc/**)', 'Read(/sys/**)', 'Read(/root/**)', 'Read(/var/**)',
+        ],
       },
     },
   },

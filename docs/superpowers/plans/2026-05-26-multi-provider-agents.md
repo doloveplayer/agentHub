@@ -815,6 +815,8 @@ git commit -m "feat: pull solo agent into group session"
 
 ### Task 8: Real Workspace Deployment (Docker Bind-Mount)
 
+> **SDK-in-Docker update (2026-05-26):** All agent execution now runs inside the sandbox Docker container via `docker exec` + `sdk-runner.mjs` (see `apps/api/src/agent/SDKContainer.ts`). This provides true filesystem isolation — agents cannot escape the container's `/workspace` regardless of trust mode. Bind-mounting real workspaces is now simpler: just change the bind-mount target to the real workspace path. `permissionMode` in `defaultAgents.ts` has been tightened with `/workspace/**` scoped Bash rules and escape-path deny patterns.
+
 **Files:**
 - Modify: `apps/api/src/ws/state.ts`
 - Modify: `apps/api/src/ws/handler.ts`

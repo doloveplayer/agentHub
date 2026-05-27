@@ -7,10 +7,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g @anthropic-ai/claude-agent-sdk
 
 # Use non-root user for --dangerously-skip-permissions compatibility
 RUN mkdir -p /workspace \
-    && chown node:node /workspace
+    && mkdir -p /home/node/.claude/sessions \
+    && chown -R node:node /workspace /home/node/.claude
+
+# SDK runner script — executed via docker exec for in-container SDK usage
+COPY sdk-runner.mjs /usr/local/bin/sdk-runner.mjs
+RUN chmod +x /usr/local/bin/sdk-runner.mjs
+
 USER node
 
 WORKDIR /workspace

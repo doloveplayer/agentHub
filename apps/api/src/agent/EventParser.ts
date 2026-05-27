@@ -65,6 +65,8 @@ export class EventParser {
         return EventParser.parseToolUse(data);
       case 'tool_result':
         return EventParser.parseToolResult(data);
+      case 'stream_event':
+        return EventParser.parseStreamEvent(data);
       case 'permission_request':
         return EventParser.parsePermissionRequest(data);
       case 'subagent_start':
@@ -122,6 +124,19 @@ export class EventParser {
     const cb = (data as any).content_block;
     if (cb && cb.type === 'tool_use' && cb.name) {
       return { type: 'tool_use', toolName: cb.name, input: cb.input || {} };
+    }
+    return null;
+  }
+
+  /** SDK emits stream_event wrapping content_block_start / content_block_delta */
+  private static parseStreamEvent(data: StreamJsonLine): ParsedEvent | null {
+    const evt = (data as any).event;
+    if (!evt) return null;
+    if (evt.type === 'content_block_start') {
+      return EventParser.parseContentBlockStart({ ...data, content_block: evt.content_block } as any);
+    }
+    if (evt.type === 'content_block_delta') {
+      return EventParser.parseContentBlockDelta({ ...data, delta: evt.delta } as any);
     }
     return null;
   }

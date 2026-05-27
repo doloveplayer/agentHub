@@ -1,7 +1,8 @@
 import { config } from '../config.js';
-import type { ParsedEvent } from './EventParser.js';
+import { EventParser, type ParsedEvent } from './EventParser.js';
 import { ClaudeCodeProcess } from './ClaudeCodeProcess.js';
 import { TestAgentProcess } from './TestAgentProcess.js';
+import { spawnSDKInDocker } from './SDKContainer.js';
 
 export interface OneShotAgentProcess {
   onClaudeSession?: (sessionId: string) => void;
@@ -32,30 +33,34 @@ export function createOneShotAgentProcess(): OneShotAgentProcess {
 }
 
 /**
- * Creates an SDK-backed process. Returns null if SDK is unavailable.
- * Callers should fall back to createOneShotAgentProcess().
+ * Creates an SDK-backed process running inside the sandbox Docker container.
+ * Returns null if SDK is unavailable. Callers fall back to createOneShotAgentProcess().
  */
 export async function createSDKAgentProcess(): Promise<OneShotAgentProcess | null> {
   if (config.agent.provider === "test") return new TestAgentProcess();
   try {
-    const { ClaudeAgentSDK, mapPermissionMode, mapAllowedTools } = await import("./ClaudeAgentSDK.js");
-    const sdk = { ClaudeAgentSDK, mapPermissionMode, mapAllowedTools };
-    return new ClaudeSDKProcess(sdk);
+    const { mapPermissionMode, mapAllowedTools } = await import("./ClaudeAgentSDK.js");
+    return new ClaudeSDKDockerProcess({ mapPermissionMode, mapAllowedTools });
   } catch {
     console.log("[processFactory] Claude Agent SDK not available, falling back to CLI spawn");
     return null;
   }
 }
 
-// ClaudeSDKProcess now takes SDK deps via constructor (no static import)
-class ClaudeSDKProcess implements OneShotAgentProcess {
-  private sdk: any = null;
+class ClaudeSDKDockerProcess implements OneShotAgentProcess {
   private handlers: Array<(event: ParsedEvent) => void> = [];
   private _onClaudeSession: ((sessionId: string) => void) | undefined;
-  private sdkLib: any;
+  private killed = false;
+  private childProc: import('child_process').ChildProcess | null = null;
+  private pendingCleanup: (() => void) | null = null;
+  private partialLine = '';
+  private runSeq = 0;
+  private mapPermissionMode: (profile: string) => any;
+  private mapAllowedTools: (profile: string) => string[];
 
-  constructor(sdkLib: any) {
-    this.sdkLib = sdkLib;
+  constructor(deps: { mapPermissionMode: (profile: any) => any; mapAllowedTools: (profile: any) => string[] }) {
+    this.mapPermissionMode = deps.mapPermissionMode;
+    this.mapAllowedTools = deps.mapAllowedTools;
   }
 
   get onClaudeSession(): ((sessionId: string) => void) | undefined {
@@ -69,53 +74,113 @@ class ClaudeSDKProcess implements OneShotAgentProcess {
     this.handlers.push(handler);
   }
 
-  emit(event: ParsedEvent): void {
+  private emit(event: ParsedEvent): void {
     for (const h of this.handlers) {
       try { h(event); } catch { /* isolate */ }
     }
   }
 
-  isAlive(): boolean { return this.sdk !== null; }
-
   async start(
-    _sessionId: string,
+    sessionId: string,
     prompt: string,
-    _containerId: string,
-    workDir: string,
+    containerId: string,
+    _workDir: string,
     trustMode?: boolean,
     hostWorkDir?: string,
-    _promptFileId?: string,
+    promptFileId?: string,
     claudeSessionId?: string,
-    _agentConfigId?: string,
+    agentConfigId?: string,
   ): Promise<void> {
-    const ClaudeAgentSDK = this.sdkLib.ClaudeAgentSDK;
-    const mapPermissionMode = this.sdkLib.mapPermissionMode;
-    const mapAllowedTools = this.sdkLib.mapAllowedTools;
-    this.sdk = new ClaudeAgentSDK();
-    const cwd = hostWorkDir || workDir;
-    const profile: string = trustMode ? "bypass" : "read_only";
+    this.killed = false;
+    this.partialLine = '';
+    this.pendingCleanup = null;
+    EventParser.resetDeltaState();
 
-    const result = await this.sdk.stream(prompt, {
-      cwd,
-      resume: claudeSessionId,
-      permissionMode: mapPermissionMode(profile),
-      allowedTools: mapAllowedTools(profile),
-      persistSession: true,
-    }, (event: ParsedEvent) => {
-      if (event.type === "system" && event.sessionId && this._onClaudeSession) {
-        this._onClaudeSession(event.sessionId);
-      }
-      this.emit(event);
+    const hwDir = hostWorkDir || _workDir;
+    const agentTag = promptFileId || 'agent';
+    const profile = trustMode ? "bypass" : "read_only";
+
+    const { proc, cleanup } = spawnSDKInDocker({
+      containerId,
+      prompt,
+      hostWorkDir: hwDir,
+      agentTag,
+      agentConfigTag: agentConfigId,
+      permissionMode: this.mapPermissionMode(profile),
+      allowedTools: this.mapAllowedTools(profile),
+      resumeSession: claudeSessionId,
     });
 
-    // Also capture session ID from result in case no system event was emitted
-    if (result.sessionId && this._onClaudeSession) {
-      this._onClaudeSession(result.sessionId);
-    }
+    this.childProc = proc;
+    this.pendingCleanup = cleanup;
+    const runId = ++this.runSeq;
 
-    this.emit({ type: "done", exitCode: result.exitCode });
+    return new Promise<void>((resolve) => {
+      proc.stdout!.on('data', (chunk: Buffer) => {
+        if (this.killed || runId !== this.runSeq) return;
+        this.partialLine += chunk.toString();
+        const lines = this.partialLine.split('\n');
+        this.partialLine = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = EventParser.parseLine(line);
+          if (!event) continue;
+          if (event.type === 'system' && event.sessionId && this._onClaudeSession) {
+            this._onClaudeSession(event.sessionId);
+          }
+          this.emit(event);
+        }
+      });
+
+      proc.stderr!.on('data', (chunk: Buffer) => {
+        if (runId !== this.runSeq) return;
+        const msg = chunk.toString().trim();
+        if (msg) console.log(`[sdk-docker:stderr] ${msg.slice(0, 500)}`);
+      });
+
+      proc.on('close', (code) => {
+        if (runId !== this.runSeq) return;
+        cleanup();
+        this.childProc = null;
+        this.pendingCleanup = null;
+        if (!this.killed) {
+          // Flush remaining partial line
+          if (this.partialLine.trim()) {
+            const event = EventParser.parseLine(this.partialLine);
+            if (event && event.type === 'system' && event.sessionId && this._onClaudeSession) {
+              this._onClaudeSession(event.sessionId);
+            }
+            if (event && event.type !== 'done') this.emit(event);
+          }
+          this.emit({ type: 'done', exitCode: code ?? 1 });
+          resolve();
+        }
+      });
+
+      proc.on('error', (err) => {
+        if (runId !== this.runSeq) return;
+        cleanup();
+        if (!this.killed) {
+          this.emit({ type: 'error', message: `docker exec error: ${err.message}` });
+          this.emit({ type: 'done', exitCode: 1 });
+          resolve();
+        }
+      });
+    });
   }
 
-  write(_input: string): void { /* SDK handles stdin through query prompt */ }
-  kill(): void { this.sdk?.kill(); this.sdk = null; }
+  write(_input: string): void {
+    // SDK handles permissions internally via permissionMode setting.
+    // No stdin forwarding needed.
+  }
+
+  kill(): void {
+    this.killed = true;
+    if (this.childProc) {
+      try { this.childProc.kill('SIGTERM'); } catch { /* ignore */ }
+      this.childProc = null;
+    }
+    this.pendingCleanup?.();
+    this.pendingCleanup = null;
+  }
 }
