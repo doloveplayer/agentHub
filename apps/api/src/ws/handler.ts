@@ -6,7 +6,7 @@ import { InboxManager } from '../agent/InboxManager.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import { stateTracker } from '../agent/StateTracker.js';
 import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
-import { selectDefaultAgent, toTaskStates } from '../agent/turns.js';
+import { selectDefaultAgent } from '../agent/turns.js';
 import { getApprovalGate } from '../agent/ApprovalGate.js';
 import { extractAndValidate } from '../agent/PlanValidator.js';
 import { IntentParser } from '../agent/IntentParser.js';
@@ -420,7 +420,6 @@ async function handleChatMessage(
     }
 
     let accumulatedContent = '';
-    let inJsonBlock = false;
     const agentNameForProc = mention.agentId
       ? (await prisma.agent.findUnique({ where: { id: mention.agentId }, select: { name: true } }))?.name
       : null;
@@ -468,14 +467,9 @@ async function handleChatMessage(
           accumulatedContent += event.content;
           let chatContent = event.content;
           if (isPlannerAgent) {
-            if (inJsonBlock) {
-              const endIdx = chatContent.indexOf('```');
-              if (endIdx !== -1) { inJsonBlock = false; chatContent = chatContent.slice(endIdx + 3); }
-              else break;
-            } else {
-              const jsonStart = chatContent.indexOf('```json');
-              if (jsonStart !== -1) { inJsonBlock = true; chatContent = chatContent.slice(0, jsonStart); }
-            }
+            // Strip <!--AGENTHUB_PLAN{...}--> from user-visible content
+            chatContent = chatContent.replace(/<!--AGENTHUB_PLAN\{[\s\S]*?\}-->/g, '');
+            if (!chatContent.trim()) break; // nothing user-visible in this chunk
           }
           if (chatContent) broadcast(sessionId, { type: 'stream_chunk', content: chatContent, agentMessageId: mention.messageId });
           broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: event.content.slice(0, 120) }, agentMessageId: mention.messageId, timestamp: Date.now() });
@@ -608,20 +602,35 @@ async function handleChatMessage(
             }
           }
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
-          if (isPlannerAgent && event.exitCode === 0 && accumulatedContent) {
-            const plan = extractAndValidate(accumulatedContent);
-            if (plan) {
-              const planId = `plan-${Date.now()}`;
-              broadcast(sessionId, { type: 'plan_result', planId, planTitle: plan.planTitle, summary: plan.summary, tasks: toTaskStates(plan, planId), agentMessageId: mention.messageId });
-              console.log(`[ws] Planner plan_result broadcast: planId=${planId} tasks=${plan.tasks.length}`);
-              // Auto-dispatch tasks (one-shot path)
-              dispatchTasksToAgents(sessionId, planId, plan.tasks.map(t => ({
-                id: t.id, title: t.title, description: t.description,
-                agentType: t.agentType, dependsOn: t.dependsOn,
-                expectedOutput: t.expectedOutput, priority: t.priority || 'medium',
-              })), sandbox, plan.planTitle).catch((err: any) => {
-                console.error(`[ws] Plan auto-dispatch (one-shot) failed: ${err.message}`);
-              });
+          // Extract hidden plan JSON from Planner output
+          if (isPlannerAgent && sandbox) {
+            const planMatch = accumulatedContent.match(/<!--AGENTHUB_PLAN(\{[\s\S]*?\})-->/);
+            if (planMatch) {
+              try {
+                const plan = JSON.parse(planMatch[1]);
+                const validated = extractAndValidate(JSON.stringify(plan));
+                if (validated) {
+                  const planId = `plan-${Date.now()}`;
+                  broadcast(sessionId, {
+                    type: 'plan_ready',
+                    planId,
+                    planTitle: validated.planTitle,
+                    summary: validated.summary,
+                    tasks: validated.tasks.map(t => ({
+                      taskId: t.id,
+                      title: t.title,
+                      agentType: t.agentType,
+                      dependsOn: t.dependsOn,
+                      expectedOutput: t.expectedOutput,
+                      priority: t.priority,
+                      status: 'waiting',
+                    })),
+                    timestamp: Date.now(),
+                  });
+                }
+              } catch (err: any) {
+                console.error(`[ws] Failed to parse embedded plan: ${err.message}`);
+              }
             }
           }
           const finalContent = accumulatedContent || (event.exitCode !== 0 ? '[Agent stopped]' : '[Agent finished]');
@@ -1082,7 +1091,13 @@ async function preActivateGroupAgents(
               const prev = replAccumulatedContent.get(agentName) || '';
               replAccumulatedContent.set(agentName, prev + event.content);
             }
-            broadcast(sessionId, { type: 'stream_chunk', content: event.content || '', agentMessageId: msgId });
+            let chatContent = event.content || '';
+            if (agentName === 'planner') {
+              // Strip <!--AGENTHUB_PLAN{...}--> from user-visible content
+              chatContent = chatContent.replace(/<!--AGENTHUB_PLAN\{[\s\S]*?\}-->/g, '');
+              if (!chatContent.trim()) break; // nothing user-visible in this chunk
+            }
+            if (chatContent) broadcast(sessionId, { type: 'stream_chunk', content: chatContent, agentMessageId: msgId });
             broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: (event.content || '').slice(0, 120) }, agentMessageId: msgId, timestamp: Date.now() });
             break;
           }
@@ -1114,21 +1129,35 @@ async function preActivateGroupAgents(
             // Capture accumulated content before deletion (for plan extraction + intent scanning)
             const doneContent = replAccumulatedContent.get(agentName) || '';
             replAccumulatedContent.delete(agentName);
-            // Planner plan extraction + auto-dispatch (REPL path)
-            if (agentName === 'planner' && event.exitCode === 0 && doneContent) {
-              const plan = extractAndValidate(doneContent);
-              if (plan) {
-                const planId = `plan-${Date.now()}`;
-                broadcast(sessionId, { type: 'plan_result', planId, planTitle: plan.planTitle, summary: plan.summary, tasks: toTaskStates(plan, planId), agentMessageId: msgId });
-                console.log(`[ws] Planner plan_result (REPL): planId=${planId} tasks=${plan.tasks.length}`);
-                // Auto-dispatch tasks to agents
-                dispatchTasksToAgents(sessionId, planId, plan.tasks.map(t => ({
-                  id: t.id, title: t.title, description: t.description,
-                  agentType: t.agentType, dependsOn: t.dependsOn,
-                  expectedOutput: t.expectedOutput, priority: t.priority || 'medium',
-                })), sandbox, plan.planTitle).catch((err: any) => {
-                  console.error(`[ws] Plan auto-dispatch failed: ${err.message}`);
-                });
+            // Extract hidden plan JSON from Planner output
+            if (agentName === 'planner' && doneContent) {
+              const planMatch = doneContent.match(/<!--AGENTHUB_PLAN(\{[\s\S]*?\})-->/);
+              if (planMatch) {
+                try {
+                  const plan = JSON.parse(planMatch[1]);
+                  const validated = extractAndValidate(JSON.stringify(plan));
+                  if (validated) {
+                    const planId = `plan-${Date.now()}`;
+                    broadcast(sessionId, {
+                      type: 'plan_ready',
+                      planId,
+                      planTitle: validated.planTitle,
+                      summary: validated.summary,
+                      tasks: validated.tasks.map(t => ({
+                        taskId: t.id,
+                        title: t.title,
+                        agentType: t.agentType,
+                        dependsOn: t.dependsOn,
+                        expectedOutput: t.expectedOutput,
+                        priority: t.priority,
+                        status: 'waiting',
+                      })),
+                      timestamp: Date.now(),
+                    });
+                  }
+                } catch (err: any) {
+                  console.error(`[ws] Failed to parse embedded plan: ${err.message}`);
+                }
               }
               // Stop planner from continuing — prevent it from trying to implement
               provider.stopChild?.();
