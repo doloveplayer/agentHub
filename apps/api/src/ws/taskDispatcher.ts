@@ -286,9 +286,10 @@ export async function dispatchTasksToAgents(
 
   const agentsByType = new Map<string, typeof sessionAgents[number]['agent'][]>();
   for (const sa of sessionAgents) {
-    const list = agentsByType.get(sa.agent.displayName) || [];
+    const key = sa.agent.name.toLowerCase();
+    const list = agentsByType.get(key) || [];
     list.push(sa.agent);
-    agentsByType.set(sa.agent.displayName, list);
+    agentsByType.set(key, list);
   }
 
   const loadByAgent = new Map<string, number>();
@@ -296,7 +297,7 @@ export async function dispatchTasksToAgents(
   const assignments: DagTaskAssignment[] = [];
 
   for (const task of tasks) {
-    const candidates = agentsByType.get(task.agentType) || [];
+    const candidates = agentsByType.get(task.agentType.toLowerCase()) || [];
     if (candidates.length === 0) {
       const suggested = findClosestAgent(task.agentType, sessionAgents.map(sa => sa.agent));
       if (suggested) {
@@ -312,7 +313,7 @@ export async function dispatchTasksToAgents(
           type: 'agent_missing', planId, taskId: task.id,
           agentType: task.agentType, taskTitle: task.title,
           suggestedAgent: {
-            name: task.agentType.toLowerCase().replace('agent', '-agent'),
+            name: task.agentType,
             displayName: task.agentType,
             description: `Auto-suggested ${task.agentType} for task: ${task.title}`,
           },

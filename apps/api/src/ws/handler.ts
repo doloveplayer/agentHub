@@ -218,17 +218,16 @@ async function handleConnection(ws: WebSocket, request: any) {
 }
 
 function resolveAgentNameInSession(sessionId: string, agentType: string): string | null {
+  const normalized = agentType.toLowerCase();
   const procMap = agentProcesses.get(sessionId);
   if (procMap) {
     for (const [name] of procMap) {
-      if (agentNameToType.get(name) === agentType) return name;
-      if (name === agentType) return name;
+      if (name.toLowerCase() === normalized) return name;
     }
   }
   // Also check task queues
   for (const [name] of agentTaskQueues) {
-    if (agentNameToType.get(name) === agentType) return name;
-    if (name === agentType) return name;
+    if (name.toLowerCase() === normalized) return name;
   }
   // Not yet started — trust agentType as the agent name.
   return agentType;
