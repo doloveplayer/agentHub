@@ -8,15 +8,16 @@ datasource db {
 }
 
 model User {
-  id        String        @id @default(uuid())
-  username  String        @unique
-  password  String
-  avatarUrl String        @default("")
-  email     String?
-  sessions  Session[]
-  settings  UserSettings?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  id               String        @id @default(uuid())
+  username         String        @unique
+  password         String
+  avatarUrl        String        @default("")
+  email            String?
+  encryptedApiKeys String?       // AES-256-GCM encrypted JSON: { "codex": "encrypted_key", ... }
+  sessions         Session[]
+  settings         UserSettings?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 }
 
 model Session {
@@ -34,11 +35,12 @@ model Session {
 }
 
 model SessionAgent {
-  id        String  @id @default(uuid())
-  sessionId String
-  agentId   String
-  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  agent     Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  id                   String  @id @default(uuid())
+  sessionId            String
+  agentId              String
+  systemPromptOverride String? // session-level system prompt override
+  session              Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  agent                Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, agentId])
 }
@@ -56,16 +58,18 @@ model Message {
 }
 
 model Agent {
-  id            String         @id @default(uuid())
-  name          String         @unique
-  displayName   String
-  description   String
-  systemPrompt  String
-  settings      Json?
-  isActive      Boolean        @default(true)
-  sessionAgents SessionAgent[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id             String         @id @default(uuid())
+  name           String         @unique
+  displayName    String
+  description    String
+  systemPrompt   String
+  provider       String         @default("claude-code")
+  providerConfig Json?          // merged: model, tools, endpoint, apiKey, skill config, etc.
+  capabilities   Json?          // user-defined agent capability profiles (optional)
+  isActive       Boolean        @default(true)
+  sessionAgents  SessionAgent[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 }
 
 model PlanExecution {

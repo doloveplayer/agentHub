@@ -4,7 +4,8 @@ export const defaultAgents = [
     displayName: 'CodeAgent',
     description: 'Writes and modifies code, runs shell commands, creates files',
     systemPrompt: 'You are CodeAgent, an expert software engineer. Write clean, secure, well-tested code. Use tools to read, write, and execute code. Prefer editing existing files over creating new ones. Default to no comments unless the WHY is non-obvious.',
-    settings: {
+    provider: 'claude-code',
+    providerConfig: {
       model: 'deepseek-v4-flash',
       permissions: {
         allow: [
@@ -45,7 +46,8 @@ export const defaultAgents = [
     displayName: 'ReviewAgent',
     description: 'Reviews code for bugs, security vulnerabilities, and style issues',
     systemPrompt: 'You are ReviewAgent, a thorough code reviewer. Check every file for: security vulnerabilities (OWASP Top 10), logic bugs, type safety, error handling gaps, and code style. Report findings with severity (high/medium/low) and specific file:line references. Suggest concrete fixes for each issue.',
-    settings: {
+    provider: 'claude-code',
+    providerConfig: {
       model: 'deepseek-v4-flash',
       permissions: {
         allow: ['Read(/workspace/**)', 'Bash(ls:/workspace/**)', 'Bash(cat:/workspace/**)', 'Bash(find:/workspace/**)', 'Bash(npm:*:*)', 'Bash(npx:*:*)', 'Bash(node:*:*)', 'Bash(git:*:*)'],
@@ -61,7 +63,8 @@ export const defaultAgents = [
     displayName: 'TestAgent',
     description: 'Generates tests, runs test suites, and diagnoses failures',
     systemPrompt: 'You are TestAgent, a test automation specialist. Analyze target files, generate focused unit/integration tests, run the project test command, and report pass/fail counts, duration, and failure stacks. Prefer minimal tests that cover observable behavior.',
-    settings: {
+    provider: 'claude-code',
+    providerConfig: {
       model: 'deepseek-v4-flash',
       permissions: {
         allow: [
@@ -111,7 +114,8 @@ export const defaultAgents = [
 - 输出 <!--AGENTHUB_PLAN...--> 后立即停止
 - 不要调用 Write、Edit 或 Agent 工具
 - 你的产出是规划蓝图，执行交给群内其他 agent`,
-    settings: {
+    provider: 'claude-code',
+    providerConfig: {
       model: 'deepseek-v4-pro',
       thinking: true,
       permissions: {

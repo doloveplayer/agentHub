@@ -3,6 +3,12 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { SandboxManager } from '../agent/SandboxManager.js';
+import { broadcast, sandboxes, realWorkspacePaths, workspaceModes } from '../ws/state.js';
+import { InboxManager } from '../agent/InboxManager.js';
+import { buildGroupContext } from '../agent/groupContext.js';
+import { config } from '../config.js';
+import * as path from 'path';
+import * as fs from 'fs';
 
 const sessions = new Hono();
 sessions.use('*', authMiddleware);
@@ -223,6 +229,40 @@ sessions.patch('/:id', async (c) => {
     data: parsed.data,
   });
 
+  // Broadcast session_renamed event and inject group context if title changed
+  if (parsed.data.title && parsed.data.title !== session.title) {
+    broadcast(sessionId, {
+      type: 'session_renamed',
+      sessionId,
+      oldTitle: session.title,
+      newTitle: parsed.data.title,
+      timestamp: Date.now(),
+    });
+
+    // Inject updated group context into all agents' inbox
+    const sb = sandboxes.get(sessionId);
+    if (sb) {
+      const sessionAgents = await prisma.sessionAgent.findMany({
+        where: { sessionId },
+        include: { agent: { select: { name: true } } },
+      });
+      const groupCtx = await buildGroupContext(sessionId, parsed.data.title);
+      if (groupCtx) {
+        for (const sa of sessionAgents) {
+          InboxManager.write(sb.hostWorkDir, sa.agent.name, {
+            type: 'context_update',
+            id: `rename-${Date.now()}-${sa.agent.name}`,
+            from: 'system',
+            to: sa.agent.name,
+            summary: `Session renamed to "${parsed.data.title}". Updated group context:\n\n${groupCtx}`,
+            risk: 'low',
+            timestamp: Date.now(),
+          });
+        }
+      }
+    }
+  }
+
   return c.json({
     id: updated.id,
     title: updated.title,
@@ -232,6 +272,196 @@ sessions.patch('/:id', async (c) => {
     sandboxContainerId: updated.sandboxContainerId,
     createdAt: updated.createdAt.toISOString(),
     updatedAt: updated.updatedAt.toISOString(),
+  });
+});
+
+// POST /:id/workspace — set real workspace path
+sessions.post('/:id/workspace', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('id');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  let body: { path: string; mode?: 'read_only_default' | 'full_access' };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+  if (!body.path) return c.json({ error: 'path is required' }, 400);
+
+  // Resolve and validate path (prevent traversal)
+  const resolved = path.resolve(body.path);
+  let real: string;
+  try { real = fs.realpathSync(resolved); } catch {
+    return c.json({ error: 'Path does not exist' }, 400);
+  }
+  if (!fs.statSync(real).isDirectory()) return c.json({ error: 'Not a directory' }, 400);
+
+  // Allowlist check against RESOLVED path
+  const roots = config.realWorkspaceRoots.split(':');
+  const allowed = roots.some((root) => real.startsWith(path.resolve(root)));
+  if (!allowed) return c.json({ error: `Path not allowed. Must be under: ${roots.join(', ')}` }, 403);
+
+  realWorkspacePaths.set(sessionId, real);
+  workspaceModes.set(sessionId, body.mode || 'read_only_default');
+
+  broadcast(sessionId, {
+    type: 'workspace_changed',
+    sessionId,
+    path: real,
+    mode: body.mode || 'read_only_default',
+    timestamp: Date.now(),
+  });
+
+  return c.json({ success: true, path: real, mode: body.mode || 'read_only_default' });
+});
+
+// GET /:id/workspace — get current workspace config
+sessions.get('/:id/workspace', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('id');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  return c.json({
+    path: realWorkspacePaths.get(sessionId) || null,
+    mode: workspaceModes.get(sessionId) || 'read_only_default',
+  });
+});
+
+// POST /:id/agents — add agent to session
+sessions.post('/:id/agents', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('id');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  let body: { agentId: string };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+  if (!body.agentId) return c.json({ error: 'agentId is required' }, 400);
+
+  // Check agent exists
+  const agent = await prisma.agent.findUnique({ where: { id: body.agentId } });
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  if (!agent.isActive) return c.json({ error: 'Agent is not active' }, 400);
+
+  // Check if already in session
+  const existing = await prisma.sessionAgent.findUnique({
+    where: { sessionId_agentId: { sessionId, agentId: body.agentId } },
+  });
+  if (existing) return c.json({ error: 'Agent already in session' }, 409);
+
+  // Add agent to session
+  const sessionAgent = await prisma.sessionAgent.create({
+    data: { sessionId, agentId: body.agentId },
+    include: { agent: { select: { id: true, name: true, displayName: true } } },
+  });
+
+  // Broadcast agent_joined event
+  broadcast(sessionId, {
+    type: 'agent_joined',
+    sessionId,
+    agent: {
+      id: sessionAgent.agent.id,
+      name: sessionAgent.agent.name,
+      displayName: sessionAgent.agent.displayName,
+    },
+    timestamp: Date.now(),
+  });
+
+  return c.json({
+    agentId: sessionAgent.agent.id,
+    name: sessionAgent.agent.name,
+    displayName: sessionAgent.agent.displayName,
+  }, 201);
+});
+
+// DELETE /:id/agents/:agentId — remove agent from session
+sessions.delete('/:id/agents/:agentId', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('id');
+  const agentId = c.req.param('agentId');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  try {
+    await prisma.sessionAgent.delete({
+      where: { sessionId_agentId: { sessionId, agentId } },
+    });
+
+    broadcast(sessionId, {
+      type: 'agent_left',
+      sessionId,
+      agentId,
+      timestamp: Date.now(),
+    });
+
+    return c.body(null, 204);
+  } catch (err: any) {
+    if (err.code === 'P2025') return c.json({ error: 'Agent not in session' }, 404);
+    throw err;
+  }
+});
+
+// PATCH /:id/agents/:agentId — update session-level agent config
+sessions.patch('/:id/agents/:agentId', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('id');
+  const agentId = c.req.param('agentId');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  let body: { systemPromptOverride?: string };
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+
+  try {
+    const updated = await prisma.sessionAgent.update({
+      where: { sessionId_agentId: { sessionId, agentId } },
+      data: { systemPromptOverride: body.systemPromptOverride ?? null },
+    });
+
+    return c.json({
+      sessionId: updated.sessionId,
+      agentId: updated.agentId,
+      systemPromptOverride: updated.systemPromptOverride,
+    });
+  } catch (err: any) {
+    if (err.code === 'P2025') return c.json({ error: 'Agent not in session' }, 404);
+    throw err;
+  }
+});
+
+// GET /:id/agents/:agentId — get session-level agent config
+sessions.get('/:id/agents/:agentId', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('id');
+  const agentId = c.req.param('agentId');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session) return c.json({ error: 'Session not found' }, 404);
+  if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  const sessionAgent = await prisma.sessionAgent.findUnique({
+    where: { sessionId_agentId: { sessionId, agentId } },
+    include: { agent: { select: { systemPrompt: true } } },
+  });
+
+  if (!sessionAgent) return c.json({ error: 'Agent not in session' }, 404);
+
+  return c.json({
+    sessionId,
+    agentId,
+    systemPromptOverride: sessionAgent.systemPromptOverride,
+    globalSystemPrompt: sessionAgent.agent.systemPrompt,
   });
 });
 

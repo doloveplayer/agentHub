@@ -6,6 +6,7 @@ import { SandboxManager } from '../agent/SandboxManager.js';
 import { config } from '../config.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import type { AbstractProvider } from '../agent/providers/base.js';
+import type { WorkspaceMode } from '@agenthub/shared';
 
 // ---- State Maps ----
 
@@ -14,6 +15,12 @@ export const sessions = new Map<string, Set<WebSocket>>();
 
 /** sessionId → permission mode (read_only | ask | smart | trust) */
 export const sessionPermissionModes = new Map<string, string>();
+
+/** sessionId → real workspace path (if different from sandbox) */
+export const realWorkspacePaths = new Map<string, string>();
+
+/** sessionId → workspace mode */
+export const workspaceModes = new Map<string, WorkspaceMode>();
 
 /** sessionId → active agent info (process + timer) */
 export interface AgentProcess {
@@ -230,6 +237,8 @@ export function cleanupSessionResources(sessionId: string): void {
   );
 
   perSessionPendingQueues.delete(sessionId);
+  realWorkspacePaths.delete(sessionId);
+  workspaceModes.delete(sessionId);
   sessions.delete(sessionId);
 }
 

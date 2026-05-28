@@ -7,6 +7,19 @@ export interface User {
 
 export type PermissionMode = 'read_only' | 'ask' | 'smart' | 'trust';
 
+export type AgentProvider = 'claude-code' | 'codex';
+
+export interface AgentProviderConfig {
+  model?: string;
+  endpoint?: string;
+  allowedTools?: string[];
+  forbiddenTools?: string[];
+  skills?: string[];
+  [key: string]: unknown;
+}
+
+export type WorkspaceMode = 'read_only_default' | 'full_access';
+
 export interface Session {
   id: string;
   title: string;
@@ -42,6 +55,9 @@ export interface AgentConfig {
   displayName: string;
   description: string;
   systemPrompt: string;
+  provider?: AgentProvider;
+  providerConfig?: AgentProviderConfig | null;
+  capabilities?: Record<string, unknown> | null;
 }
 
 export interface Mention {
@@ -134,4 +150,20 @@ export interface ReplanFailedTaskResult {
   action: 'continue' | 'replan' | 'abort';
   reason: string;
   nextTasks?: TaskNode[];
+}
+
+export interface SessionRenamedEvent {
+  type: 'session_renamed';
+  sessionId: string;
+  oldTitle: string;
+  newTitle: string;
+  timestamp: number;
+}
+
+export interface WorkspaceChangedEvent {
+  type: 'workspace_changed';
+  sessionId: string;
+  path: string;
+  mode: WorkspaceMode;
+  timestamp: number;
 }

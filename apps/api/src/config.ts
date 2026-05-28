@@ -160,6 +160,8 @@ export const config = {
 
   frontendUrl: optional('FRONTEND_URL', 'http://localhost:5175'),
 
+  realWorkspaceRoots: optional('AGENTHUB_REAL_WORKSPACE_ROOTS', '/home'),
+
   agent: {
     get maxConcurrent() { return runtimeConfig.agent.maxConcurrent; },
     get timeoutMs() { return runtimeConfig.agent.timeoutMs; },

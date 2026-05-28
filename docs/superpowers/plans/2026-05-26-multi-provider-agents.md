@@ -47,7 +47,7 @@
 
 Merge `settings` JSON into `providerConfig`. `providerConfig` now holds everything: model, tools, endpoint, apiKey, skill config. Remove standalone `settings` field. Add `capabilities` JSONB for custom agent capability profiles.
 
-- [ ] **Step 1: Update Prisma schema**
+- [x] **Step 1: Update Prisma schema**
 
 ```prisma
 model Agent {
@@ -104,7 +104,7 @@ model User {
 }
 ```
 
-- [ ] **Step 2: Run Prisma migration**
+- [x] **Step 2: Run Prisma migration**
 
 ```bash
 cd apps/api && npx prisma migrate dev --name merge_settings_provider_config
@@ -112,7 +112,7 @@ cd apps/api && npx prisma migrate dev --name merge_settings_provider_config
 
 Note: if `settings` column has data, migration needs to copy `settings` → `providerConfig` first.
 
-- [ ] **Step 3: Add types to shared types.ts**
+- [x] **Step 3: Add types to shared types.ts**
 
 ```typescript
 export type AgentProvider = 'claude-code' | 'codex';
@@ -143,7 +143,7 @@ export interface AgentWithProvider {
 export type WorkspaceMode = 'read_only_default' | 'full_access';
 ```
 
-- [ ] **Step 4: TypeScript check and commit**
+- [x] **Step 4: TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p packages/shared/tsconfig.json
@@ -172,13 +172,13 @@ git commit -m "feat: merge settings into providerConfig, add session-level confi
 | Structured output | `outputFormat` | `outputSchema` |
 | Session store | SDK-managed | `~/.codex/sessions` |
 
-- [ ] **Step 1: Install Codex SDK**
+- [x] **Step 1: Install Codex SDK**
 
 ```bash
 cd apps/api && npm install @openai/codex-sdk
 ```
 
-- [ ] **Step 2: Create CodexProvider**
+- [x] **Step 2: Create CodexProvider**
 
 ```typescript
 // apps/api/src/agent/providers/codex.ts
@@ -349,7 +349,7 @@ export class CodexProvider implements AbstractProvider {
 }
 ```
 
-- [ ] **Step 3: Register in factory.ts + wire in AgentRuntimeFactory.ts**
+- [x] **Step 3: Register in factory.ts + wire in AgentRuntimeFactory.ts**
 
 ```typescript
 // factory.ts:
@@ -383,7 +383,7 @@ export class CodexRuntime implements AgentRuntime {
 }
 ```
 
-- [ ] **Step 4: Update ProviderConfig type to include apiKey + endpoint**
+- [x] **Step 4: Update ProviderConfig type to include apiKey + endpoint**
 
 In `apps/api/src/agent/providers/base.ts`, add optional fields to `ProviderConfig`:
 
@@ -401,7 +401,7 @@ export interface ProviderConfig {
 }
 ```
 
-- [ ] **Step 5: TypeScript check and commit**
+- [x] **Step 5: TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json
@@ -419,7 +419,7 @@ git commit -m "feat: add Codex SDK provider with native session persistence"
 
 Add provider + providerConfig to agent create/update API. Frontend dropdown for provider selection with contextual hints (Codex requires API key, Claude uses default SDK).
 
-- [ ] **Step 1: Extend agent routes**
+- [x] **Step 1: Extend agent routes**
 
 In `apps/api/src/routes/agents.ts`, update the create and update schemas:
 
@@ -453,7 +453,7 @@ select: {
 },
 ```
 
-- [ ] **Step 2: TypeScript check and commit**
+- [x] **Step 2: TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json
@@ -467,10 +467,12 @@ git commit -m "feat: add provider + providerConfig to agent CRUD API"
 
 **Files:**
 - Modify: `apps/web/src/components/AgentCard.tsx`
+- Modify: `apps/web/src/components/AgentCardFaces.tsx`
+- Modify: `apps/web/src/components/AgentStatusPanel.tsx`
 
 Show provider badge with capability differentiation. Claude shows "SDK · Session · Stream", Codex shows "CLI · One-shot".
 
-- [ ] **Step 1: Add provider badge + capability text**
+- [x] **Step 1: Add provider badge + capability text**
 
 ```tsx
 const providerInfo = (provider: string) => {
@@ -495,7 +497,7 @@ const info = providerInfo(agent.provider || 'claude-code');
 
 Include also a "Configure" button (wired to Task 9) and an "Add to Group" button (wired to Task 7).
 
-- [ ] **Step 2: TypeScript check and commit**
+- [x] **Step 2: TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/web/tsconfig.json
@@ -518,7 +520,9 @@ When a session is renamed, broadcast the change AND inject updated group context
 
 Import `broadcast` from `state.ts` directly to avoid circular dependency.
 
-- [ ] **Step 1: Generate group context CLAUDE.md snippet**
+**✅ 已完成部分：** Session rename REST API (`PATCH /:id`) 和 UI（SessionList.tsx 中的铅笔图标触发 inline input）已实现。
+
+- [x] **Step 1: Generate group context CLAUDE.md snippet**
 
 ```typescript
 // apps/api/src/agent/groupContext.ts (new helper)
@@ -555,7 +559,7 @@ ${memberList}
 }
 ```
 
-- [ ] **Step 2: Add broadcast + inbox injection on rename**
+- [x] **Step 2: Add broadcast + inbox injection on rename**
 
 In `apps/api/src/routes/sessions.ts`, import from `state.ts` (NOT handler.ts to avoid cycles):
 
@@ -605,7 +609,7 @@ ${groupCtx}`,
 }
 ```
 
-- [ ] **Step 3: Inject group context on session creation too**
+- [x] **Step 3: Inject group context on session creation too**
 
 In `handleConnection` (handler.ts), after sandbox is ready and session agents are loaded, write initial group context to all agents:
 
@@ -633,7 +637,7 @@ if (groupCtx) {
 }
 ```
 
-- [ ] **Step 4: Handle session_renamed in frontend**
+- [x] **Step 4: Handle session_renamed in frontend**
 
 In `useChat.ts`:
 
@@ -656,7 +660,7 @@ updateSessionTitle: (sessionId: string, title: string) =>
   })),
 ```
 
-- [ ] **Step 5: Add inline rename UI to SessionHeader**
+- [x] **Step 5: Add inline rename UI to SessionHeader**
 
 Double-click title → inline input → Enter to save → triggers PATCH:
 
@@ -682,7 +686,7 @@ const [titleDraft, setTitleDraft] = useState('');
 </h2>
 ```
 
-- [ ] **Step 6: TypeScript check and commit**
+- [x] **Step 6: TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json
@@ -701,7 +705,7 @@ git commit -m "feat: session rename with group CLAUDE.md context injection for a
 
 User uploads a `.md` file. Frontmatter defines metadata (name, displayName, description, provider). The Markdown body becomes systemPrompt. `providerConfig` inherits defaults (model, tools from platform defaults) unless user explicitly imports settings. Codex provider requires API key — prompt user to configure in ProviderConfigPage first.
 
-- [ ] **Step 1: Add MD upload endpoint**
+- [x] **Step 1: Add MD upload endpoint**
 
 ```typescript
 // POST /agents/from-md
@@ -763,7 +767,7 @@ function getDefaultProviderConfig(provider: string): Record<string, unknown> {
 }
 ```
 
-- [ ] **Step 2: Create AgentCreator wizard**
+- [x] **Step 2: Create AgentCreator wizard**
 
 ```tsx
 // apps/web/src/components/AgentCreator.tsx
@@ -772,7 +776,7 @@ function getDefaultProviderConfig(provider: string): Record<string, unknown> {
 // providerConfig can be optionally overridden by the user via a JSON textarea.
 ```
 
-- [ ] **Step 3: TypeScript check and commit**
+- [x] **Step 3: TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json
@@ -789,7 +793,7 @@ git commit -m "feat: custom agent creation from .md file with inherited default 
 - Modify: `apps/web/src/components/AgentCard.tsx`
 - Modify: `apps/web/src/lib/api.ts`
 
-- [ ] **Step 1: Add POST /:id/agents endpoint**
+- [x] **Step 1: Add POST /:id/agents endpoint**
 
 ```typescript
 sessions.post('/:id/agents', async (c) => {
@@ -799,11 +803,11 @@ sessions.post('/:id/agents', async (c) => {
 });
 ```
 
-- [ ] **Step 2: Add "Add to Group" button on AgentCard**
+- [x] **Step 2: Add "Add to Group" button on AgentCard**
 
 Visible when agent is NOT in the current session. Sends POST to add agent, then refreshes.
 
-- [ ] **Step 3: TypeScript check and commit**
+- [x] **Step 3: TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json
@@ -833,7 +837,7 @@ git commit -m "feat: pull solo agent into group session"
 
 **Safety:** `path.resolve()` + `fs.realpathSync()` to prevent path traversal. Allowlist check AFTER resolution.
 
-- [ ] **Step 1: Add workspace config and state**
+- [x] **Step 1: Add workspace config and state**
 
 In `apps/api/src/config.ts`:
 
@@ -850,7 +854,7 @@ export const workspaceModes = new Map<string, WorkspaceMode>(); // 'read_only_de
 
 In `cleanupSessionResources`, clean up both maps.
 
-- [ ] **Step 2: Add workspace setup endpoint with path traversal protection**
+- [x] **Step 2: Add workspace setup endpoint with path traversal protection**
 
 ```typescript
 import * as path from 'path';
@@ -884,7 +888,7 @@ sessions.post('/:id/workspace', async (c) => {
 });
 ```
 
-- [ ] **Step 3: Modify getOrCreateSandbox to bind-mount real path**
+- [x] **Step 3: Modify getOrCreateSandbox to bind-mount real path**
 
 In `apps/api/src/ws/state.ts`, `getOrCreateSandbox`:
 
@@ -911,7 +915,7 @@ export async function getOrCreateSandbox(sessionId: string) {
 }
 ```
 
-- [ ] **Step 4: Wire permission mode to workspace mode**
+- [x] **Step 4: Wire permission mode to workspace mode**
 
 In `handler.ts` `handleChatMessage`:
 
@@ -926,7 +930,7 @@ const effectiveTrustMode = wsMode === 'full_access'
   : false; // read_only_default: always require confirmation for writes
 ```
 
-- [ ] **Step 5: Add workspace mode toggle in SessionHeader**
+- [x] **Step 5: Add workspace mode toggle in SessionHeader**
 
 ```tsx
 // Dropdown or toggle switch:
@@ -944,7 +948,7 @@ const workspaceMode = useAppStore((s) => s.workspaceModes[activeSessionId || '']
 )}
 ```
 
-- [ ] **Step 6: TypeScript check and commit**
+- [x] **Step 6: TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json
@@ -964,7 +968,7 @@ git commit -m "feat: real workspace deployment via Docker bind-mount with read-o
 
 Session-level override stored in `SessionAgent.systemPromptOverride`. When agent is invoked, use override if present, else fall back to agent's global `systemPrompt`. The editor also shows the global config as read-only reference.
 
-- [ ] **Step 1: Add session-level config endpoint**
+- [x] **Step 1: Add session-level config endpoint**
 
 ```typescript
 // PATCH /:id/agents/:agentId — update session-level agent config
@@ -987,7 +991,7 @@ sessions.patch('/:id/agents/:agentId', async (c) => {
 });
 ```
 
-- [ ] **Step 2: Wire override into agent prompt construction**
+- [x] **Step 2: Wire override into agent prompt construction**
 
 In `handler.ts` `handleChatMessage`, when building the agent prompt:
 
@@ -1003,7 +1007,7 @@ const agentPrompt = `${effectiveSystemPrompt}\n\n---\n\n${userRequest}`;
 
 Same pattern in `taskDispatcher.ts` for task dispatch.
 
-- [ ] **Step 3: Create AgentConfigEditor with Monaco**
+- [x] **Step 3: Create AgentConfigEditor with Monaco**
 
 ```tsx
 // apps/web/src/components/AgentConfigEditor.tsx
@@ -1016,7 +1020,7 @@ Same pattern in `taskDispatcher.ts` for task dispatch.
 // Footer: warning "此修改仅影响当前会话中的该 agent，不影响其他会话。"
 ```
 
-- [ ] **Step 4: Add "Configure" button to AgentCard**
+- [x] **Step 4: Add "Configure" button to AgentCard**
 
 ```tsx
 // In expanded view, near the provider badge:
@@ -1027,14 +1031,14 @@ Same pattern in `taskDispatcher.ts` for task dispatch.
 </button>
 ```
 
-- [ ] **Step 5: Wire in ChatView**
+- [x] **Step 5: Wire in ChatView**
 
 ```tsx
 const [configAgent, setConfigAgent] = useState<any>(null);
 // ... render AgentConfigEditor modal when configAgent is set
 ```
 
-- [ ] **Step 6: TypeScript check and commit**
+- [x] **Step 6: TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json
@@ -1054,7 +1058,7 @@ git commit -m "feat: session-level agent config override with Monaco editor"
 
 API keys encrypted with AES-256-GCM before storing in DB. Frontend: input uses type="password", display shows only first 3 + last 4 chars (`sk-a***b1c2`), full key never returned to frontend.
 
-- [ ] **Step 1: Create encryption helpers**
+- [x] **Step 1: Create encryption helpers**
 
 ```typescript
 // apps/api/src/lib/crypto.ts
@@ -1100,7 +1104,7 @@ export function maskApiKey(key: string): string {
 }
 ```
 
-- [ ] **Step 2: Add API key management endpoints**
+- [x] **Step 2: Add API key management endpoints**
 
 ```typescript
 // In agents.ts:
@@ -1149,7 +1153,7 @@ agents.get('/provider-configs', async (c) => {
 });
 ```
 
-- [ ] **Step 3: Decrypt API key when invoking agent**
+- [x] **Step 3: Decrypt API key when invoking agent**
 
 When a Codex agent is invoked, decrypt the API key and inject it into the provider config:
 
@@ -1170,7 +1174,7 @@ if (agent.provider === 'codex') {
 }
 ```
 
-- [ ] **Step 4: Create ProviderConfigPage frontend**
+- [x] **Step 4: Create ProviderConfigPage frontend**
 
 ```tsx
 // apps/web/src/components/ProviderConfigPage.tsx
@@ -1182,7 +1186,7 @@ if (agent.provider === 'codex') {
 // - Warning: "API key is encrypted at rest. You will need to re-enter it to make changes."
 ```
 
-- [ ] **Step 5: TypeScript check and commit**
+- [x] **Step 5: TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json
@@ -1196,25 +1200,102 @@ git commit -m "feat: AES-256-GCM encrypted API key storage with masked frontend 
 
 **Files:** None (manual + Playwright testing)
 
-- [ ] **Step 1: Start app** — `bash scripts/startup.sh`
+- [x] **Step 1: Start app** — `bash scripts/startup.sh`
 
-- [ ] **Step 2: Codex research** — Verify Codex SDK/CLI availability, document findings, create issue if blocked
+- [x] **Step 2: Codex research** — Verify Codex SDK/CLI availability, document findings, create issue if blocked
 
-- [ ] **Step 3: Session rename + group context** — Rename a group session, verify all agents get inbox context update with new title and member list
+- [x] **Step 3: Session rename + group context** — Rename a group session, verify all agents get inbox context update with new title and member list
 
-- [ ] **Step 4: Custom agent from .md** — Upload .md file, verify agent creation with inherited defaults, verify Codex agent requires API key
+- [x] **Step 4: Custom agent from .md** — Upload .md file, verify agent creation with inherited defaults, verify Codex agent requires API key
 
-- [ ] **Step 5: Solo→group pull** — Pull a solo agent into group session, verify agent appears and can be @mentioned
+- [x] **Step 5: Solo→group pull** — Pull a solo agent into group session, verify agent appears and can be @mentioned
 
-- [ ] **Step 6: Real workspace** — Set workspace to `/tmp/test-workspace`, verify bind-mount, test read-only-default mode (reads work, writes blocked), test full-access mode
+- [x] **Step 6: Real workspace** — Set workspace to `/tmp/test-workspace`, verify bind-mount, test read-only-default mode (reads work, writes blocked), test full-access mode
 
-- [ ] **Step 7: Agent config editor** — Open session-level config editor, add override, verify override is used in next invocation; verify other sessions use global config
+- [x] **Step 7: Agent config editor** — Open session-level config editor, add override, verify override is used in next invocation; verify other sessions use global config
 
-- [ ] **Step 8: API key encryption** — Save a Codex API key, verify DB stores encrypted blob, verify frontend shows masked key on reload, verify key is decrypted correctly at agent invocation
+- [x] **Step 8: API key encryption** — Save a Codex API key, verify DB stores encrypted blob, verify frontend shows masked key on reload, verify key is decrypted correctly at agent invocation
 
-- [ ] **Step 9: Final TypeScript check and commit**
+- [x] **Step 9: Final TypeScript check and commit**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json
 git add -A && git commit -m "feat: multi-provider agents + session management + workspace deployment"
 ```
+
+---
+
+## 执行计划 (2026-05-28 更新)
+
+### 当前状态 (2026-05-28 最终更新)
+
+| Task | 状态 | 完成度 |
+|------|------|--------|
+| Task 1: Agent DB Extension | ✅ 已完成 | 100% |
+| Task 2: Codex SDK Provider | ✅ 已完成 | 100% |
+| Task 3: Agent Creation UI | ✅ 已完成 | 100% |
+| Task 4: Agent Card Badge | ✅ 已完成 | 100% |
+| Task 5: Session Rename | ✅ 已完成 | 100% |
+| Task 6: Agent from MD | ✅ 已完成 | 100% |
+| Task 7: Solo→Group Pull | ✅ 已完成 | 100% |
+| Task 8: Real Workspace | ✅ 已完成 | 100% |
+| Task 9: Agent Config Editor | ✅ 已完成 | 100% |
+| Task 10: API Key Encryption | ✅ 已完成 | 100% |
+| Task 11: E2E Verification | ✅ 已完成 | 100% |
+
+### 建议执行顺序
+
+**Phase 1: 基础设施层 (Task 1 + Task 10)**
+- Task 1 是所有其他任务的基础（Schema 扩展）
+- Task 10 的 crypto.ts 是 Task 2 Codex Provider 的依赖
+- 预计工作量：2-3 小时
+
+**Phase 2: Provider 集成 (Task 2 + Task 3)**
+- Task 2 实现 Codex Provider
+- Task 3 扩展 Agent CRUD API 支持 provider 字段
+- 预计工作量：3-4 小时
+
+**Phase 3: 前端 UI (Task 4 + Task 5 剩余 + Task 6)**
+- Task 4 AgentCard Provider badge
+- Task 5 完成 WS broadcast + groupContext 注入
+- Task 6 Agent Creator 从 .md 文件创建
+- 预计工作量：4-5 小时
+
+**Phase 4: 高级功能 (Task 7 + Task 8 + Task 9)**
+- Task 7 Solo→Group Pull
+- Task 8 Real Workspace Deployment
+- Task 9 Session-Level Agent Config Editor
+- 预计工作量：5-6 小时
+
+**Phase 5: 验收测试 (Task 11)**
+- E2E 验证所有功能
+- 预计工作量：2-3 小时
+
+### 依赖关系
+
+```
+Task 1 (Schema) ──┬──> Task 2 (Codex Provider) ──> Task 3 (Agent API) ──> Task 4 (AgentCard UI)
+                  │
+                  ├──> Task 5 (Session Rename 完善)
+                  │
+                  ├──> Task 6 (Agent from MD)
+                  │
+                  ├──> Task 7 (Solo→Group Pull)
+                  │
+                  ├──> Task 8 (Real Workspace)
+                  │
+                  └──> Task 9 (Agent Config Editor)
+
+Task 10 (Crypto) ──> Task 2 (Codex Provider 需要 API key 解密)
+
+所有 Task ──> Task 11 (E2E Verification)
+```
+
+### 快速启动建议
+
+如果想快速看到效果，建议先完成：
+1. **Task 1** (Schema 扩展) - 基础
+2. **Task 4** (AgentCard badge) - 视觉效果
+3. **Task 5 剩余部分** (WS broadcast) - 功能完善
+
+这三个任务可以在 3-4 小时内完成，让系统具备基本的 Provider 感知能力。

@@ -5,10 +5,10 @@ import { TaskCard } from './TaskCard';
 import { FileTree } from './FileTree';
 import { VersionTimeline } from './VersionTimeline';
 import { PreviewFrame } from './PreviewFrame';
-import type { AgentConfig } from '@agenthub/shared';
+import type { AgentConfig, Message } from '@agenthub/shared';
 import type { AgentEvent } from '../store/appStore';
 
-const EMPTY_ARR: any[] = [];
+const EMPTY_ARR: Message[] = [];
 
 interface Props {
   sessionAgents: AgentConfig[];
@@ -141,13 +141,14 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask }: P
               return (
               <AgentCard
                 key={agent.id}
-                agentId={agent.name}
+                agentId={agent.id}
                 displayName={agent.displayName}
                 agentName={agent.name}
                 status={status}
                 events={events}
                 onStop={runningMsg && onStopAgent ? () => onStopAgent(runningMsg.id) : undefined}
                 collapsed={collapsed}
+                provider={agent.provider}
               />
               );
             })}

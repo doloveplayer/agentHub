@@ -64,6 +64,14 @@ export const api = {
 
   getAgents: () => request<any[]>('/agents'),
 
+  createAgentFromMd: (content: string, providerConfig?: Record<string, unknown>) =>
+    request<any>('/agents/from-md', { method: 'POST', body: JSON.stringify({ content, providerConfig }) }),
+
+  getProviderConfigs: () => request<Record<string, { apiKey?: string; endpoint?: string }>>('/agents/provider-configs'),
+
+  saveProviderConfigs: (configs: Record<string, { apiKey?: string; endpoint?: string }>) =>
+    request<{ success: boolean }>('/agents/provider-configs', { method: 'PUT', body: JSON.stringify(configs) }),
+
   getWorkspaceTree: (sessionId: string) => request<{ tree: any[] }>(`/workspace/${sessionId}/tree`),
 
   getWorkspaceFile: (sessionId: string, path: string) => request<any>(`/workspace/${sessionId}/file?path=${encodeURIComponent(path)}`),
@@ -133,4 +141,33 @@ export const api = {
 
   deleteMessage: (messageId: string) =>
     request<{ ok: boolean }>(`/chat/messages/${messageId}`, { method: 'DELETE' }),
+
+  addAgentToSession: (sessionId: string, agentId: string) =>
+    request<{ agentId: string; name: string; displayName: string }>(`/sessions/${sessionId}/agents`, {
+      method: 'POST',
+      body: JSON.stringify({ agentId }),
+    }),
+
+  removeAgentFromSession: (sessionId: string, agentId: string) =>
+    request<void>(`/sessions/${sessionId}/agents/${agentId}`, { method: 'DELETE' }),
+
+  getWorkspace: (sessionId: string) =>
+    request<{ path: string | null; mode: string }>(`/sessions/${sessionId}/workspace`),
+
+  setWorkspace: (sessionId: string, workspacePath: string, mode?: string) =>
+    request<{ success: boolean; path: string; mode: string }>(`/sessions/${sessionId}/workspace`, {
+      method: 'POST',
+      body: JSON.stringify({ path: workspacePath, mode }),
+    }),
+
+  getSessionAgentConfig: (sessionId: string, agentId: string) =>
+    request<{ sessionId: string; agentId: string; systemPromptOverride: string | null; globalSystemPrompt: string }>(
+      `/sessions/${sessionId}/agents/${agentId}`
+    ),
+
+  updateSessionAgentConfig: (sessionId: string, agentId: string, systemPromptOverride?: string) =>
+    request<{ sessionId: string; agentId: string; systemPromptOverride: string | null }>(
+      `/sessions/${sessionId}/agents/${agentId}`,
+      { method: 'PATCH', body: JSON.stringify({ systemPromptOverride }) }
+    ),
 };

@@ -262,6 +262,21 @@ export function useChat(sessionId: string) {
                 useAppStore.getState().addInboxNotification(data.agentName);
               }
               break;
+            case 'session_renamed':
+              if (data.sessionId && data.newTitle) {
+                useAppStore.getState().updateSessionInList(data.sessionId, { title: data.newTitle });
+              }
+              break;
+            case 'agent_joined':
+              if (data.sessionId && data.agent) {
+                useAppStore.getState().addAgentToSession(data.sessionId, data.agent);
+              }
+              break;
+            case 'agent_left':
+              if (data.sessionId && data.agentId) {
+                useAppStore.getState().removeAgentFromSession(data.sessionId, data.agentId);
+              }
+              break;
             case 'inbox_wake_up':
               if (data.agentName && data.count > 0) {
                 useAppStore.getState().addInboxNotification(data.agentName);

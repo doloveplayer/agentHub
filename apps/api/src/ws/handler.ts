@@ -419,7 +419,7 @@ async function handleChatMessage(
         }
         agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostWorkDir) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
         isPlannerAgent = agent.name === 'planner';
-        if (sandbox) AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.settings as Record<string, unknown> | null);
+        if (sandbox) AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null);
       }
     } else {
       agentPrompt = history ? `${history}\n\n---\n${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}` : `${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}`;
@@ -664,11 +664,11 @@ function activateSoloAgent(
   trustMode: boolean,
 ): Promise<void> {
   return (async () => {
-    const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, displayName: true, systemPrompt: true, settings: true } });
+    const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, displayName: true, systemPrompt: true, provider: true, providerConfig: true } });
     if (!agent) { console.error(`[ws] activateSoloAgent: agent ${agentName} not found`); return; }
 
     const { ProviderFactory } = await import('../agent/providers/factory.js');
-    const provider = ProviderFactory.create('claude-code');
+    const provider = ProviderFactory.create(agent.provider);
     const agentHome = `/workspace/_agent_${agent.name}`;
 
     // Register the full REPL handler BEFORE starting — handles all subsequent events
@@ -682,7 +682,7 @@ function activateSoloAgent(
         if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
         agentProcesses.get(sessionId)!.set(agent.name, { provider, timer: null, agentId: agent.id });
         agentNameToType.set(agent.name, agent.name);
-        AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.settings as Record<string, unknown> | null);
+        AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null);
         console.log(`[ws] Solo agent activated: ${agentName} for session=${sessionId}`);
       }
     });
@@ -892,10 +892,10 @@ async function handleConfirmPlan(sessionId: string, data: { planId: string; task
 
   const sessionAgents = await prisma.sessionAgent.findMany({
     where: { sessionId },
-    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, settings: true } } },
+    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, providerConfig: true } } },
   });
   for (const sa of sessionAgents) {
-    AgentDirectoryManager.initialize(sandbox.hostWorkDir, sa.agent.name, sa.agent.systemPrompt, sa.agent.settings as Record<string, unknown> | null);
+    AgentDirectoryManager.initialize(sandbox.hostWorkDir, sa.agent.name, sa.agent.systemPrompt, sa.agent.providerConfig as Record<string, unknown> | null);
   }
 
   dispatchTasksToAgents(sessionId, data.planId, tasks, {
@@ -1080,7 +1080,7 @@ async function preActivateGroupAgents(
 ): Promise<void> {
   const sessionAgents = await prisma.sessionAgent.findMany({
     where: { sessionId },
-    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, settings: true } } },
+    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, provider: true, providerConfig: true } } },
   });
   if (sessionAgents.length === 0) return;
 
@@ -1105,7 +1105,7 @@ async function preActivateGroupAgents(
   // Start agents in parallel — each runs in its own Docker container, no shared state.
   await Promise.all(sessionAgents.map(async (sa) => {
     try {
-      const provider = ProviderFactory.create('claude-code');
+      const provider = ProviderFactory.create(sa.agent.provider);
       const agentName = sa.agent.name;
 
       registerReplHandler(sessionId, agentName, sandbox, provider);
@@ -1115,7 +1115,7 @@ async function preActivateGroupAgents(
         sandbox.hostWorkDir,
         agentName,
         sa.agent.systemPrompt,
-        sa.agent.settings as Record<string, unknown> | null,
+        sa.agent.providerConfig as Record<string, unknown> | null,
       );
       // Ensure inbox file exists so agent can be contacted from the start
       InboxManager.init(sandbox.hostWorkDir, agentName);

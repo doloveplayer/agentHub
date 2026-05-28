@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Square } from 'lucide-react';
+import { Square, Settings, UserPlus } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import type { AgentEvent } from '../store/appStore';
 import { FaceBusinessCard, FaceTerminalLog, FaceDashboard } from './AgentCardFaces';
+import type { AgentProvider } from '@agenthub/shared';
 
 /** Derive capability tags from agent name / display name. */
 function deriveCapabilityTags(agentName?: string, displayName?: string): string[] {
@@ -16,6 +17,17 @@ function deriveCapabilityTags(agentName?: string, displayName?: string): string[
   if (name.includes('backend')) tags.push('后端开发');
   if (tags.length === 0) tags.push('通用');
   return tags;
+}
+
+/** Get provider info for display. */
+function getProviderInfo(provider?: AgentProvider) {
+  switch (provider) {
+    case 'codex':
+      return { label: 'Codex', color: 'bg-green-500/20 text-green-400', caps: 'CLI · One-shot' };
+    case 'claude-code':
+    default:
+      return { label: 'Claude', color: 'bg-orange-500/20 text-orange-400', caps: 'SDK · Session · Stream' };
+  }
 }
 
 /** Generate a stable avatar color from a string. */
@@ -33,6 +45,9 @@ interface Props {
   onStop?: () => void;
   agentName?: string;
   collapsed?: boolean;
+  provider?: AgentProvider;
+  onConfigure?: () => void;
+  onAddToGroup?: () => void;
 }
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
@@ -42,7 +57,7 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   idle:    { label: '空闲', cls: 'bg-hub-muted/20 text-hub-muted' },
 };
 
-export function AgentCard({ agentId, displayName, status, events, onStop, agentName, collapsed }: Props) {
+export function AgentCard({ agentId, displayName, status, events, onStop, agentName, collapsed, provider, onConfigure, onAddToGroup }: Props) {
   const [activeFace, setActiveFace] = useState(0);
   const [expanded, setExpanded] = useState(true);
   const [fading, setFading] = useState(false);
@@ -59,6 +74,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const avatarBg = avatarColor(agentName || displayName);
   const avatarLetter = displayName.charAt(0).toUpperCase();
   const badge = STATUS_BADGE[status] || STATUS_BADGE.idle;
+  const providerInfo = getProviderInfo(provider);
 
   // Dashboard data
   const tokenEvents = events.filter((e) => e.type === 'token_update');
@@ -72,8 +88,8 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   // Model and thinking from agent config in store
   const agents = useAppStore((s) => s.agents);
   const agentConfig = agents.find((a) => a.name === agentName || a.id === agentId);
-  const model = (agentConfig as any)?.settings?.model || (agentConfig as any)?.model || 'unknown';
-  const thinkingLevel = (agentConfig as any)?.settings?.thinking ? 'high' : 'off';
+  const model = (agentConfig as any)?.providerConfig?.model || 'unknown';
+  const thinkingLevel = (agentConfig as any)?.providerConfig?.thinking ? 'high' : 'off';
 
   const isCollapsed = collapsed && !expanded;
 
@@ -112,6 +128,9 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
           {avatarLetter}
         </div>
         <span className="text-body font-semibold text-hub-primary truncate">{displayName}</span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${providerInfo.color}`}>
+          {providerInfo.label}
+        </span>
         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${badge.cls}`}>
           {badge.label}
         </span>
@@ -140,6 +159,24 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
             />
           ))}
         </div>
+        {onConfigure && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onConfigure(); }}
+            className="p-1 rounded hover:bg-hub-accent/15 text-hub-muted hover:text-hub-accent flex-shrink-0 transition"
+            title="Configure"
+          >
+            <Settings className="w-3 h-3" />
+          </button>
+        )}
+        {onAddToGroup && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onAddToGroup(); }}
+            className="p-1 rounded hover:bg-hub-success/15 text-hub-muted hover:text-hub-success flex-shrink-0 transition"
+            title="Add to Group"
+          >
+            <UserPlus className="w-3 h-3" />
+          </button>
+        )}
         {(status === 'running' || status === 'queued') && onStop && (
           <button
             onClick={(e) => { e.stopPropagation(); onStop(); }}
@@ -164,6 +201,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
             capabilityTags={capabilityTags}
             avatarBg={avatarBg}
             avatarLetter={avatarLetter}
+            providerCaps={providerInfo.caps}
           />
         )}
         {activeFace === 1 && (

@@ -101,6 +101,8 @@ interface AppState {
   setTrustMode: (mode: boolean) => void;
   setSessionPermissionMode: (sessionId: string, mode: string) => void;
   updateSessionInList: (sessionId: string, updates: Partial<Session>) => void;
+  addAgentToSession: (sessionId: string, agent: { agentId: string; name: string; displayName: string }) => void;
+  removeAgentFromSession: (sessionId: string, agentId: string) => void;
   removeStreamingMessage: (sessionId: string, msgId: string) => void;
   isSessionStreaming: (sessionId: string) => boolean;
   setTaskPlan: (planId: string, tasks: TaskState[]) => void;
@@ -204,6 +206,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === sessionId ? { ...s, ...updates } : s
+      ),
+    })),
+
+  addAgentToSession: (sessionId: string, agent: { agentId: string; name: string; displayName: string }) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId
+          ? { ...s, agents: [...(s.agents || []), agent] }
+          : s
+      ),
+    })),
+
+  removeAgentFromSession: (sessionId: string, agentId: string) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId
+          ? { ...s, agents: (s.agents || []).filter((a: any) => a.agentId !== agentId && a.id !== agentId) }
+          : s
       ),
     })),
 

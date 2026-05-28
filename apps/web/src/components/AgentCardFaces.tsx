@@ -8,12 +8,14 @@ export function FaceBusinessCard({
   capabilityTags,
   avatarBg,
   avatarLetter,
+  providerCaps,
 }: {
   displayName: string;
   description: string;
   capabilityTags: string[];
   avatarBg: string;
   avatarLetter: string;
+  providerCaps?: string;
 }) {
   return (
     <div className="flex flex-col items-center py-4 px-3 space-y-3">
@@ -26,6 +28,9 @@ export function FaceBusinessCard({
       <div className="text-center">
         <h3 className="text-body font-semibold text-hub-primary">{displayName}</h3>
         <p className="text-caption text-hub-tertiary mt-0.5">{description}</p>
+        {providerCaps && (
+          <p className="text-[10px] text-hub-muted mt-1">{providerCaps}</p>
+        )}
       </div>
       <div className="flex flex-wrap justify-center gap-1">
         {capabilityTags.map((tag) => (
