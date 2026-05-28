@@ -1,6 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
-import { createSDKAgentProcess, createOneShotAgentProcess } from '../agent/processFactory.js';
 import { ProviderFactory } from '../agent/providers/factory.js';
 import { InboxManager } from '../agent/InboxManager.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
@@ -54,6 +53,7 @@ import {
 export { broadcast } from './state.js';
 
 const agentNameToType = new Map<string, string>();
+const sessionTypes = new Map<string, string>(); // sessionId → 'solo' | 'group'
 
 // Shared regex patterns for hidden plan extraction in agent output
 const PLAN_STRIP_RE = /<!--AGENTHUB_PLAN\{[\s\S]*?\}-->/g;
@@ -127,6 +127,7 @@ async function handleConnection(ws: WebSocket, request: any) {
       return;
     }
     sessionPermissionModes.set(sessionId, session.permissionMode || 'ask');
+    sessionTypes.set(sessionId, session.type);
     sessionType = session.type;
   } catch {
     sendTo(ws, { type: 'error', message: 'Failed to verify session' });
@@ -423,7 +424,6 @@ async function handleChatMessage(
       agentPrompt = history ? `${history}\n\n---\n${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}` : `${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}`;
     }
 
-    let accumulatedContent = '';
     const agentNameForProc = mention.agentId
       ? (await prisma.agent.findUnique({ where: { id: mention.agentId }, select: { name: true } }))?.name
       : null;
@@ -442,11 +442,19 @@ async function handleChatMessage(
       `Before ${diffAgentName} turn`,
     );
     // Group session: try REPL provider first (pre-activated agents are already online).
-    // Falls back to one-shot for solo sessions or if REPL is unavailable.
-    const replProvider = agentProcesses.get(sessionId)?.get(agentNameForProc || '')?.provider;
-    const useRepl = replProvider && replProvider.isAlive();
+    // All sessions use REPL: group agents pre-activated in handleConnection,
+    // solo agents activated on-demand here.
+    let replProvider = agentProcesses.get(sessionId)?.get(agentNameForProc || '')?.provider;
+    let useRepl = replProvider && replProvider.isAlive();
 
-    if (useRepl && agentNameForProc) {
+    // Solo session: activate the agent on first message if not already running
+    if (!useRepl && agentNameForProc && sessionTypes.get(sessionId) !== 'group') {
+      await activateSoloAgent(sessionId, agentNameForProc, sandbox, trustMode);
+      replProvider = agentProcesses.get(sessionId)?.get(agentNameForProc)?.provider;
+      useRepl = replProvider && replProvider.isAlive();
+    }
+
+    if (useRepl && replProvider && agentNameForProc) {
       // REPL path: reuse the persistent provider
       replProvider.updateTrustMode(trustMode);
       agentCurrentMessage.set(agentNameForProc, mention.messageId);
@@ -457,319 +465,64 @@ async function handleChatMessage(
         console.error(`[ws] REPL sendPrompt failed: ${err.message}`);
         broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed: ${err.message}` });
       }
-      return; // Event handler already registered in preActivateGroupAgents
+      return;
     }
 
-    // One-shot fallback (solo sessions or REPL unavailable)
-    const agent = (await createSDKAgentProcess()) || createOneShotAgentProcess();
-    if (agentNameForProc) {
-      agent.onClaudeSession = (sid: string) => { agentClaudeSessions.set(`${sessionId}:${agentNameForProc}`, sid); };
-    }
-    agent.onEvent((event) => {
-      switch (event.type) {
-        case 'text': {
-          accumulatedContent += event.content;
-          let chatContent = event.content;
-          if (isPlannerAgent) {
-            // Strip <!--AGENTHUB_PLAN{...}--> from user-visible content
-            chatContent = chatContent.replace(PLAN_STRIP_RE, '');
-            if (!chatContent.trim()) break; // nothing user-visible in this chunk
-          }
-          if (chatContent) broadcast(sessionId, { type: 'stream_chunk', content: chatContent, agentMessageId: mention.messageId });
-          broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: event.content.slice(0, 120) }, agentMessageId: mention.messageId, timestamp: Date.now() });
-          break;
-        }
-        case 'tool_use':
-          stateTracker.updateTool(mention.messageId, event.toolName, event.input || {});
-          {
-            const modPath = event.input?.file_path || event.input?.path || event.input?.filePath;
-            if (typeof modPath === 'string' && ['Write', 'Edit'].includes(event.toolName || '')) {
-              trackFileMod(sessionId, diffAgentName, modPath);
-            }
-          }
-          if (agentNameForProc && sandbox) {
-            const agentType = agentNameToType.get(agentNameForProc) ?? agentNameForProc;
-            const result = agentCoordinator.onToolUse({
-              sessionId,
-              agentName: agentNameForProc,
-              agentType,
-              messageId: mention.messageId,
-              hostWorkDir: sandbox.hostWorkDir,
-              resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
-              broadcast,
-            }, event as any);
-            // If coordinator delegated, wake up the target REPL agent to check inbox
-            if (!result.allowed && result.delegateTo) {
-              const targetName = resolveAgentNameInSession(sessionId, result.delegateTo);
-              if (targetName) {
-                const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
-                if (targetProvider?.isAlive()) {
-                  const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentNameForProc}. Check your inbox at /workspace/_inbox_${targetName.toLowerCase()}.jsonl and respond with your plan.`;
-                  targetProvider.sendPrompt(inboxPrompt);
-                  console.log(`[ws] Inbox wake-up: ${agentNameForProc} delegated to ${targetName}`);
-                }
-              }
-            }
-          }
-          broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: event.toolName, input: event.input, inputPreview: JSON.stringify(event.input ?? {}).slice(0, 80) }, agentMessageId: mention.messageId, timestamp: Date.now() });
-          break;
-        case 'tool_result':
-          if (agentNameForProc && sandbox) {
-            const agentType = agentNameToType.get(agentNameForProc) ?? agentNameForProc;
-            const content = typeof event.content === 'string' ? event.content : '';
-            agentCoordinator.onToolResult({
-              sessionId, agentName: agentNameForProc, agentType,
-              messageId: mention.messageId,
-              hostWorkDir: sandbox.hostWorkDir,
-              resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
-              broadcast,
-            }, content);
-          }
-          broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { content: typeof event.content === 'string' ? event.content.slice(0, 200) : '', resultPreview: typeof event.content === 'string' ? event.content.slice(0, 80) : '' }, agentMessageId: mention.messageId, timestamp: Date.now() });
-          break;
-        case 'subagent_start':
-          stateTracker.addSubagent(mention.messageId, event.agentType, event.description);
-          broadcast(sessionId, { type: 'agent_status', status: 'subagent_start', details: { agentType: event.agentType, description: event.description }, agentMessageId: mention.messageId, timestamp: Date.now() });
-          break;
-        case 'subagent_result':
-          broadcast(sessionId, { type: 'agent_status', status: 'subagent_result', details: { agentType: event.agentType }, agentMessageId: mention.messageId, timestamp: Date.now() });
-          break;
-        case 'permission_request': {
-          const pid = `${mention.messageId}|::|${event.tool}|::|${Date.now()}`;
-          broadcast(sessionId, { type: 'permission_request', permissionId: pid, tool: event.tool, path: event.path, agentMessageId: mention.messageId, timestamp: Date.now() });
-          broadcast(sessionId, { type: 'agent_status', status: 'permission_request', details: { tool: event.tool, path: event.path, permissionId: pid }, agentMessageId: mention.messageId, timestamp: Date.now() });
-          const timeout = setTimeout(() => {
-            permissionTimeouts.delete(pid);
-            const stMap = agentStates.get(sessionId);
-            if (stMap) { const st = stMap.get(mention.messageId); if (st) st.process.write('n\n'); }
-          }, PERMISSION_TIMEOUT_MS);
-          permissionTimeouts.set(pid, timeout);
-          break;
-        }
-        case 'token_usage':
-          {
-            const input = event.inputTokens || 0;
-            const output = event.outputTokens || 0;
-            const cacheRead = event.cacheReadTokens || 0;
-            const cacheCreate = event.cacheCreateTokens || 0;
-            const contextPct = input > 0 ? Math.round((input / config.agent.contextWindowTokens) * 100) : 0;
-            stateTracker.updateTokenUsage(mention.messageId, { input, output, cacheRead, cacheCreate });
-            broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input, output, cacheRead, cacheCreate, contextPct } }, agentMessageId: mention.messageId, timestamp: Date.now() });
-          }
-          break;
-        case 'system':
-          {
-            // System events carry init metadata (sessionId, etc.) — no token usage.
-            // Token usage arrives via dedicated token_usage events from SDK assistant messages.
-          }
-          break;
-        case 'done': {
-          // Guard against double-cleanup: if timeout already removed this state entry, skip
-          const doneStateMap = agentStates.get(sessionId);
-          if (doneStateMap && !doneStateMap.has(mention.messageId)) {
-            console.log(`[ws] Agent done (already cleaned up by timeout): ${mention.messageId}`);
-            break;
-          }
-          stateTracker.setDone(mention.messageId);
-          if (agentNameForProc) MilestoneBroadcaster.classify({ sessionId, agentName: agentNameForProc, agentMessageId: mention.messageId, eventType: 'done' });
-          // Parse NEEDS HELP intents from agent output and route to target agents
-          if (agentNameForProc && sandbox && accumulatedContent) {
-            const intents = IntentParser.scan(accumulatedContent);
-            for (const intent of intents) {
-              const targetName = resolveAgentNameInSession(sessionId, intent.targetAgentName);
-              if (targetName && targetName !== agentNameForProc) {
-                InboxManager.write(sandbox.hostWorkDir, targetName, {
-                  type: 'intervention_request',
-                  id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                  from: agentNameForProc,
-                  to: targetName,
-                  summary: `${agentNameForProc} needs help: ${intent.description}`,
-                  risk: 'high',
-                  timestamp: Date.now(),
-                });
-                // Real-time REPL delivery: if target agent is online, send inbox content immediately
-                const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
-                if (targetProvider && targetProvider.isAlive()) {
-                  const inboxPrompt = `\n## Inbox message from ${agentNameForProc}\n${intent.description}\n\nRespond if this needs your attention.`;
-                  targetProvider.sendPrompt(inboxPrompt);
-                  console.log(`[ws] NEEDS HELP delivered via REPL: ${agentNameForProc} → ${targetName}`);
-                }
-                broadcast(sessionId, {
-                  type: 'inbox_update',
-                  agentName: targetName,
-                  fromAgent: agentNameForProc,
-                  summary: intent.description,
-                  timestamp: Date.now(),
-                });
-                console.log(`[ws] NEEDS HELP routed: ${agentNameForProc} → ${targetName}: ${intent.description.slice(0, 80)}`);
-              }
-            }
-          }
-          console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
-          // Extract hidden plan JSON from Planner output
-          if (isPlannerAgent && sandbox && event.exitCode === 0) {
-            const planMatch = accumulatedContent.match(PLAN_EXTRACT_RE);
-            if (planMatch) {
-              try {
-                const plan = JSON.parse(planMatch[1]);
-                const validated = extractAndValidate(JSON.stringify(plan));
-                if (validated) {
-                  const planId = `plan-${Date.now()}`;
-                  broadcast(sessionId, {
-                    type: 'plan_result',
-                    planId,
-                    planTitle: validated.planTitle,
-                    summary: validated.summary,
-                    tasks: toTaskStates(validated, planId),
-                    timestamp: Date.now(),
-                  });
-                  // Auto-dispatch tasks to agents
-                  const taskNodes: TaskDispatchNode[] = validated.tasks.map(t => ({
-                    id: t.id, title: t.title, description: t.description,
-                    agentType: t.agentType, dependsOn: t.dependsOn,
-                    expectedOutput: t.expectedOutput, priority: t.priority as 'high' | 'medium' | 'low',
-                  }));
-                  addDispatchedPlan(planId);
-                  dispatchTasksToAgents(sessionId, planId, taskNodes, {
-                    containerId: sandbox.containerId, workDir: sandbox.workDir, hostWorkDir: sandbox.hostWorkDir,
-                  }, validated.planTitle).catch((err: any) => {
-                    console.error(`[ws] Auto-dispatch failed: ${err.message}`);
-                    dispatchedPlans.delete(planId);
-                    broadcast(sessionId, { type: 'stream_error', error: `Auto-dispatch failed: ${err.message}` });
-                  });
-                }
-              } catch (err: any) {
-                console.error(`[ws] Failed to parse embedded plan: ${err.message}`);
-              }
-            }
-          }
-          const finalContent = accumulatedContent || (event.exitCode !== 0 ? '[Agent stopped]' : '[Agent finished]');
-          void (async () => {
-            await prisma.message.update({ where: { id: mention.messageId }, data: { content: finalContent, status: event.exitCode === 0 ? 'done' : 'error' } }).catch(() => {});
-            broadcast(sessionId, { type: 'stream_end', agentMessageId: mention.messageId, fullContent: finalContent, exitCode: event.exitCode });
-            broadcastDiffSummary(
-              sessionId,
-              mention.messageId,
-              sandbox.hostWorkDir,
-              takeMessageBeforeVersion(mention.messageId),
-              diffAgentName,
-              finalContent.slice(0, 180),
-            );
-            broadcastStructuredArtifact(sessionId, diffAgentName, finalContent);
-            if (agentNameForProc && sandbox) {
-              const agentType = agentNameToType.get(agentNameForProc) ?? agentNameForProc;
-              const summary = finalContent.slice(0, 200);
-              agentCoordinator.onAgentDone({
-                sessionId, agentName: agentNameForProc, agentType,
-                messageId: mention.messageId,
-                hostWorkDir: sandbox.hostWorkDir,
-                resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
-                broadcast,
-              }, event.exitCode, summary);
-            }
-            const stateMap = agentStates.get(sessionId);
-            if (stateMap) {
-              const st = stateMap.get(mention.messageId);
-              if (st) { clearTimeout(st.timer); stateMap.delete(mention.messageId); decRunningAgentCount(); }
-              if (stateMap.size === 0) agentStates.delete(sessionId);
-            }
-            if (event.exitCode !== 0 && agentNameForProc) {
-              const sb = sandboxes.get(sessionId);
-              if (sb) {
-                const { reassignQueuedTasks } = await import('./taskDispatcher.js');
-                await reassignQueuedTasks(sessionId, agentNameForProc, {
-                  containerId: sb.containerId,
-                  workDir: sb.workDir,
-                  hostWorkDir: sb.hostWorkDir,
-                });
-              }
-            }
-            drainPendingQueue();
-            drainPerSessionQueue(sessionId);
-            startNextSequential(sessionId);
-          })();
-          break;
-        }
-        case 'error':
-          stateTracker.setError(mention.messageId);
-          prisma.message.update({ where: { id: mention.messageId }, data: { status: 'error' } }).catch(() => {});
-          broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: event.message });
-          clearRunningAgent(sessionId, mention.messageId);
-          drainPendingQueue();
-          drainPerSessionQueue(sessionId);
-          break;
+    // No REPL provider available — shouldn't happen normally
+    console.error(`[ws] No REPL provider for ${agentNameForProc} in session=${sessionId}`);
+    broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Agent unavailable` });
+    decRunningAgentCount();
+    drainPendingQueue();
+    drainPerSessionQueue(sessionId);
+  }
+}
+
+/**
+ * Activate a single agent via REPL for solo sessions.
+ * Mirrors preActivateGroupAgents but for one agent on-demand.
+ */
+async function activateSoloAgent(
+  sessionId: string,
+  agentName: string,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+  trustMode: boolean,
+): Promise<void> {
+  const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, displayName: true, systemPrompt: true, settings: true } });
+  if (!agent) { console.error(`[ws] activateSoloAgent: agent ${agentName} not found`); return; }
+
+  const { ProviderFactory } = await import('../agent/providers/factory.js');
+  const provider = ProviderFactory.create('claude-code');
+  const agentHome = `/workspace/_agent_${agent.name}`;
+
+  const standbyPrompt = [
+    `## Standby mode`,
+    `You are **${agent.displayName}** (${agent.name}), the sole agent in this solo session.`,
+    `Wait for the user's request. When they send a message, you'll receive it as a prompt.`,
+    `Your working directory is ${agentHome}.`,
+    `Do NOT take any action until the user asks you to. Just acknowledge readiness with "Ready."`,
+  ].join('\n');
+
+  const fullPrompt = `${agent.systemPrompt}\n\n${standbyPrompt}`;
+
+  return new Promise<void>((resolve, reject) => {
+    provider.onEvent((event) => {
+      if (event.type === 'done') {
+        if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
+        agentProcesses.get(sessionId)!.set(agent.name, { provider, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id });
+        agentNameToType.set(agent.name, agent.name);
+        AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.settings as Record<string, unknown> | null);
+        console.log(`[ws] Solo agent activated: ${agentName} for session=${sessionId}`);
+        resolve();
+      }
+      if (event.type === 'error') {
+        reject(new Error(event.message || 'Activation failed'));
       }
     });
 
-    const timer = setTimeout(() => {
-      console.log(`[ws] Agent timeout: session=${sessionId} agentMsg=${mention.messageId}`);
-      if (agentNameForProc) {
-        const sb = sandboxes.get(sessionId);
-        if (sb) {
-          import('./taskDispatcher.js').then(({ reassignQueuedTasks }) =>
-            reassignQueuedTasks(sessionId, agentNameForProc, {
-              containerId: sb.containerId,
-              workDir: sb.workDir,
-              hostWorkDir: sb.hostWorkDir,
-            })
-          ).catch(() => {});
-        }
-      }
-      agent.kill();
-      broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: 'Agent execution timed out' });
-      const stateMap = agentStates.get(sessionId);
-      if (stateMap) {
-        const st = stateMap.get(mention.messageId);
-        if (st) { clearTimeout(st.timer); stateMap.delete(mention.messageId); decRunningAgentCount(); }
-        if (stateMap.size === 0) agentStates.delete(sessionId);
-      }
-      drainPendingQueue();
-      drainPerSessionQueue(sessionId);
-    }, config.agent.timeoutMs);
-
-    if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
-    agentStates.get(sessionId)!.set(mention.messageId, { process: agent, timer, agentId: mention.agentId, agentName: agentNameForProc || undefined });
-
-    if (agentNameForProc && sandbox) {
-      const agentType = agentNameToType.get(agentNameForProc) ?? agentNameForProc;
-      const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({
-        sessionId, agentName: agentNameForProc, agentType,
-        messageId: mention.messageId,
-        hostWorkDir: sandbox.hostWorkDir,
-        resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
-        broadcast,
-      });
-      agentPrompt += coordinationPrompt;
-    }
-
-    try {
-      console.log(`[ws] Starting agent: session=${sessionId} agentMsg=${mention.messageId} prompt="${agentPrompt.slice(0, 80)}..."`);
-      agent.start(
-        sessionId,
-        agentPrompt,
-        sandbox.containerId,
-        sandbox.workDir,
-        trustMode,
-        sandbox.hostWorkDir,
-        mention.messageId,
-        agentNameForProc ? agentClaudeSessions.get(`${sessionId}:${agentNameForProc}`) : undefined,
-        agentNameForProc || undefined,
-      )
-        .catch((err) => {
-          console.error(`[ws] Agent start failed: session=${sessionId} agentMsg=${mention.messageId} error=${err.message}`);
-          broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed to start agent: ${err.message}` });
-          prisma.message.update({ where: { id: mention.messageId }, data: { status: 'error' } }).catch(() => {});
-          clearRunningAgent(sessionId, mention.messageId);
-          drainPendingQueue();
-          drainPerSessionQueue(sessionId);
-        });
-    } catch (err: any) {
-      console.error(`[ws] Agent spawn error: ${err.message}`);
-      clearRunningAgent(sessionId, mention.messageId);
-      drainPendingQueue();
-      drainPerSessionQueue(sessionId);
-    }
-  }
+    provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
+      agentName: agent.name, hostWorkDir: sandbox.hostWorkDir, trustMode,
+    }).catch(reject);
+  });
 }
 
 /** Drain the GLOBAL pending queue: start waiting agents when slots free up. */
