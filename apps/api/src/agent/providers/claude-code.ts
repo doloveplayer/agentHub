@@ -48,6 +48,10 @@ export class ClaudeCodeProvider implements AbstractProvider {
     return !this.killed && this.childProc !== null;
   }
 
+  updateTrustMode(mode: boolean): void {
+    this.currentTrustMode = mode;
+  }
+
   async start(
     _sessionId: string,
     prompt: string,
@@ -160,7 +164,9 @@ export class ClaudeCodeProvider implements AbstractProvider {
     });
   }
 
-  private stopChild(): void {
+  /** Kill current in-flight docker exec without killing the provider. */
+  stopChild(): void {
+
     if (this.childProc) {
       try { this.childProc.kill('SIGTERM'); } catch { /* ignore */ }
       this.childProc = null;

@@ -63,6 +63,10 @@ export class TestAgentProvider implements AbstractProvider {
     return this.agentHome;
   }
 
+  updateTrustMode(_mode: boolean): void {
+    // Test provider — no real permissions needed
+  }
+
   private emit(event: UnifiedAgentEvent): void {
     for (const handler of this.handlers) {
       try {
