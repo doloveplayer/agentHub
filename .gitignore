@@ -47,3 +47,6 @@ apps/api/test_claude_direct.ts
 screenTmp/
 
 memory.md
+
+# Backup files
+PRD.backup.*.md
