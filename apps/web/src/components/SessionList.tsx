@@ -47,7 +47,8 @@ export function SessionList({ onCloseMobile }: Props) {
 
   const handleCreate = async (type: 'solo' | 'group') => {
     if (type === 'solo' && customAgentMode && customDisplay && customDesc && customPrompt) {
-      const name = customName || customDisplay.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').slice(0, 32);
+      let name = customName || customDisplay.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
+      if (!name || name.length < 2) name = 'custom-agent-' + Date.now().toString(36);
       const session = await api.createSession({
         type: 'solo',
         customAgent: { name, displayName: customDisplay, description: customDesc, systemPrompt: customPrompt },

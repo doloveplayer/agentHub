@@ -60,43 +60,7 @@ const updateSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-// PUT /:id — update agent
-agents.put('/:id', async (c) => {
-  const id = c.req.param('id');
-  let body: unknown;
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  const parsed = updateSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
-
-  try {
-    const agent = await prisma.agent.update({
-      where: { id },
-      data: {
-        ...parsed.data,
-        providerConfig: parsed.data.providerConfig as any,
-        capabilities: parsed.data.capabilities as any,
-      },
-    });
-    return c.json(agent);
-  } catch (err: any) {
-    if (err.code === 'P2025') return c.json({ error: 'Agent not found' }, 404);
-    throw err;
-  }
-});
-
-// DELETE /:id — soft-delete
-agents.delete('/:id', async (c) => {
-  const id = c.req.param('id');
-  try {
-    await prisma.agent.update({ where: { id }, data: { isActive: false } });
-    return c.body(null, 204);
-  } catch (err: any) {
-    if (err.code === 'P2025') return c.json({ error: 'Agent not found' }, 404);
-    throw err;
-  }
-});
-
-// PUT /provider-configs — store encrypted API keys
+// PUT /provider-configs — store encrypted API keys (MUST be before /:id routes to avoid route conflict)
 agents.put('/provider-configs', async (c) => {
   const { userId } = c.get('user');
   let body: Record<string, { apiKey?: string; endpoint?: string }>;
@@ -215,5 +179,41 @@ function getDefaultProviderConfig(provider: string): Record<string, unknown> {
   if (provider === 'codex') return { model: 'gpt-5' };
   return {};
 }
+
+// PUT /:id — update agent (MUST be AFTER fixed-path routes)
+agents.put('/:id', async (c) => {
+  const id = c.req.param('id');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const parsed = updateSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+
+  try {
+    const agent = await prisma.agent.update({
+      where: { id },
+      data: {
+        ...parsed.data,
+        providerConfig: parsed.data.providerConfig as any,
+        capabilities: parsed.data.capabilities as any,
+      },
+    });
+    return c.json(agent);
+  } catch (err: any) {
+    if (err.code === 'P2025') return c.json({ error: 'Agent not found' }, 404);
+    throw err;
+  }
+});
+
+// DELETE /:id — soft-delete (MUST be AFTER fixed-path routes)
+agents.delete('/:id', async (c) => {
+  const id = c.req.param('id');
+  try {
+    await prisma.agent.update({ where: { id }, data: { isActive: false } });
+    return c.body(null, 204);
+  } catch (err: any) {
+    if (err.code === 'P2025') return c.json({ error: 'Agent not found' }, 404);
+    throw err;
+  }
+});
 
 export default agents;

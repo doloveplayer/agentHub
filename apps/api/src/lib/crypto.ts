@@ -6,8 +6,15 @@ const IV_LENGTH = 16;
 
 function getEncryptionKey(): Buffer {
   const key = process.env.AGENTHUB_ENCRYPTION_KEY;
-  if (!key) throw new Error('AGENTHUB_ENCRYPTION_KEY not set');
-  // If key is hex-encoded, decode it
+  if (!key) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('AGENTHUB_ENCRYPTION_KEY not set — required in production');
+    }
+    // Development fallback: derive key from JWT secret
+    const devKey = process.env.JWT_SECRET || 'agenthub-dev-fallback-key';
+    return crypto.createHash('sha256').update(devKey).digest();
+  }
+  // If key is hex-encoded (exactly 64 hex chars), decode it
   if (/^[0-9a-fA-F]{64}$/.test(key)) return Buffer.from(key, 'hex');
   // Otherwise, hash it to get 32 bytes
   return crypto.createHash('sha256').update(key).digest();
