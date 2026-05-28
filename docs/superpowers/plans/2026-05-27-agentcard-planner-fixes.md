@@ -1,6 +1,6 @@
 # AgentCard Redesign & Core Bug Fixes — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Fix 3 critical bugs (agent ID case-mismatch, inbox truncation, [object Object] rendering), remove devops/deps agents, make Planner speak naturally, add code-block folding, and redesign AgentCard with 3-face flip.
 
@@ -15,7 +15,7 @@
 **Files:**
 - Modify: `packages/shared/src/types.ts:80-85`
 
-- [ ] **Step 1: Update TaskNode.agentType union**
+- [x] **Step 1: Update TaskNode.agentType union**
 
 ```typescript
 // packages/shared/src/types.ts:80-85 — replace existing TaskNode.agentType
@@ -31,12 +31,12 @@ export interface TaskNode {
 }
 ```
 
-- [ ] **Step 2: TypeScript check**
+- [x] **Step 2: TypeScript check**
 
 Run: `npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json && npx tsc --noEmit -p packages/shared/tsconfig.json`
 Expected: TS errors in files using old agentType literals — those will be fixed in subsequent tasks.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add packages/shared/src/types.ts
@@ -52,7 +52,7 @@ git commit -m "fix: narrow TaskNode.agentType to kebab-case agent names"
 - Modify: `apps/api/src/ws/taskDispatcher.ts:271-346`
 - Modify: `apps/api/src/ws/handler.ts:220-235`
 
-- [ ] **Step 1: Normalize agent name in InboxManager**
+- [x] **Step 1: Normalize agent name in InboxManager**
 
 In `apps/api/src/agent/InboxManager.ts`, add a private helper and apply to all path-generating methods:
 
@@ -78,7 +78,7 @@ const inboxPath = resolve(hostWorkDir, `_inbox_${agentName}.jsonl`);
 const inboxPath = resolve(hostWorkDir, `_inbox_${norm(agentName)}.jsonl`);
 ```
 
-- [ ] **Step 2: Case-insensitive agent lookup in taskDispatcher**
+- [x] **Step 2: Case-insensitive agent lookup in taskDispatcher**
 
 In `apps/api/src/ws/taskDispatcher.ts:287-292`, normalize when building agentsByType:
 
@@ -132,7 +132,7 @@ suggestedAgent: {
 // To: just use task.agentType directly since it's now already correct kebab-case.
 ```
 
-- [ ] **Step 3: Case-insensitive resolveAgentNameInSession**
+- [x] **Step 3: Case-insensitive resolveAgentNameInSession**
 
 In `apps/api/src/ws/handler.ts:220-235`:
 
@@ -152,12 +152,12 @@ function resolveAgentNameInSession(sessionId: string, agentType: string): string
 }
 ```
 
-- [ ] **Step 4: TypeScript check**
+- [x] **Step 4: TypeScript check**
 
 Run: `npx tsc --noEmit -p apps/api/tsconfig.json`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/agent/InboxManager.ts apps/api/src/ws/taskDispatcher.ts apps/api/src/ws/handler.ts
@@ -173,11 +173,11 @@ git commit -m "fix: normalize agent IDs to lowercase for inbox routing and task 
 - Modify: `apps/api/src/ws/handler.ts:270-291`
 - DB migration: Prisma
 
-- [ ] **Step 1: Remove from defaultAgents**
+- [x] **Step 1: Remove from defaultAgents**
 
 In `apps/api/src/defaultAgents.ts`, delete the devops-agent (lines 59-88) and deps-agent (lines 112-131) entries from the array. Keep only: code-agent, review-agent, test-agent, planner.
 
-- [ ] **Step 2: Update Planner prompt agentType enum**
+- [x] **Step 2: Update Planner prompt agentType enum**
 
 In `apps/api/src/defaultAgents.ts`, the Planner's systemPrompt references:
 
@@ -197,7 +197,7 @@ And in the plan JSON schema within the prompt, update:
 "agentType": "code-agent | review-agent | test-agent"
 ```
 
-- [ ] **Step 3: Remove deps-agent special case in broadcastStructuredArtifact**
+- [x] **Step 3: Remove deps-agent special case in broadcastStructuredArtifact**
 
 In `apps/api/src/ws/handler.ts:270-291`, remove the deps-agent block:
 
@@ -215,7 +215,7 @@ if (agentName === 'deps-agent') {
 }
 ```
 
-- [ ] **Step 4: DB cleanup — delete session agents + agents**
+- [x] **Step 4: DB cleanup — delete session agents + agents**
 
 Write and run a one-shot migration script:
 
@@ -244,12 +244,12 @@ main().then(() => prisma.$disconnect());
 
 Run: `cd apps/api && npx tsx scripts/cleanup-default-agents.ts`
 
-- [ ] **Step 5: TypeScript check**
+- [x] **Step 5: TypeScript check**
 
 Run: `npx tsc --noEmit -p apps/api/tsconfig.json`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/api/src/defaultAgents.ts apps/api/src/ws/handler.ts scripts/cleanup-default-agents.ts
@@ -263,7 +263,7 @@ git commit -m "feat: remove devops-agent and deps-agent from default agents"
 **Files:**
 - Modify: `apps/web/src/components/ChatView.tsx`
 
-- [ ] **Step 1: Add safe content serializer in ChatView**
+- [x] **Step 1: Add safe content serializer in ChatView**
 
 Find the message content rendering path. The issue is when `event.content` is an object, `String()` produces `[object Object]`. Add a helper and apply it wherever content is rendered as text.
 
@@ -283,16 +283,16 @@ function safeContent(content: unknown): string {
 
 Find the `stream_chunk` rendering path where content is added to message text. Ensure `safeContent()` wraps the content value before it's appended. The exact location is in the message rendering logic — where `event.content` or `msg.content` is displayed.
 
-- [ ] **Step 2: Verify with test**
+- [x] **Step 2: Verify with test**
 
 Start the app, create a message that triggers a code block in agent output. Verify the JSON renders as readable text, not `[object Object]`.
 
-- [ ] **Step 3: TypeScript check**
+- [x] **Step 3: TypeScript check**
 
 Run: `npx tsc --noEmit -p apps/web/tsconfig.json`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/web/src/components/ChatView.tsx
@@ -307,7 +307,7 @@ git commit -m "fix: serialize objects in chat content to avoid [object Object] r
 - Modify: `apps/api/src/ws/handler.ts` (text event handling section)
 - Modify: `apps/api/src/agent/InboxManager.ts`
 
-- [ ] **Step 1: Investigate — log full summary length**
+- [x] **Step 1: Investigate — log full summary length**
 
 In `apps/api/src/agent/InboxManager.ts:36-48` (`write` method), add a length check:
 
@@ -320,7 +320,7 @@ static write(hostWorkDir: string, targetAgentName: string, entry: InboxEntry): v
 }
 ```
 
-- [ ] **Step 2: Fix — ensure complete text before IntentParser.scan**
+- [x] **Step 2: Fix — ensure complete text before IntentParser.scan**
 
 In `apps/api/src/ws/handler.ts`, the `case 'done'` handler (around line 594). Currently `IntentParser.scan` may only run on partial stream_chunk text. Move intent scanning to the `done` event where `accumulatedContent` is complete.
 
@@ -344,12 +344,12 @@ for (const intent of helpIntents) {
 
 This replaces any mid-stream IntentParser.scan that may be receiving truncated text chunks.
 
-- [ ] **Step 3: TypeScript check**
+- [x] **Step 3: TypeScript check**
 
 Run: `npx tsc --noEmit -p apps/api/tsconfig.json`
 Expected: PASS
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/api/src/ws/handler.ts apps/api/src/agent/InboxManager.ts
@@ -364,7 +364,7 @@ git commit -m "fix: scan agent intents on complete text, not streaming chunks"
 - Modify: `apps/api/src/defaultAgents.ts` (Planner systemPrompt)
 - Modify: `apps/api/src/ws/handler.ts` (planner text event processing ~lines 493-507)
 
-- [ ] **Step 1: Rewrite Planner systemPrompt**
+- [x] **Step 1: Rewrite Planner systemPrompt**
 
 Replace the entire Planner entry's `systemPrompt` in `apps/api/src/defaultAgents.ts` with:
 
@@ -400,7 +400,7 @@ systemPrompt: `## 你的身份
 - 你的产出是规划蓝图，执行交给群内其他 agent`,
 ```
 
-- [ ] **Step 2: Strip hidden plan JSON in handler.ts**
+- [x] **Step 2: Strip hidden plan JSON in handler.ts**
 
 In `apps/api/src/ws/handler.ts`, in the text event handler (around lines 493-507, the `case 'text':` block with `isPlannerAgent` check), replace the existing JSON block filtering logic:
 
@@ -419,7 +419,7 @@ case 'text': {
 }
 ```
 
-- [ ] **Step 3: Extract plan JSON on done event**
+- [x] **Step 3: Extract plan JSON on done event**
 
 In the `case 'done':` handler, after finalizing the message, add plan extraction:
 
@@ -467,12 +467,12 @@ if (isPlannerAgent) {
 }
 ```
 
-- [ ] **Step 4: TypeScript check**
+- [x] **Step 4: TypeScript check**
 
 Run: `npx tsc --noEmit -p apps/api/tsconfig.json`
 Expected: PASS (may need to import `extractAndValidate` if not already in scope — it's already imported at line 11)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/defaultAgents.ts apps/api/src/ws/handler.ts
@@ -486,7 +486,7 @@ git commit -m "feat: Planner natural-language replies with hidden plan JSON embe
 **Files:**
 - Modify: `apps/web/src/components/ChatView.tsx`
 
-- [ ] **Step 1: Create foldable code block component**
+- [x] **Step 1: Create foldable code block component**
 
 Add a `FoldableCodeBlock` component in `ChatView.tsx`:
 
@@ -529,20 +529,20 @@ function FoldableCodeBlock({ language, code }: { language: string; code: string 
 }
 ```
 
-- [ ] **Step 2: Integrate into message rendering**
+- [x] **Step 2: Integrate into message rendering**
 
 Find the existing code block rendering in ChatView's message content. Wrap existing pre/code blocks with `FoldableCodeBlock`. Parse the language tag from markdown code fences (```language). Replace inline code rendering with the foldable component.
 
-- [ ] **Step 3: TypeScript check**
+- [x] **Step 3: TypeScript check**
 
 Run: `npx tsc --noEmit -p apps/web/tsconfig.json`
 Expected: PASS
 
-- [ ] **Step 4: Visual test**
+- [x] **Step 4: Visual test**
 
 Run: start dev servers, send a message that produces a long code block (>6 lines). Verify fold button appears and expand/collapse works.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/components/ChatView.tsx
@@ -557,7 +557,7 @@ git commit -m "feat: foldable code blocks in chat (default 6 lines, expandable)"
 - Create: `apps/web/src/components/AgentCardFaces.tsx`
 - Modify: `apps/web/src/components/AgentCard.tsx`
 
-- [ ] **Step 1: Create AgentCardFaces.tsx**
+- [x] **Step 1: Create AgentCardFaces.tsx**
 
 ```typescript
 import type { AgentEvent } from '../store/appStore';
@@ -722,12 +722,12 @@ function formatTokens(n: number): string {
 }
 ```
 
-- [ ] **Step 2: TypeScript check**
+- [x] **Step 2: TypeScript check**
 
 Run: `npx tsc --noEmit -p apps/web/tsconfig.json`
 Expected: PASS (may need to fix AgentEvent type imports — ensure AgentEvent has `timestamp`, `type`, `details` fields)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/components/AgentCardFaces.tsx
@@ -741,7 +741,7 @@ git commit -m "feat: AgentCard face components — business card, terminal log, 
 **Files:**
 - Modify: `apps/web/src/components/AgentCard.tsx`
 
-- [ ] **Step 1: Rewrite AgentCard.tsx**
+- [x] **Step 1: Rewrite AgentCard.tsx**
 
 Full rewrite with flip state, fixed header, dot indicators, and fade transition between faces:
 
@@ -924,12 +924,12 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
 }
 ```
 
-- [ ] **Step 2: TypeScript check**
+- [x] **Step 2: TypeScript check**
 
 Run: `npx tsc --noEmit -p apps/web/tsconfig.json`
 Expected: PASS
 
-- [ ] **Step 3: Visual verification**
+- [x] **Step 3: Visual verification**
 
 Run: start dev servers, open a group session. Verify:
 - AgentCard shows fixed header with avatar, name, status badge, 3 dot indicators
@@ -939,7 +939,7 @@ Run: start dev servers, open a group session. Verify:
 - Face 3 shows dashboard with model, context bar, token bars
 - Dot indicators highlight active face
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/web/src/components/AgentCard.tsx
@@ -950,7 +950,7 @@ git commit -m "feat: AgentCard flip redesign with 3 faces and fade transitions"
 
 ### Task 10: Integration test — end-to-end validation
 
-- [ ] **Step 1: Start dev servers and run through spec checklist**
+- [x] **Step 1: Start dev servers and run through spec checklist**
 
 ```bash
 # Start backend + frontend
@@ -966,12 +966,12 @@ Manual verification:
 6. Click AgentCard dots — verify 3 faces with correct content
 7. Check Face 3 — verify model name, context %, token bars are real values
 
-- [ ] **Step 2: TypeScript full check**
+- [x] **Step 2: TypeScript full check**
 
 Run: `npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json && npx tsc --noEmit -p packages/shared/tsconfig.json`
 Expected: ALL PASS
 
-- [ ] **Step 3: Commit any final fixes**
+- [x] **Step 3: Commit any final fixes**
 
 ```bash
 git add -A
