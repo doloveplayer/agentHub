@@ -15,8 +15,19 @@ export function useAuth() {
     }
   }, [token]);
 
-  const login = () => {
-    window.location.href = 'http://localhost:3000/api/auth/github';
+  const login = async (username: string, password: string) => {
+    const res = await api.login(username, password);
+    setToken(res.token);
+    // fetch full user profile
+    const me = await api.getMe();
+    setUser(me);
+  };
+
+  const register = async (username: string, password: string) => {
+    const res = await api.register(username, password);
+    setToken(res.token);
+    const me = await api.getMe();
+    setUser(me);
   };
 
   const logout = () => {
@@ -24,15 +35,5 @@ export function useAuth() {
     setUser(null);
   };
 
-  // Parse token from callback URL
-  const handleCallback = () => {
-    const params = new URLSearchParams(window.location.search);
-    const cbToken = params.get('token');
-    if (cbToken) {
-      setToken(cbToken);
-      window.history.replaceState({}, '', '/');
-    }
-  };
-
-  return { isLoggedIn, user, token, login, logout, handleCallback };
+  return { isLoggedIn, user, token, login, register, logout };
 }

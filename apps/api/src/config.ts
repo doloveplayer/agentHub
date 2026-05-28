@@ -7,15 +7,12 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, '../../..');
 dotenvConfig({ path: resolve(PROJECT_ROOT, '.env') });
 
-// Apply HTTPS proxy for external API calls (e.g., GitHub OAuth behind GFW).
-// Node 18+ native fetch (undici) respects https_proxy when set in process.env.
+// Apply HTTPS proxy for external API calls if configured.
 const httpsProxy = process.env.HTTPS_PROXY || '';
 if (httpsProxy) {
   process.env.https_proxy = httpsProxy;
-  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // tolerate proxy cert issues
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   console.log(`[config] HTTPS proxy configured: ${httpsProxy.replace(/\/\/.*@/, '//***@')}`);
-} else {
-  console.warn('[config] No HTTPS_PROXY set — GitHub OAuth will fail behind GFW');
 }
 
 function required(key: string): string {
@@ -129,7 +126,7 @@ export const runtimeConfig = {
 };
 
 /**
- * Frozen config object for static configuration (DB, JWT, GitHub, sandbox, etc.).
+ * Frozen config object for static configuration (DB, JWT, sandbox, etc.).
  * Agent runtime params delegate to runtimeConfig.agent via getters for backward compat.
  */
 export const config = {
@@ -144,14 +141,9 @@ export const config = {
     expiresIn: '7d' as const,
   },
 
-  github: {
-    clientId: required('GITHUB_CLIENT_ID'),
-    clientSecret: required('GITHUB_CLIENT_SECRET'),
-    callbackUrl: required('GITHUB_CALLBACK_URL'),
-    allowedUsers: required('GITHUB_ALLOWED_USERS')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean),
+  defaultAdmin: {
+    username: optional('ADMIN_USERNAME', 'admin'),
+    password: optional('ADMIN_PASSWORD', '123456'),
   },
 
   redis: {

@@ -72,9 +72,9 @@ function dockerContainersForSession(sessionId: string): number {
 test('TC-SBX-001: First WS connection creates a sandbox container', async () => {
   // Setup user
   const u = await prisma.user.create({
-    data: { githubId: 1000000 + Math.floor(Math.random() * 999999999), login: `sbx1-${Date.now()}`, avatarUrl: '' },
+    data: { username: `sbx1-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', avatarUrl: '' },
   });
-  const token = signToken({ userId: u.id, githubLogin: u.login });
+  const token = signToken({ userId: u.id, username: u.username });
 
   // Create session
   const { body: sess } = await apiPost('/api/sessions', { type: 'solo' }, token);
@@ -105,9 +105,9 @@ test('TC-SBX-001: First WS connection creates a sandbox container', async () => 
 
 test('TC-SBX-002: Second WS connection reuses existing sandbox', async () => {
   const u = await prisma.user.create({
-    data: { githubId: 1000000 + Math.floor(Math.random() * 999999999), login: `sbx2-${Date.now()}`, avatarUrl: '' },
+    data: { username: `sbx2-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
   });
-  const token = signToken({ userId: u.id, githubLogin: u.login });
+  const token = signToken({ userId: u.id, username: u.username });
 
   const { body: sess } = await apiPost('/api/sessions', { type: 'solo' }, token);
   assert.ok(sess?.id, `Session created`);
@@ -136,9 +136,9 @@ test('TC-SBX-002: Second WS connection reuses existing sandbox', async () => {
 
 test('TC-SBX-004: Cross-session workspace isolation', async () => {
   const u = await prisma.user.create({
-    data: { githubId: 1000000 + Math.floor(Math.random() * 999999999), login: `sbx4-${Date.now()}`, avatarUrl: '' },
+    data: { username: `sbx4-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
   });
-  const token = signToken({ userId: u.id, githubLogin: u.login });
+  const token = signToken({ userId: u.id, username: u.username });
 
   // Create two sessions
   const { body: s1 } = await apiPost('/api/sessions', { type: 'solo' }, token);
@@ -175,9 +175,9 @@ test('TC-SBX-004: Cross-session workspace isolation', async () => {
 
 test('TC-SBX-005: Multi-agent same session shares workspace', async () => {
   const u = await prisma.user.create({
-    data: { githubId: 1000000 + Math.floor(Math.random() * 999999999), login: `sbx5-${Date.now()}`, avatarUrl: '' },
+    data: { username: `sbx5-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
   });
-  const token = signToken({ userId: u.id, githubLogin: u.login });
+  const token = signToken({ userId: u.id, username: u.username });
 
   const { body: sess } = await apiPost('/api/sessions', { type: 'solo' }, token);
   assert.ok(sess?.id, `Session created`);
@@ -202,9 +202,9 @@ test('TC-SBX-005: Multi-agent same session shares workspace', async () => {
 
 test('TC-SBX-006: Session deletion destroys container and host workdir', async () => {
   const u = await prisma.user.create({
-    data: { githubId: 1000000 + Math.floor(Math.random() * 999999999), login: `sbx6-${Date.now()}`, avatarUrl: '' },
+    data: { username: `sbx6-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
   });
-  const token = signToken({ userId: u.id, githubLogin: u.login });
+  const token = signToken({ userId: u.id, username: u.username });
 
   const { body: sess } = await apiPost('/api/sessions', { type: 'solo' }, token);
   assert.ok(sess?.id, `Session created`);

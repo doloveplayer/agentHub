@@ -49,17 +49,17 @@ async function put(path: string, data: unknown, jwt?: string) {
 
 test('setup: create test users in DB', async () => {
   const userA = await prisma.user.create({
-    data: { githubId: Math.floor(Date.now() / 1000), login: TEST_LOGIN_A, avatarUrl: '' },
-    select: { id: true, login: true },
+    data: { username: TEST_LOGIN_A, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
+    select: { id: true, username: true },
   });
   const userB = await prisma.user.create({
-    data: { githubId: Math.floor(Date.now() / 1000) + 1, login: TEST_LOGIN_B, avatarUrl: '' },
-    select: { id: true, login: true },
+    data: { username: TEST_LOGIN_B, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
+    select: { id: true, username: true },
   });
   userIdA = userA.id;
   userIdB = userB.id;
-  tokenA = signToken({ userId: userIdA, githubLogin: TEST_LOGIN_A });
-  tokenB = signToken({ userId: userIdB, githubLogin: TEST_LOGIN_B });
+  tokenA = signToken({ userId: userIdA, username: TEST_LOGIN_A });
+  tokenB = signToken({ userId: userIdB, username: TEST_LOGIN_B });
   assert.ok(userIdA, 'userA created');
   assert.ok(userIdB, 'userB created');
 });
@@ -72,7 +72,7 @@ test('TC-AUTH-006: /api/auth/me without token returns 401', async () => {
 });
 
 test('TC-AUTH-007: /api/auth/me with expired token returns 401', async () => {
-  const fakeExpired = signToken({ userId: userIdA, githubLogin: TEST_LOGIN_A });
+  const fakeExpired = signToken({ userId: userIdA, username: TEST_LOGIN_A });
   // Modify the token to be invalid
   const { status } = await get('/api/auth/me', 'eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOiJ4IiwiaWF0IjoxfQ.x');
   assert.equal(status, 401);
@@ -247,10 +247,10 @@ test('TC-AGT-007: Update nonexistent agent returns 404', async () => {
 // ========== JWT round-trip tests ==========
 
 test('JWT sign and verify round-trip', () => {
-  const t = signToken({ userId: 'test-123', githubLogin: 'testuser' });
+  const t = signToken({ userId: 'test-123', username: 'testuser' });
   const payload = verifyToken(t);
   assert.equal(payload.userId, 'test-123');
-  assert.equal(payload.githubLogin, 'testuser');
+  assert.equal(payload.username, 'testuser');
 });
 
 test('JWT verify throws on invalid token', () => {

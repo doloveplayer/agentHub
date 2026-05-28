@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { config, runtimeConfig } from '../config.js';
 import { prisma } from '../db/prisma.js';
 import { getUser } from '../lib/auth.js';
+import { isAdmin } from '../middleware/whitelist.js';
 
 const settings = new Hono();
 
@@ -75,7 +76,7 @@ settings.get('/runtime', async (c) => {
   const user = result;
 
   const data = runtimeConfig.agent.toJSON();
-  if (config.github.allowedUsers.includes(user.githubLogin)) {
+  if (isAdmin(user.username)) {
     return c.json({ ...data, isAdmin: true });
   }
   return c.json(data);
@@ -94,8 +95,8 @@ settings.put('/runtime', async (c) => {
   if (result instanceof Response) return result;
   const user = result;
 
-  // Admin check: caller must be in allowedUsers
-  if (!config.github.allowedUsers.includes(user.githubLogin)) {
+  // Admin check
+  if (!isAdmin(user.username)) {
     return c.json({ error: 'Admin access required' }, 403);
   }
 

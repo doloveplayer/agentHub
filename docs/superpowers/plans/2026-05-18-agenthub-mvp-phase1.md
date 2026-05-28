@@ -2,7 +2,9 @@
 
 > **For agentic workers:** Use multi-agent parallel execution — tasks marked `[P]` can run concurrently.
 
-**Goal:** A working web chat interface that lets a user log in via GitHub, chat with a Claude Code agent in a Docker sandbox, with streaming text output.
+> **Auth update (2026-05-28):** GitHub OAuth replaced with username/password login (bcrypt + JWT). Default admin: `admin` / `123456`. See `apps/api/src/routes/auth.ts`.
+
+**Goal:** A working web chat interface that lets a user log in with username/password, chat with a Claude Code agent in a Docker sandbox, with streaming text output.
 
 **Architecture:** Monorepo — `apps/api` (Hono + WebSocket + Dockerode), `apps/web` (React + Vite + Tailwind), `packages/shared` (types). Each session gets an isolated Docker sandbox; Claude Code runs as a subprocess inside it. WebSocket bridges stdout to the browser.
 
@@ -103,8 +105,7 @@ agentHub/
 // agentHub/packages/shared/src/types.ts
 export interface User {
   id: string;
-  githubId: number;
-  login: string;
+  username: string;
   avatarUrl: string;
   email?: string;
 }
@@ -275,10 +276,8 @@ Run: `cd agentHub && bun install`
 DATABASE_URL="postgresql://agenthub:agenthub@localhost:5432/agenthub"
 REDIS_URL="redis://localhost:6379"
 JWT_SECRET="change-me-in-production"
-GITHUB_CLIENT_ID="your-github-oauth-app-id"
-GITHUB_CLIENT_SECRET="your-github-oauth-app-secret"
-GITHUB_CALLBACK_URL="http://localhost:3000/api/auth/github/callback"
-GITHUB_ALLOWED_USERS="user1,user2"
+ADMIN_USERNAME="admin"
+ADMIN_PASSWORD="123456"
 HOST_DOCKER_SOCKET="/var/run/docker.sock"
 SANDBOX_IMAGE="agenthub-sandbox:latest"
 ```
@@ -298,9 +297,9 @@ datasource db {
 
 model User {
   id        String    @id @default(uuid())
-  githubId  Int       @unique
-  login     String
-  avatarUrl String
+  username  String    @unique
+  password  String
+  avatarUrl String    @default("")
   email     String?
   sessions  Session[]
   createdAt DateTime  @default(now())
@@ -350,11 +349,9 @@ const env = (key: string, fallback?: string): string =>
 export const config = {
   port: parseInt(env('PORT', '3000')),
   jwtSecret: env('JWT_SECRET'),
-  github: {
-    clientId: env('GITHUB_CLIENT_ID'),
-    clientSecret: env('GITHUB_CLIENT_SECRET'),
-    callbackUrl: env('GITHUB_CALLBACK_URL'),
-    allowedUsers: env('GITHUB_ALLOWED_USERS').split(',').map(s => s.trim()),
+  defaultAdmin: {
+    username: env('ADMIN_USERNAME', 'admin'),
+    password: env('ADMIN_PASSWORD', '123456'),
   },
   databaseUrl: env('DATABASE_URL'),
   redisUrl: env('REDIS_URL'),
@@ -382,7 +379,7 @@ import { config } from '../config';
 
 export interface JwtPayload {
   userId: string;
-  githubLogin: string;
+  username: string;
 }
 
 export function signToken(payload: JwtPayload): string {
@@ -432,8 +429,8 @@ export async function authMiddleware(c: Context, next: Next) {
 // agentHub/apps/api/src/middleware/whitelist.ts
 import { config } from '../config';
 
-export function isUserAllowed(githubLogin: string): boolean {
-  return config.github.allowedUsers.includes(githubLogin);
+export function isAdmin(username: string): boolean {
+  return username === config.defaultAdmin.username;
 }
 ```
 
@@ -442,83 +439,64 @@ export function isUserAllowed(githubLogin: string): boolean {
 ```typescript
 // agentHub/apps/api/src/routes/auth.ts
 import { Hono } from 'hono';
-import { signToken, JwtPayload } from '../lib/jwt';
+import bcrypt from 'bcryptjs';
+import { signToken } from '../lib/jwt';
 import { prisma } from '../db/prisma';
 import { config } from '../config';
-import { isUserAllowed } from '../middleware/whitelist';
 
 const auth = new Hono();
 
-// Step 1: Redirect to GitHub
-auth.get('/github', (c) => {
-  const url = new URL('https://github.com/login/oauth/authorize');
-  url.searchParams.set('client_id', config.github.clientId);
-  url.searchParams.set('redirect_uri', config.github.callbackUrl);
-  url.searchParams.set('scope', 'read:user user:email');
-  return c.redirect(url.toString());
+// POST /auth/login — authenticate with username + password
+auth.post('/login', async (c) => {
+  const { username, password } = await c.req.json();
+  if (!username || !password) return c.json({ error: 'Username and password required' }, 400);
+
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user) return c.json({ error: 'Invalid username or password' }, 401);
+
+  const valid = await bcrypt.compare(password, user.password);
+  if (!valid) return c.json({ error: 'Invalid username or password' }, 401);
+
+  const token = signToken({ userId: user.id, username: user.username });
+  return c.json({ token, userId: user.id, username: user.username });
 });
 
-// Step 2: GitHub callback — exchange code for token, fetch user, check whitelist
-auth.get('/github/callback', async (c) => {
-  const code = c.req.query('code');
-  if (!code) return c.json({ error: 'Missing code' }, 400);
+// POST /auth/register — create a new user
+auth.post('/register', async (c) => {
+  const { username, password } = await c.req.json();
+  if (!username || !password) return c.json({ error: 'Username and password required' }, 400);
+  if (password.length < 6) return c.json({ error: 'Password must be at least 6 characters' }, 400);
 
-  // Exchange code for access token
-  const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({
-      client_id: config.github.clientId,
-      client_secret: config.github.clientSecret,
-      code,
-    }),
-  });
-  const tokenData = await tokenRes.json() as any;
-  if (!tokenData.access_token) {
-    return c.json({ error: 'Failed to get access token' }, 400);
-  }
+  const existing = await prisma.user.findUnique({ where: { username } });
+  if (existing) return c.json({ error: 'Username already taken' }, 409);
 
-  // Fetch GitHub user
-  const userRes = await fetch('https://api.github.com/user', {
-    headers: { Authorization: `Bearer ${tokenData.access_token}` },
-  });
-  const githubUser = await userRes.json() as any;
-
-  // Check whitelist
-  if (!isUserAllowed(githubUser.login)) {
-    return c.html('<h1>Access Denied</h1><p>Your GitHub account is not in the allowed list.</p>', 403);
-  }
-
-  // Upsert user
-  const user = await prisma.user.upsert({
-    where: { githubId: githubUser.id },
-    update: { login: githubUser.login, avatarUrl: githubUser.avatar_url },
-    create: {
-      githubId: githubUser.id,
-      login: githubUser.login,
-      avatarUrl: githubUser.avatar_url,
-      email: githubUser.email,
-    },
-  });
-
-  const token = signToken({ userId: user.id, githubLogin: user.login });
-  // Redirect to frontend with token in query param
-  return c.redirect(`http://localhost:5173/auth/callback?token=${token}`);
+  const hashed = await bcrypt.hash(password, 10);
+  const user = await prisma.user.create({ data: { username, password: hashed } });
+  const token = signToken({ userId: user.id, username: user.username });
+  return c.json({ token, userId: user.id, username: user.username }, 201);
 });
 
-// Get current user
+// GET /me — current user (protected)
 auth.get('/me', async (c) => {
-  const payload = c.get('user') as JwtPayload;
+  const payload = c.get('user');
   const user = await prisma.user.findUnique({ where: { id: payload.userId } });
   if (!user) return c.json({ error: 'User not found' }, 404);
-  return c.json({
-    id: user.id,
-    login: user.login,
-    avatarUrl: user.avatarUrl,
-  });
+  return c.json({ id: user.id, username: user.username, avatarUrl: user.avatarUrl });
 });
+  }
 
-export { auth };
+// Seed default admin on startup
+export async function seedDefaultAdmin() {
+  const { username, password } = config.defaultAdmin;
+  const existing = await prisma.user.findUnique({ where: { username } });
+  if (!existing) {
+    const hashed = await bcrypt.hash(password, 10);
+    await prisma.user.create({ data: { username, password: hashed } });
+    console.log(`[auth] Seeded default admin: ${username}`);
+  }
+}
+
+export default auth;
 ```
 
 - [x] **Step 2.4: Create main entry point**
@@ -1324,7 +1302,7 @@ import type { Session, Message } from '@agenthub/shared';
 
 interface AppState {
   token: string | null;
-  user: { id: string; login: string; avatarUrl: string } | null;
+  user: { id: string; username: string; avatarUrl: string } | null;
   sessions: Session[];
   activeSessionId: string | null;
   messages: Record<string, Message[]>;
@@ -1414,8 +1392,11 @@ export function useAuth() {
     }
   }, [token]);
 
-  const login = () => {
-    window.location.href = 'http://localhost:3000/api/auth/github';
+  const login = async (username: string, password: string) => {
+    const res = await api.login(username, password);
+    setToken(res.token);
+    const me = await api.getMe();
+    setUser(me);
   };
 
   const logout = () => {
@@ -1423,17 +1404,7 @@ export function useAuth() {
     setUser(null);
   };
 
-  // Parse token from callback URL
-  const handleCallback = () => {
-    const params = new URLSearchParams(window.location.search);
-    const cbToken = params.get('token');
-    if (cbToken) {
-      setToken(cbToken);
-      window.history.replaceState({}, '', '/');
-    }
-  };
-
-  return { isLoggedIn, user, token, login, logout, handleCallback };
+  return { isLoggedIn, user, token, login, logout };
 }
 ```
 
@@ -1445,7 +1416,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAppStore } from './store/appStore';
 import { ChatPage } from './pages/ChatPage';
 import { LoginPage } from './components/LoginPage';
-import { AuthCallback } from './components/AuthCallback';
 
 export function App() {
   const token = useAppStore((s) => s.token);
@@ -1455,7 +1425,6 @@ export function App() {
       <Routes>
         <Route path="/" element={token ? <ChatPage /> : <Navigate to="/login" />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/auth/callback" element={<AuthCallback />} />
       </Routes>
     </BrowserRouter>
   );

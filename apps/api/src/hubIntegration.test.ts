@@ -65,10 +65,10 @@ let agentIds: string[] = [];
 
 test('setup: create shared user and group session', async () => {
   const u = await prisma.user.create({
-    data: { githubId: 9000000 + Math.floor(Math.random() * 900000000), login: `hub-test-${Date.now()}`, avatarUrl: '' },
+    data: { username: `hub-test-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
   });
   sharedUserId = u.id;
-  sharedToken = signToken({ userId: u.id, githubLogin: u.login });
+  sharedToken = signToken({ userId: u.id, username: u.username });
 
   // Get available agents
   const { body: agents } = await apiGet('/api/agents', sharedToken);

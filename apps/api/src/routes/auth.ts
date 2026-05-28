@@ -1,155 +1,64 @@
 import { Hono } from 'hono';
-import { ProxyAgent } from 'undici';
+import bcrypt from 'bcryptjs';
 import { config } from '../config.js';
 import { prisma } from '../db/prisma.js';
 import { signToken } from '../lib/jwt.js';
-import { isUserAllowed } from '../middleware/whitelist.js';
 import { authMiddleware } from '../middleware/auth.js';
 
 const auth = new Hono();
 
-const httpsProxy = process.env.HTTPS_PROXY || process.env.https_proxy || '';
-const proxyDispatcher = httpsProxy ? new ProxyAgent({ uri: httpsProxy }) : undefined;
+// POST /auth/login — authenticate with username + password
+auth.post('/login', async (c) => {
+  const body = await c.req.json<{ username: string; password: string }>();
+  const { username, password } = body;
 
-async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = 30_000): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal, ...(proxyDispatcher ? { dispatcher: proxyDispatcher } : {}) } as RequestInit & { dispatcher?: typeof proxyDispatcher });
-  } finally {
-    clearTimeout(timeout);
+  if (!username || !password) {
+    return c.json({ error: 'Username and password are required' }, 400);
   }
-}
 
-// GET /github — redirect to GitHub OAuth authorize URL
-auth.get('/github', (c) => {
-  const url = new URL('https://github.com/login/oauth/authorize');
-  url.searchParams.set('client_id', config.github.clientId);
-  url.searchParams.set('redirect_uri', config.github.callbackUrl);
-  url.searchParams.set('scope', 'read:user user:email');
-  return c.redirect(url.toString());
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user) {
+    return c.json({ error: 'Invalid username or password' }, 401);
+  }
+
+  const valid = await bcrypt.compare(password, user.password);
+  if (!valid) {
+    return c.json({ error: 'Invalid username or password' }, 401);
+  }
+
+  const token = signToken({ userId: user.id, username: user.username });
+  return c.json({ token, userId: user.id, username: user.username });
 });
 
-// GET /github/callback — handle OAuth callback
-auth.get('/github/callback', async (c) => {
-  const code = c.req.query('code');
-  if (!code) {
-    return c.json({ error: 'Missing code parameter' }, 400);
+// POST /auth/register — create a new user account
+auth.post('/register', async (c) => {
+  const body = await c.req.json<{ username: string; password: string }>();
+  const { username, password } = body;
+
+  if (!username || !password) {
+    return c.json({ error: 'Username and password are required' }, 400);
   }
 
-  // Exchange code for access token
-  let tokenRes: Response;
-  try {
-    tokenRes = await fetchWithTimeout('https://github.com/login/oauth/access_token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify({
-        client_id: config.github.clientId,
-        client_secret: config.github.clientSecret,
-        code,
-        redirect_uri: config.github.callbackUrl,
-      }),
-    });
-  } catch (err) {
-    console.error('[auth] GitHub token exchange failed:', (err as Error).message);
-    return c.json({ error: `GitHub token exchange failed: ${(err as Error).message}` }, 500);
+  if (username.length < 2 || username.length > 32) {
+    return c.json({ error: 'Username must be 2-32 characters' }, 400);
   }
 
-  const tokenData = (await tokenRes.json()) as {
-    access_token?: string;
-    error?: string;
-  };
-
-  if (!tokenData.access_token) {
-    return c.json(
-      { error: tokenData.error || 'Failed to exchange code for token' },
-      401,
-    );
+  if (password.length < 6) {
+    return c.json({ error: 'Password must be at least 6 characters' }, 400);
   }
 
-  // Fetch GitHub user
-  let userRes: Response;
-  try {
-    userRes = await fetchWithTimeout('https://api.github.com/user', {
-      headers: {
-        Authorization: `Bearer ${tokenData.access_token}`,
-      },
-    });
-  } catch (err) {
-    console.error('[auth] Failed to fetch GitHub user:', (err as Error).message);
-    return c.json({ error: `Failed to fetch GitHub user: ${(err as Error).message}` }, 500);
-  }
-  const githubUser = (await userRes.json()) as {
-    id: number;
-    login: string;
-    avatar_url: string;
-    email?: string;
-  };
-
-  // Check whitelist
-  if (!isUserAllowed(githubUser.login)) {
-    return c.json({ error: 'User not in allowed list' }, 403);
+  const existing = await prisma.user.findUnique({ where: { username } });
+  if (existing) {
+    return c.json({ error: 'Username already taken' }, 409);
   }
 
-  // Upsert user in DB
-  const user = await prisma.user.upsert({
-    where: { githubId: githubUser.id },
-    update: {
-      login: githubUser.login,
-      avatarUrl: githubUser.avatar_url,
-      email: githubUser.email,
-    },
-    create: {
-      githubId: githubUser.id,
-      login: githubUser.login,
-      avatarUrl: githubUser.avatar_url,
-      email: githubUser.email,
-    },
+  const hashed = await bcrypt.hash(password, 10);
+  const user = await prisma.user.create({
+    data: { username, password: hashed },
   });
 
-  // Sign JWT
-  const token = signToken({ userId: user.id, githubLogin: user.login });
-
-  // Redirect to frontend
-  const frontendUrl = new URL(`${config.frontendUrl}/auth/callback`);
-  frontendUrl.searchParams.set('token', token);
-  return c.redirect(frontendUrl.toString());
-});
-
-// GET /dev-token — test bypass (dev only, no GitHub OAuth)
-// Returns a signed JWT for the first allowed user without going through OAuth.
-// Only enabled when NODE_ENV is not "production".
-auth.get('/dev-token', async (c) => {
-  if (process.env.NODE_ENV === 'production') {
-    return c.json({ error: 'Dev token endpoint disabled in production' }, 403);
-  }
-
-  const allowedUsers = config.github.allowedUsers;
-  if (allowedUsers.length === 0) {
-    return c.json({ error: 'No allowed users configured' }, 400);
-  }
-
-  const login = allowedUsers[0];
-  const devGitHubId = 0; // synthetic — no real GitHub account needed
-
-  // Upsert synthetic dev user
-  const user = await prisma.user.upsert({
-    where: { githubId: devGitHubId },
-    update: { login, avatarUrl: '', email: null as any },
-    create: { githubId: devGitHubId, login, avatarUrl: '', email: null as any },
-  });
-
-  const token = signToken({ userId: user.id, githubLogin: user.login });
-
-  return c.json({
-    token,
-    userId: user.id,
-    login: user.login,
-    note: 'Dev bypass token — inject into localStorage as agenthub_token',
-  });
+  const token = signToken({ userId: user.id, username: user.username });
+  return c.json({ token, userId: user.id, username: user.username }, 201);
 });
 
 // GET /me — return current user (protected)
@@ -157,7 +66,7 @@ auth.get('/me', authMiddleware, async (c) => {
   const { userId } = c.get('user');
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, githubId: true, login: true, avatarUrl: true, email: true },
+    select: { id: true, username: true, avatarUrl: true, email: true },
   });
 
   if (!user) {
@@ -166,5 +75,27 @@ auth.get('/me', authMiddleware, async (c) => {
 
   return c.json(user);
 });
+
+// GET /dev-token — test bypass (dev only)
+auth.get('/dev-token', async (c) => {
+  if (process.env.NODE_ENV === 'production') {
+    return c.json({ error: 'Dev token endpoint disabled in production' }, 403);
+  }
+  const admin = await prisma.user.findFirst({ where: { username: config.defaultAdmin.username } });
+  if (!admin) return c.json({ error: 'No admin user found' }, 400);
+  const token = signToken({ userId: admin.id, username: admin.username });
+  return c.json({ token, userId: admin.id, username: admin.username });
+});
+
+/** Seed default admin user if not exists */
+export async function seedDefaultAdmin() {
+  const { username, password } = config.defaultAdmin;
+  const existing = await prisma.user.findUnique({ where: { username } });
+  if (!existing) {
+    const hashed = await bcrypt.hash(password, 10);
+    await prisma.user.create({ data: { username, password: hashed } });
+    console.log(`[auth] Seeded default admin user: ${username}`);
+  }
+}
 
 export default auth;

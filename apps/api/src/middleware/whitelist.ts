@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 
-export function isUserAllowed(githubLogin: string): boolean {
-  return config.github.allowedUsers.includes(githubLogin);
+/** Check if user is the default admin */
+export function isAdmin(username: string): boolean {
+  return username === config.defaultAdmin.username;
 }

@@ -217,7 +217,7 @@ export function SessionList({ onCloseMobile }: Props) {
         {user && (
           <>
             <img src={user.avatarUrl} alt="" className="w-7 h-7 rounded-full ring-2 ring-hub-border" />
-            <span className="text-sm text-hub-secondary font-medium">{user.login}</span>
+            <span className="text-sm text-hub-secondary font-medium">{user.username}</span>
           </>
         )}
       </div>

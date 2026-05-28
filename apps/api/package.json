@@ -12,6 +12,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.3.150",
     "@hono/node-server": "^1.13.0",
     "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3",
     "bullmq": "^5.76.10",
     "dockerode": "^5.0.0",
     "dotenv": "^17.4.2",
@@ -24,6 +25,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/dockerode": "^3.3.0",
     "@types/jsonwebtoken": "^9.0.0",
     "@types/ws": "^8.5.0",

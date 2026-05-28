@@ -31,9 +31,9 @@ async function apiDelete(path: string, token: string) {
 // ===== TC-AGT-006: Update agent systemPrompt =====
 test('TC-AGT-006: Update agent systemPrompt', async () => {
   const u = await prisma.user.create({
-    data: { githubId: 8400000 + Math.floor(Math.random() * 900000000), login: `agt6-${Date.now()}`, avatarUrl: '' },
+    data: { username: `agt6-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
   });
-  const token = signToken({ userId: u.id, githubLogin: u.login });
+  const token = signToken({ userId: u.id, username: u.username });
   const name = `update-${Date.now()}`;
 
   const { body: agent } = await apiPost('/api/agents', { name, displayName: 'UpdateTest', description: 'Desc', systemPrompt: 'Original prompt' }, token);
@@ -56,9 +56,9 @@ test('TC-AGT-006: Update agent systemPrompt', async () => {
 // ===== TC-AGT-010: Group session routes to planner =====
 test('TC-AGT-010: Group session has agents bound', async () => {
   const u = await prisma.user.create({
-    data: { githubId: 8500000 + Math.floor(Math.random() * 900000000), login: `agt10-${Date.now()}`, avatarUrl: '' },
+    data: { username: `agt10-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
   });
-  const token = signToken({ userId: u.id, githubLogin: u.login });
+  const token = signToken({ userId: u.id, username: u.username });
 
   const { body: agents } = await apiGet('/api/agents', token);
   const agentIds = Array.isArray(agents) ? agents.slice(0, 4).map((a: any) => a.id) : [];
@@ -76,9 +76,9 @@ test('TC-AGT-010: Group session has agents bound', async () => {
 // ===== TC-AGT-011: Slash command sent as-is =====
 test('TC-AGT-011: Slash command accepted by chat endpoint', async () => {
   const u = await prisma.user.create({
-    data: { githubId: 8600000 + Math.floor(Math.random() * 900000000), login: `agt11-${Date.now()}`, avatarUrl: '' },
+    data: { username: `agt11-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
   });
-  const token = signToken({ userId: u.id, githubLogin: u.login });
+  const token = signToken({ userId: u.id, username: u.username });
   const { body: sess } = await apiPost('/api/sessions', { type: 'solo' }, token);
   assert.ok(sess?.id, 'Session created');
 

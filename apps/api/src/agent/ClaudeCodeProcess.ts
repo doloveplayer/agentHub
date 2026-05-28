@@ -21,8 +21,7 @@ const SAFE_ENV_PREFIXES = [
 const ENV_BLOCKLIST_SUFFIXES = ['_TOKEN', '_SECRET', '_KEY', '_PASSWORD'];
 // Only pass Anthropic API credentials to the sandbox.
 // Proxy vars are intentionally excluded — the container uses --network host
-// and reaches api.deepseek.com directly via the host's internet connection.
-// GitHub OAuth proxy is handled by the backend, not the sandbox.
+// and reaches external APIs directly via the host's internet connection.
 const DOCKER_ENV_NAMES = new Set([
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN',

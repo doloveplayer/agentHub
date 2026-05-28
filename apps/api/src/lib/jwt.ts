@@ -3,7 +3,7 @@ import { config } from '../config.js';
 
 export interface JwtPayload {
   userId: string;
-  githubLogin: string;
+  username: string;
 }
 
 export function signToken(payload: JwtPayload): string {

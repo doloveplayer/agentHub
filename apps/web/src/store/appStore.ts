@@ -69,7 +69,7 @@ export interface Toast {
 
 interface AppState {
   token: string | null;
-  user: { id: string; login: string; avatarUrl: string } | null;
+  user: { id: string; username: string; avatarUrl: string } | null;
   sessions: Session[];
   activeSessionId: string | null;
   messages: Record<string, Message[]>;

@@ -12,7 +12,7 @@ import { attachWebSocket, broadcast } from './ws/handler.js';
 import { ProviderFactory } from './agent/providers/factory.js';
 import { SandboxManager } from './agent/SandboxManager.js';
 import { prisma } from './db/prisma.js';
-import authRoutes from './routes/auth.js';
+import authRoutes, { seedDefaultAdmin } from './routes/auth.js';
 import sessionRoutes from './routes/sessions.js';
 import chatRoutes from './routes/chat.js';
 import agentRoutes from './routes/agents.js';
@@ -69,6 +69,7 @@ async function seedDefaultAgents() {
 }
 
 await seedDefaultAgents();
+await seedDefaultAdmin();
 
 // Initialize agent providers
 ProviderFactory.init();

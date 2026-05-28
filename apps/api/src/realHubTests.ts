@@ -47,9 +47,9 @@ async function main() {
   // Setup: create user and group session
   console.log('=== Setup ===');
   const u = await prisma.user.create({
-    data: { githubId: 9500000 + Math.floor(Math.random() * 900000000), login: `hub-real-${Date.now()}`, avatarUrl: '' },
+    data: { username: `hub-real-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', avatarUrl: '' },
   });
-  const token = signToken({ userId: u.id, githubLogin: u.login });
+  const token = signToken({ userId: u.id, username: u.username });
   console.log(`User: ${u.id}`);
 
   const { body: agents } = await apiGet('/api/agents', token);

@@ -54,10 +54,10 @@ let token: string;
 
 test('setup: create test user', async () => {
   const u = await prisma.user.create({
-    data: { githubId: 9100000 + Math.floor(Math.random() * 900000000), login: `real-${Date.now()}`, avatarUrl: '' },
+    data: { username: `real-${Date.now()}`, password: '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' },
   });
   userId = u.id;
-  token = signToken({ userId: u.id, githubLogin: u.login });
+  token = signToken({ userId: u.id, username: u.username });
   assert.ok(userId, 'User created');
 });
 

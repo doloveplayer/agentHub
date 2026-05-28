@@ -9,9 +9,9 @@ datasource db {
 
 model User {
   id        String        @id @default(uuid())
-  githubId  Int           @unique
-  login     String
-  avatarUrl String
+  username  String        @unique
+  password  String
+  avatarUrl String        @default("")
   email     String?
   sessions  Session[]
   settings  UserSettings?
