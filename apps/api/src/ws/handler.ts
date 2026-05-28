@@ -6,7 +6,7 @@ import { InboxManager } from '../agent/InboxManager.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import { stateTracker } from '../agent/StateTracker.js';
 import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
-import { selectDefaultAgent } from '../agent/turns.js';
+import { selectDefaultAgent, toTaskStates } from '../agent/turns.js';
 import { getApprovalGate } from '../agent/ApprovalGate.js';
 import { extractAndValidate } from '../agent/PlanValidator.js';
 import { IntentParser } from '../agent/IntentParser.js';
@@ -54,6 +54,10 @@ import {
 export { broadcast } from './state.js';
 
 const agentNameToType = new Map<string, string>();
+
+// Shared regex patterns for hidden plan extraction in agent output
+const PLAN_STRIP_RE = /<!--AGENTHUB_PLAN\{[\s\S]*?\}-->/g;
+const PLAN_EXTRACT_RE = /<!--AGENTHUB_PLAN(\{[\s\S]*?\})-->/;
 
 // ---- Connection handler ----
 
@@ -468,7 +472,7 @@ async function handleChatMessage(
           let chatContent = event.content;
           if (isPlannerAgent) {
             // Strip <!--AGENTHUB_PLAN{...}--> from user-visible content
-            chatContent = chatContent.replace(/<!--AGENTHUB_PLAN\{[\s\S]*?\}-->/g, '');
+            chatContent = chatContent.replace(PLAN_STRIP_RE, '');
             if (!chatContent.trim()) break; // nothing user-visible in this chunk
           }
           if (chatContent) broadcast(sessionId, { type: 'stream_chunk', content: chatContent, agentMessageId: mention.messageId });
@@ -604,7 +608,7 @@ async function handleChatMessage(
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
           // Extract hidden plan JSON from Planner output
           if (isPlannerAgent && sandbox && event.exitCode === 0) {
-            const planMatch = accumulatedContent.match(/<!--AGENTHUB_PLAN(\{[\s\S]*?\})-->/);
+            const planMatch = accumulatedContent.match(PLAN_EXTRACT_RE);
             if (planMatch) {
               try {
                 const plan = JSON.parse(planMatch[1]);
@@ -616,15 +620,7 @@ async function handleChatMessage(
                     planId,
                     planTitle: validated.planTitle,
                     summary: validated.summary,
-                    tasks: validated.tasks.map(t => ({
-                      taskId: t.id,
-                      title: t.title,
-                      agentType: t.agentType,
-                      dependsOn: t.dependsOn,
-                      expectedOutput: t.expectedOutput,
-                      priority: t.priority,
-                      status: 'waiting',
-                    })),
+                    tasks: toTaskStates(validated, planId),
                     timestamp: Date.now(),
                   });
                   // Auto-dispatch tasks to agents
@@ -732,7 +728,7 @@ async function handleChatMessage(
     }, config.agent.timeoutMs);
 
     if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
-    agentStates.get(sessionId)!.set(mention.messageId, { process: agent, timer, agentId: mention.agentId });
+    agentStates.get(sessionId)!.set(mention.messageId, { process: agent, timer, agentId: mention.agentId, agentName: agentNameForProc || undefined });
 
     if (agentNameForProc && sandbox) {
       const agentType = agentNameToType.get(agentNameForProc) ?? agentNameForProc;
@@ -1108,7 +1104,7 @@ async function preActivateGroupAgents(
             let chatContent = event.content || '';
             if (agentName === 'planner') {
               // Strip <!--AGENTHUB_PLAN{...}--> from user-visible content
-              chatContent = chatContent.replace(/<!--AGENTHUB_PLAN\{[\s\S]*?\}-->/g, '');
+              chatContent = chatContent.replace(PLAN_STRIP_RE, '');
               if (!chatContent.trim()) break; // nothing user-visible in this chunk
             }
             if (chatContent) broadcast(sessionId, { type: 'stream_chunk', content: chatContent, agentMessageId: msgId });
@@ -1168,7 +1164,7 @@ async function preActivateGroupAgents(
             replAccumulatedContent.delete(agentName);
             // Extract hidden plan JSON from Planner output
             if (agentName === 'planner' && doneContent && event.exitCode === 0) {
-              const planMatch = doneContent.match(/<!--AGENTHUB_PLAN(\{[\s\S]*?\})-->/);
+              const planMatch = doneContent.match(PLAN_EXTRACT_RE);
               if (planMatch) {
                 try {
                   const plan = JSON.parse(planMatch[1]);
@@ -1180,15 +1176,7 @@ async function preActivateGroupAgents(
                       planId,
                       planTitle: validated.planTitle,
                       summary: validated.summary,
-                      tasks: validated.tasks.map(t => ({
-                        taskId: t.id,
-                        title: t.title,
-                        agentType: t.agentType,
-                        dependsOn: t.dependsOn,
-                        expectedOutput: t.expectedOutput,
-                        priority: t.priority,
-                        status: 'waiting',
-                      })),
+                      tasks: toTaskStates(validated, planId),
                       timestamp: Date.now(),
                     });
                   // Auto-dispatch tasks to agents
