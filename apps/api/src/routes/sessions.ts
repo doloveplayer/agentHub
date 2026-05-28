@@ -55,10 +55,18 @@ sessions.get('/', async (c) => {
   }));
 });
 
+const customAgentSchema = z.object({
+  name: z.string().min(2).max(32).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, 'Agent name must be lowercase alphanumeric with hyphens'),
+  displayName: z.string().min(1).max(64),
+  description: z.string().min(1).max(500),
+  systemPrompt: z.string().min(1).max(8000),
+});
+
 const createSchema = z.object({
   type: z.enum(['solo', 'group']).optional().default('solo'),
   agentIds: z.array(z.string().uuid()).optional(),
   title: z.string().optional(),
+  customAgent: customAgentSchema.optional(),
 });
 
 // POST / — create a new session
@@ -70,7 +78,21 @@ sessions.post('/', async (c) => {
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
 
-  let { type, agentIds, title } = parsed.data;
+  let { type, agentIds, title, customAgent } = parsed.data;
+
+  // Create custom agent if provided
+  if (customAgent && !agentIds?.length) {
+    const agent = await prisma.agent.create({
+      data: {
+        name: customAgent.name,
+        displayName: customAgent.displayName,
+        description: customAgent.description,
+        systemPrompt: customAgent.systemPrompt,
+        isActive: true,
+      },
+    });
+    agentIds = [agent.id];
+  }
 
   // Auto-assign agents:
   // - Group without explicit agentIds → assign ALL active agents

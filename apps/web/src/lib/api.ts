@@ -46,7 +46,7 @@ export const api = {
 
   getSessions: () => request<any[]>('/sessions'),
 
-  createSession: (body?: { type?: string; agentIds?: string[] }) =>
+  createSession: (body?: { type?: string; agentIds?: string[]; customAgent?: { name: string; displayName: string; description: string; systemPrompt: string } }) =>
     request<any>('/sessions', { method: 'POST', body: JSON.stringify(body ?? {}) }),
 
   getSession: (id: string) => request<any>(`/sessions/${id}`),

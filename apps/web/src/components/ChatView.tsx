@@ -298,8 +298,8 @@ export function ChatView() {
             {activeSession?.title ?? 'Session'}
           </span>
 
-          {/* Participants for group sessions */}
-          {activeSession?.type === 'group' && (
+          {/* Session participants */}
+          {sessionAgents.length > 0 && (
             <>
               <span className="text-[11px] text-hub-tertiary font-medium">Participants</span>
               <span className="text-[11px] px-2 py-0.5 rounded-full bg-hub-accent/10 border border-hub-accent/30 text-hub-accent font-medium">You</span>
@@ -396,7 +396,7 @@ export function ChatView() {
       </div>
 
       {/* Agent status panel — resizable right sidebar */}
-      {activeSession?.type === 'group' && sessionAgents.length > 0 && (
+      {sessionAgents.length > 0 && (
         <div className="hidden lg:flex flex-shrink-0" style={{ width: panelWidth }}>
           <div
             onMouseDown={onPanelResize}

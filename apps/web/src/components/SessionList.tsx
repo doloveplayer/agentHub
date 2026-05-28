@@ -39,14 +39,41 @@ export function SessionList({ onCloseMobile }: Props) {
     loadSessions();
   }, []);
 
+  const [customAgentMode, setCustomAgentMode] = useState(false);
+  const [customName, setCustomName] = useState('');
+  const [customDisplay, setCustomDisplay] = useState('');
+  const [customDesc, setCustomDesc] = useState('');
+  const [customPrompt, setCustomPrompt] = useState('');
+
   const handleCreate = async (type: 'solo' | 'group') => {
+    if (type === 'solo' && customAgentMode && customDisplay && customDesc && customPrompt) {
+      const name = customName || customDisplay.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').slice(0, 32);
+      const session = await api.createSession({
+        type: 'solo',
+        customAgent: { name, displayName: customDisplay, description: customDesc, systemPrompt: customPrompt },
+      });
+      setSessions([session, ...sessions]);
+      if (session.permissionMode) setSessionPermissionMode(session.id, session.permissionMode);
+      setActiveSession(session.id);
+      resetCreate();
+      return;
+    }
     const session = await api.createSession(type === 'group' ? { type: 'group' } : {});
     setSessions([session, ...sessions]);
     if (session.permissionMode) {
       setSessionPermissionMode(session.id, session.permissionMode);
     }
     setActiveSession(session.id);
+    resetCreate();
+  };
+
+  const resetCreate = () => {
     setShowCreate(false);
+    setCustomAgentMode(false);
+    setCustomName('');
+    setCustomDisplay('');
+    setCustomDesc('');
+    setCustomPrompt('');
   };
 
   const handleSelect = async (id: string) => {
@@ -112,13 +139,51 @@ export function SessionList({ onCloseMobile }: Props) {
             <Plus className="w-4 h-4 text-hub-tertiary" />
           </button>
           {showCreate && (
-            <div className="absolute top-full right-0 mt-1 bg-hub-raised border border-hub rounded-hub-lg shadow-xl z-50 w-40 overflow-hidden">
-              <button onClick={() => handleCreate('solo')} className="w-full text-left px-4 py-2.5 text-sm text-hub-secondary hover:bg-hub-hover flex items-center gap-2 transition font-medium">
-                <MessageSquare className="w-3.5 h-3.5" /> Solo Session
-              </button>
-              <button onClick={() => handleCreate('group')} className="w-full text-left px-4 py-2.5 text-sm text-hub-secondary hover:bg-hub-hover flex items-center gap-2 transition font-medium">
-                <Users className="w-3.5 h-3.5" /> Group Session
-              </button>
+            <div className="absolute top-full right-0 mt-1 bg-hub-raised border border-hub rounded-hub-lg shadow-xl z-50 w-72 overflow-hidden">
+              {!customAgentMode ? (
+                <>
+                  <button onClick={() => handleCreate('solo')} className="w-full text-left px-4 py-2.5 text-sm text-hub-secondary hover:bg-hub-hover flex items-center gap-2 transition font-medium">
+                    <MessageSquare className="w-3.5 h-3.5" /> Solo Session (Default Agent)
+                  </button>
+                  <button onClick={() => setCustomAgentMode(true)} className="w-full text-left px-4 py-2.5 text-sm text-hub-secondary hover:bg-hub-hover flex items-center gap-2 transition font-medium border-t border-hub">
+                    <MessageSquare className="w-3.5 h-3.5" /> Solo Session (Custom Agent)
+                  </button>
+                  <button onClick={() => handleCreate('group')} className="w-full text-left px-4 py-2.5 text-sm text-hub-secondary hover:bg-hub-hover flex items-center gap-2 transition font-medium border-t border-hub">
+                    <Users className="w-3.5 h-3.5" /> Group Session
+                  </button>
+                </>
+              ) : (
+                <div className="p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-hub-primary">Custom Agent</span>
+                    <button onClick={resetCreate} className="p-0.5 hover:bg-hub-hover rounded text-hub-tertiary">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <input
+                    type="text" value={customDisplay} onChange={e => setCustomDisplay(e.target.value)}
+                    placeholder="Display Name *" autoFocus
+                    className="w-full px-2 py-1.5 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent"
+                  />
+                  <input
+                    type="text" value={customDesc} onChange={e => setCustomDesc(e.target.value)}
+                    placeholder="Description (e.g. Python data analyst)"
+                    className="w-full px-2 py-1.5 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent"
+                  />
+                  <textarea
+                    value={customPrompt} onChange={e => setCustomPrompt(e.target.value)}
+                    placeholder="System Prompt (role, capabilities, constraints...)" rows={4}
+                    className="w-full px-2 py-1.5 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent resize-none"
+                  />
+                  <button
+                    onClick={() => handleCreate('solo')}
+                    disabled={!customDisplay || !customDesc || !customPrompt}
+                    className="w-full px-3 py-1.5 text-xs font-medium bg-hub-accent text-white rounded hover:bg-hub-accent-hover transition disabled:opacity-40"
+                  >
+                    Create
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

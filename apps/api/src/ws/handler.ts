@@ -491,61 +491,228 @@ async function handleChatMessage(
   }
 }
 
+// Per-agent accumulated content for plan extraction (planner REPL handler)
+const replAccumulatedContent = new Map<string, string>();
+
+/**
+ * Register a REPL event handler on the provider that handles all event types
+ * (thinking, tool_use, done, error) and broadcasts to the frontend.
+ * Used for both solo (post-activation) and group session agents.
+ */
+function registerReplHandler(
+  sessionId: string,
+  agentName: string,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+  provider: AbstractProvider,
+): void {
+  provider.onEvent((event) => {
+    const msgId = agentCurrentMessage.get(agentName) || `standby-${agentName}`;
+    switch (event.type) {
+      case 'thinking': {
+        if (event.content) {
+          const prev = replAccumulatedContent.get(agentName) || '';
+          replAccumulatedContent.set(agentName, prev + event.content);
+        }
+        let chatContent = event.content || '';
+        if (agentName === 'planner') {
+          chatContent = chatContent.replace(PLAN_STRIP_RE, '');
+          if (!chatContent.trim()) break;
+        }
+        if (chatContent) broadcast(sessionId, { type: 'stream_chunk', content: chatContent, agentMessageId: msgId });
+        broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: (event.content || '').slice(0, 120) }, agentMessageId: msgId, timestamp: Date.now() });
+        break;
+      }
+      case 'tool_use': {
+        stateTracker.updateTool(msgId, event.toolName || '', event.toolInput || {});
+        if (agentName && sandbox) {
+          const result = agentCoordinator.onToolUse({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, { type: 'tool_use', toolName: event.toolName || '', input: (event.toolInput || {}) as Record<string, unknown> });
+          if (!result.allowed && result.delegateTo) {
+            const targetName = resolveAgentNameInSession(sessionId, result.delegateTo);
+            if (targetName) {
+              const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
+              if (targetProvider?.isAlive()) {
+                const procInfo = agentProcesses.get(sessionId)?.get(targetName);
+                const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentName}. Check your inbox at /workspace/_inbox_${targetName.toLowerCase()}.jsonl.\n\nRead the inbox file now and execute the task autonomously. Do NOT ask the user for permission — process it directly.`;
+                wakeupAgent(sessionId, targetName, procInfo?.agentId || '', inboxPrompt, sandbox, targetProvider).catch(err => console.error(`[ws] wakeup failed: ${err.message}`));
+              }
+            }
+          }
+        }
+        broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: event.toolName, input: event.toolInput, inputPreview: JSON.stringify(event.toolInput || {}).slice(0, 80) }, agentMessageId: msgId, timestamp: Date.now() });
+        break;
+      }
+      case 'tool_result':
+        broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { content: (event.content || '').slice(0, 200) }, agentMessageId: msgId, timestamp: Date.now() });
+        break;
+      case 'permission_request': {
+        const pid = `${msgId}|::|${event.tool}|::|${Date.now()}`;
+        broadcast(sessionId, { type: 'permission_request', permissionId: pid, tool: event.tool, path: event.path, agentMessageId: msgId, timestamp: Date.now() });
+        broadcast(sessionId, { type: 'agent_status', status: 'permission_request', details: { tool: event.tool, path: event.path, permissionId: pid }, agentMessageId: msgId, timestamp: Date.now() });
+        const timeout = setTimeout(() => {
+          permissionTimeouts.delete(pid);
+          const stMap = agentStates.get(sessionId);
+          if (stMap) { const st = stMap.get(msgId); if (st) st.process.write('n\n'); }
+        }, PERMISSION_TIMEOUT_MS);
+        permissionTimeouts.set(pid, timeout);
+        break;
+      }
+      case 'token_usage': {
+        const input = event.inputTokens || 0;
+        const output = event.outputTokens || 0;
+        const cacheRead = event.cacheReadTokens || 0;
+        const cacheCreate = event.cacheCreateTokens || 0;
+        const contextPct = input > 0 ? Math.round((input / config.agent.contextWindowTokens) * 100) : 0;
+        stateTracker.updateTokenUsage(msgId, { input, output, cacheRead, cacheCreate });
+        broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input, output, cacheRead, cacheCreate, contextPct } }, agentMessageId: msgId, timestamp: Date.now() });
+        break;
+      }
+      case 'done': {
+        stateTracker.setDone(msgId);
+        const doneContent = replAccumulatedContent.get(agentName) || '';
+        replAccumulatedContent.delete(agentName);
+        // Extract hidden plan JSON from Planner output
+        if (agentName === 'planner' && doneContent && event.exitCode === 0) {
+          const planMatch = doneContent.match(PLAN_EXTRACT_RE);
+          if (planMatch) {
+            try {
+              const plan = JSON.parse(planMatch[1]);
+              const validated = extractAndValidate(JSON.stringify(plan));
+              if (validated) {
+                const planId = `plan-${Date.now()}`;
+                broadcast(sessionId, {
+                  type: 'plan_result',
+                  planId, planTitle: validated.planTitle,
+                  summary: validated.summary,
+                  tasks: toTaskStates(validated, planId),
+                  timestamp: Date.now(),
+                });
+                const taskNodes: TaskDispatchNode[] = validated.tasks.map(t => ({
+                  id: t.id, title: t.title, description: t.description,
+                  agentType: t.agentType, dependsOn: t.dependsOn,
+                  expectedOutput: t.expectedOutput, priority: t.priority as 'high' | 'medium' | 'low',
+                }));
+                addDispatchedPlan(planId);
+                dispatchTasksToAgents(sessionId, planId, taskNodes, {
+                  containerId: sandbox.containerId, workDir: sandbox.workDir, hostWorkDir: sandbox.hostWorkDir,
+                }, validated.planTitle).catch((err: any) => {
+                  dispatchedPlans.delete(planId);
+                  broadcast(sessionId, { type: 'stream_error', error: `Auto-dispatch failed: ${err.message}` });
+                });
+              }
+            } catch (err: any) {
+              console.error(`[ws] Failed to parse embedded plan: ${err.message}`);
+            }
+          }
+          // Stop planner from continuing — prevent it from trying to implement
+          provider.stopChild?.();
+        }
+        if (agentName) MilestoneBroadcaster.classify({ sessionId, agentName, agentMessageId: msgId, eventType: 'done' });
+        broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: doneContent, exitCode: event.exitCode ?? 0 });
+        // Scan complete agent output for cross-agent intents
+        if (agentName && sandbox && doneContent) {
+          const intents = IntentParser.scan(doneContent);
+          for (const intent of intents) {
+            const targetName = resolveAgentNameInSession(sessionId, intent.targetAgentName);
+            if (targetName && targetName !== agentName) {
+              InboxManager.write(sandbox.hostWorkDir, targetName, {
+                type: 'intervention_request',
+                id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                from: agentName, to: targetName,
+                summary: `${agentName} needs help: ${intent.description}`,
+                risk: 'high', timestamp: Date.now(),
+              });
+              const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
+              if (targetProvider?.isAlive()) {
+                const procInfo = agentProcesses.get(sessionId)?.get(targetName);
+                const inboxPrompt = `\n## Inbox message from ${agentName}\n${intent.description}\n\nProcess this request autonomously. Do NOT ask the user — just do it.`;
+                wakeupAgent(sessionId, targetName, procInfo?.agentId || '', inboxPrompt, sandbox, targetProvider).catch(err => console.error(`[ws] wakeup failed: ${err.message}`));
+              }
+              broadcast(sessionId, { type: 'inbox_update', agentName: targetName, fromAgent: agentName, summary: intent.description, timestamp: Date.now() });
+              console.log(`[ws] NEEDS HELP routed: ${agentName} → ${targetName}: ${intent.description.slice(0, 80)}`);
+            }
+          }
+        }
+        agentCoordinator.onAgentDone({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, event.exitCode ?? 0, doneContent.slice(0, 200));
+        // Release concurrency slot and drain waiting queues
+        clearRunningAgent(sessionId, msgId);
+        agentCurrentMessage.delete(agentName);
+        // Persist message status to DB so reload doesn't show stale "streaming"
+        prisma.message.update({
+          where: { id: msgId },
+          data: { status: event.exitCode === 0 ? 'done' : 'error', content: doneContent || undefined },
+        }).catch(() => {});
+        drainPendingQueue();
+        drainPerSessionQueue(sessionId);
+        break;
+      }
+      case 'error':
+        broadcast(sessionId, { type: 'stream_error', agentMessageId: msgId, error: event.message || 'Unknown error' });
+        prisma.message.update({ where: { id: msgId }, data: { status: 'error' } }).catch(() => {});
+        break;
+    }
+  });
+}
+
 /**
  * Activate a single agent via REPL for solo sessions.
- * Mirrors preActivateGroupAgents but for one agent on-demand.
+ * Registers the full REPL handler and resolves when the standby prompt completes.
  */
-async function activateSoloAgent(
+function activateSoloAgent(
   sessionId: string,
   agentName: string,
   sandbox: { containerId: string; workDir: string; hostWorkDir: string },
   trustMode: boolean,
 ): Promise<void> {
-  const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, displayName: true, systemPrompt: true, settings: true } });
-  if (!agent) { console.error(`[ws] activateSoloAgent: agent ${agentName} not found`); return; }
+  return (async () => {
+    const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, displayName: true, systemPrompt: true, settings: true } });
+    if (!agent) { console.error(`[ws] activateSoloAgent: agent ${agentName} not found`); return; }
 
-  const { ProviderFactory } = await import('../agent/providers/factory.js');
-  const provider = ProviderFactory.create('claude-code');
-  const agentHome = `/workspace/_agent_${agent.name}`;
+    const { ProviderFactory } = await import('../agent/providers/factory.js');
+    const provider = ProviderFactory.create('claude-code');
+    const agentHome = `/workspace/_agent_${agent.name}`;
 
-  const standbyPrompt = [
-    `## Standby mode`,
-    `You are **${agent.displayName}** (${agent.name}), the sole agent in this solo session.`,
-    `Wait for the user's request. When they send a message, you'll receive it as a prompt.`,
-    `Your working directory is ${agentHome}.`,
-    `Do NOT take any action until the user asks you to. Just acknowledge readiness with "Ready."`,
-  ].join('\n');
-
-  const fullPrompt = `${agent.systemPrompt}\n\n${standbyPrompt}`;
-
-  return new Promise<void>((resolve, reject) => {
+    // Register the full REPL handler BEFORE starting — handles all subsequent events
+    // including the standby prompt response and all future user message responses.
+    let activated = false;
+    registerReplHandler(sessionId, agentName, sandbox, provider);
+    // Also listen for activation completion signal
     provider.onEvent((event) => {
-      if (event.type === 'done') {
+      if (!activated && event.type === 'done') {
+        activated = true;
         if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
         agentProcesses.get(sessionId)!.set(agent.name, { provider, timer: null, agentId: agent.id });
         agentNameToType.set(agent.name, agent.name);
         AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.settings as Record<string, unknown> | null);
         console.log(`[ws] Solo agent activated: ${agentName} for session=${sessionId}`);
-
-        // If this done is for a user message (not activation), release concurrency slot
-        const currentMsgId = agentCurrentMessage.get(agent.name);
-        if (currentMsgId) {
-          clearRunningAgent(sessionId, currentMsgId);
-          agentCurrentMessage.delete(agent.name);
-          drainPendingQueue();
-          drainPerSessionQueue(sessionId);
-        }
-        resolve();
-      }
-      if (event.type === 'error') {
-        reject(new Error(event.message || 'Activation failed'));
       }
     });
 
-    provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
-      agentName: agent.name, hostWorkDir: sandbox.hostWorkDir, trustMode,
-    }).catch(reject);
-  });
+    const standbyPrompt = [
+      `## Standby mode`,
+      `You are **${agent.displayName}** (${agent.name}), the sole agent in this solo session.`,
+      `Wait for the user's request. When they send a message, you'll receive it as a prompt.`,
+      `Your working directory is ${agentHome}.`,
+      `Do NOT take any action until the user asks you to. Just acknowledge readiness with "Ready."`,
+    ].join('\n');
+
+    const fullPrompt = `${agent.systemPrompt}\n\n${standbyPrompt}`;
+
+    // Wait for activation to complete (first done event from standby prompt)
+    await new Promise<void>((resolve, reject) => {
+      const checkInterval = setInterval(() => {
+        if (activated) { clearInterval(checkInterval); resolve(); }
+        // Also reject on error from REPL handler (via stream_error broadcast)
+      }, 100);
+      // Timeout after 60s
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        if (!activated) reject(new Error(`Agent ${agentName} activation timed out`));
+      }, 60000);
+      provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
+        agentName: agent.name, hostWorkDir: sandbox.hostWorkDir, trustMode,
+      }).catch(reject);
+    });
+  })();
 }
 
 /** Drain the GLOBAL pending queue: start waiting agents when slots free up. */
@@ -614,9 +781,19 @@ export function drainPerSessionQueue(sessionId: string): void {
 
 function handleStopAgent(sessionId: string, data: { agentMessageId: string }): void {
   const stateMap = agentStates.get(sessionId);
-  if (!stateMap) { broadcast(sessionId, { type: 'stream_error', error: 'No active agents in this session' }); return; }
+  if (!stateMap) {
+    // Agent may have already finished — update DB and broadcast stream_end gracefully
+    prisma.message.update({ where: { id: data.agentMessageId }, data: { status: 'done' } }).catch(() => {});
+    broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });
+    return;
+  }
   const st = stateMap.get(data.agentMessageId);
-  if (!st) { broadcast(sessionId, { type: 'stream_error', error: 'Agent not found' }); return; }
+  if (!st) {
+    // Agent not in active state — gracefully mark as done
+    prisma.message.update({ where: { id: data.agentMessageId }, data: { status: 'done' } }).catch(() => {});
+    broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });
+    return;
+  }
   console.log(`[ws] Stopping agent: session=${sessionId} agentMsg=${data.agentMessageId}`);
   if (st.timer) clearTimeout(st.timer);
   if (st.process.kill) st.process.kill(); else if (st.process.stop) st.process.stop();
@@ -931,166 +1108,7 @@ async function preActivateGroupAgents(
       const provider = ProviderFactory.create('claude-code');
       const agentName = sa.agent.name;
 
-      // Full event handler: routes REPL output to the correct messageId.
-      // Uses agentCurrentMessage to track which message the agent is responding to.
-      const replAccumulatedContent = new Map<string, string>();
-      provider.onEvent((event) => {
-        const msgId = agentCurrentMessage.get(agentName) || `standby-${agentName}`;
-        switch (event.type) {
-          case 'thinking': {
-            // Track accumulated content for plan extraction
-            if (event.content) {
-              const prev = replAccumulatedContent.get(agentName) || '';
-              replAccumulatedContent.set(agentName, prev + event.content);
-            }
-            let chatContent = event.content || '';
-            if (agentName === 'planner') {
-              // Strip <!--AGENTHUB_PLAN{...}--> from user-visible content
-              chatContent = chatContent.replace(PLAN_STRIP_RE, '');
-              if (!chatContent.trim()) break; // nothing user-visible in this chunk
-            }
-            if (chatContent) broadcast(sessionId, { type: 'stream_chunk', content: chatContent, agentMessageId: msgId });
-            broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: (event.content || '').slice(0, 120) }, agentMessageId: msgId, timestamp: Date.now() });
-            break;
-          }
-          case 'tool_use': {
-            stateTracker.updateTool(msgId, event.toolName || '', event.toolInput || {});
-            if (agentName && sandbox) {
-              const result = agentCoordinator.onToolUse({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, { type: 'tool_use', toolName: event.toolName || '', input: (event.toolInput || {}) as Record<string, unknown> });
-              // If coordinator delegated, wake up the target REPL agent to check inbox
-              if (!result.allowed && result.delegateTo) {
-                const targetName = resolveAgentNameInSession(sessionId, result.delegateTo);
-                if (targetName) {
-                  const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
-                  if (targetProvider?.isAlive()) {
-                    const procInfo = agentProcesses.get(sessionId)?.get(targetName);
-                    const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentName}. Check your inbox at /workspace/_inbox_${targetName.toLowerCase()}.jsonl.\n\nRead the inbox file now and execute the task autonomously. Do NOT ask the user for permission — process it directly.`;
-                    wakeupAgent(sessionId, targetName, procInfo?.agentId || '', inboxPrompt, sandbox, targetProvider).catch(err => console.error(`[ws] wakeup failed: ${err.message}`));
-                  }
-                }
-              }
-            }
-            broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: event.toolName, input: event.toolInput, inputPreview: JSON.stringify(event.toolInput || {}).slice(0, 80) }, agentMessageId: msgId, timestamp: Date.now() });
-            break;
-          }
-          case 'tool_result':
-            broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { content: (event.content || '').slice(0, 200) }, agentMessageId: msgId, timestamp: Date.now() });
-            break;
-          case 'permission_request': {
-            const pid = `${msgId}|::|${event.tool}|::|${Date.now()}`;
-            broadcast(sessionId, { type: 'permission_request', permissionId: pid, tool: event.tool, path: event.path, agentMessageId: msgId, timestamp: Date.now() });
-            broadcast(sessionId, { type: 'agent_status', status: 'permission_request', details: { tool: event.tool, path: event.path, permissionId: pid }, agentMessageId: msgId, timestamp: Date.now() });
-            const timeout = setTimeout(() => {
-              permissionTimeouts.delete(pid);
-              const stMap = agentStates.get(sessionId);
-              if (stMap) { const st = stMap.get(msgId); if (st) st.process.write('n\n'); }
-            }, PERMISSION_TIMEOUT_MS);
-            permissionTimeouts.set(pid, timeout);
-            break;
-          }
-          case 'token_usage':
-            {
-              const input = event.inputTokens || 0;
-              const output = event.outputTokens || 0;
-              const cacheRead = event.cacheReadTokens || 0;
-              const cacheCreate = event.cacheCreateTokens || 0;
-              const contextPct = input > 0 ? Math.round((input / config.agent.contextWindowTokens) * 100) : 0;
-              stateTracker.updateTokenUsage(msgId, { input, output, cacheRead, cacheCreate });
-              broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input, output, cacheRead, cacheCreate, contextPct } }, agentMessageId: msgId, timestamp: Date.now() });
-            }
-            break;
-          case 'done': {
-            stateTracker.setDone(msgId);
-            // Capture accumulated content before deletion (for plan extraction + intent scanning)
-            const doneContent = replAccumulatedContent.get(agentName) || '';
-            replAccumulatedContent.delete(agentName);
-            // Extract hidden plan JSON from Planner output
-            if (agentName === 'planner' && doneContent && event.exitCode === 0) {
-              const planMatch = doneContent.match(PLAN_EXTRACT_RE);
-              if (planMatch) {
-                try {
-                  const plan = JSON.parse(planMatch[1]);
-                  const validated = extractAndValidate(JSON.stringify(plan));
-                  if (validated) {
-                    const planId = `plan-${Date.now()}`;
-                    broadcast(sessionId, {
-                      type: 'plan_result',
-                      planId,
-                      planTitle: validated.planTitle,
-                      summary: validated.summary,
-                      tasks: toTaskStates(validated, planId),
-                      timestamp: Date.now(),
-                    });
-                  // Auto-dispatch tasks to agents
-                  const taskNodes: TaskDispatchNode[] = validated.tasks.map(t => ({
-                    id: t.id, title: t.title, description: t.description,
-                    agentType: t.agentType, dependsOn: t.dependsOn,
-                    expectedOutput: t.expectedOutput, priority: t.priority as 'high' | 'medium' | 'low',
-                  }));
-                  addDispatchedPlan(planId);
-                  dispatchTasksToAgents(sessionId, planId, taskNodes, {
-                    containerId: sandbox.containerId, workDir: sandbox.workDir, hostWorkDir: sandbox.hostWorkDir,
-                  }, validated.planTitle).catch((err: any) => {
-                    console.error(`[ws] Auto-dispatch failed: ${err.message}`);
-                    dispatchedPlans.delete(planId);
-                    broadcast(sessionId, { type: 'stream_error', error: `Auto-dispatch failed: ${err.message}` });
-                  });
-                }
-              } catch (err: any) {
-                console.error(`[ws] Failed to parse embedded plan: ${err.message}`);
-              }
-            }
-            // Stop planner from continuing — prevent it from trying to implement
-            provider.stopChild?.();
-            }
-            if (agentName) MilestoneBroadcaster.classify({ sessionId, agentName, agentMessageId: msgId, eventType: 'done' });
-            broadcast(sessionId, { type: 'stream_end', agentMessageId: msgId, fullContent: doneContent, exitCode: event.exitCode ?? 0 });
-            // Scan complete agent output for cross-agent intents (on done event, not streaming chunks)
-            if (agentName && sandbox && doneContent) {
-              const intents = IntentParser.scan(doneContent);
-              for (const intent of intents) {
-                const targetName = resolveAgentNameInSession(sessionId, intent.targetAgentName);
-                if (targetName && targetName !== agentName) {
-                  InboxManager.write(sandbox.hostWorkDir, targetName, {
-                    type: 'intervention_request',
-                    id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-                    from: agentName,
-                    to: targetName,
-                    summary: `${agentName} needs help: ${intent.description}`,
-                    risk: 'high',
-                    timestamp: Date.now(),
-                  });
-                  // Real-time REPL delivery: if target agent is online, send inbox content immediately
-                  const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
-                  if (targetProvider?.isAlive()) {
-                    const procInfo = agentProcesses.get(sessionId)?.get(targetName);
-                    const inboxPrompt = `\n## Inbox message from ${agentName}\n${intent.description}\n\nProcess this request autonomously. Do NOT ask the user — just do it.`;
-                    wakeupAgent(sessionId, targetName, procInfo?.agentId || '', inboxPrompt, sandbox, targetProvider).catch(err => console.error(`[ws] wakeup failed: ${err.message}`));
-                  }
-                  broadcast(sessionId, {
-                    type: 'inbox_update',
-                    agentName: targetName,
-                    fromAgent: agentName,
-                    summary: intent.description,
-                    timestamp: Date.now(),
-                  });
-                  console.log(`[ws] NEEDS HELP routed: ${agentName} → ${targetName}: ${intent.description.slice(0, 80)}`);
-                }
-              }
-            }
-            agentCoordinator.onAgentDone({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, event.exitCode ?? 0, doneContent.slice(0, 200));
-            // Release concurrency slot and drain waiting queues
-            clearRunningAgent(sessionId, msgId);
-            agentCurrentMessage.delete(agentName);
-            drainPendingQueue();
-            drainPerSessionQueue(sessionId);
-            break;
-          }
-          case 'error':
-            broadcast(sessionId, { type: 'stream_error', agentMessageId: msgId, error: event.message || 'Unknown error' });
-            break;
-        }
-      });
+      registerReplHandler(sessionId, agentName, sandbox, provider);
 
       // Initialize agent directory: CLAUDE.md + settings.json for persistent identity
       AgentDirectoryManager.initialize(
