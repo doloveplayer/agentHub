@@ -238,6 +238,8 @@ async function startReplForTask(
           broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent: output, exitCode: event.exitCode ?? 0 });
           broadcast(sessionId, { type: event.exitCode === 0 ? 'task_completed' : 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: output.slice(0, 200) });
           stateTracker.setDone(taskMsgId);
+          // Persist agent output to DB so it survives page refresh / reconnect
+          void prisma.message.update({ where: { id: taskMsgId }, data: { content: output || '[Agent finished]', status: event.exitCode === 0 ? 'done' : 'error' } }).catch(() => {});
           agentCurrentTask.delete(agentName);
           agentCurrentMessage.delete(agentName);
           queue.current = null;
