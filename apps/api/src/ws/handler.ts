@@ -445,13 +445,15 @@ async function handleChatMessage(
     // All sessions use REPL: group agents pre-activated in handleConnection,
     // solo agents activated on-demand here.
     let replProvider = agentProcesses.get(sessionId)?.get(agentNameForProc || '')?.provider;
-    let useRepl = replProvider && replProvider.isAlive();
+    // Don't check isAlive() — sendPrompt() spawns a new process even if the standby
+    // process has already exited. The provider is reusable as long as it's registered.
+    let useRepl = !!replProvider;
 
     // Solo session: activate the agent on first message if not already running
     if (!useRepl && agentNameForProc && sessionTypes.get(sessionId) !== 'group') {
       await activateSoloAgent(sessionId, agentNameForProc, sandbox, trustMode);
       replProvider = agentProcesses.get(sessionId)?.get(agentNameForProc)?.provider;
-      useRepl = replProvider && replProvider.isAlive();
+      useRepl = !!replProvider;
     }
 
     if (useRepl && replProvider && agentNameForProc) {
