@@ -603,7 +603,7 @@ async function handleChatMessage(
           }
           console.log(`[ws] Agent done: session=${sessionId} agentMsg=${mention.messageId} exitCode=${event.exitCode}`);
           // Extract hidden plan JSON from Planner output
-          if (isPlannerAgent && sandbox) {
+          if (isPlannerAgent && sandbox && event.exitCode === 0) {
             const planMatch = accumulatedContent.match(/<!--AGENTHUB_PLAN(\{[\s\S]*?\})-->/);
             if (planMatch) {
               try {
@@ -638,6 +638,8 @@ async function handleChatMessage(
                     containerId: sandbox.containerId, workDir: sandbox.workDir, hostWorkDir: sandbox.hostWorkDir,
                   }, validated.planTitle).catch((err: any) => {
                     console.error(`[ws] Auto-dispatch failed: ${err.message}`);
+                    dispatchedPlans.delete(planId);
+                    broadcast(sessionId, { type: 'stream_error', error: `Auto-dispatch failed: ${err.message}` });
                   });
                 }
               } catch (err: any) {
@@ -976,7 +978,7 @@ async function handleRetryTask(sessionId: string, data: { planId: string; taskId
   let agentName: string | undefined;
   if (taskNode.agentType) {
     const agent = await prisma.agent.findFirst({
-      where: { displayName: taskNode.agentType }, select: { name: true, systemPrompt: true },
+      where: { name: taskNode.agentType }, select: { name: true, systemPrompt: true },
     });
     if (agent) agentName = agent.name;
   }
@@ -1136,13 +1138,36 @@ async function preActivateGroupAgents(
           case 'tool_result':
             broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { content: (event.content || '').slice(0, 200) }, agentMessageId: msgId, timestamp: Date.now() });
             break;
+          case 'permission_request': {
+            const pid = `${msgId}|::|${event.tool}|::|${Date.now()}`;
+            broadcast(sessionId, { type: 'permission_request', permissionId: pid, tool: event.tool, path: event.path, agentMessageId: msgId, timestamp: Date.now() });
+            broadcast(sessionId, { type: 'agent_status', status: 'permission_request', details: { tool: event.tool, path: event.path, permissionId: pid }, agentMessageId: msgId, timestamp: Date.now() });
+            const timeout = setTimeout(() => {
+              permissionTimeouts.delete(pid);
+              const stMap = agentStates.get(sessionId);
+              if (stMap) { const st = stMap.get(msgId); if (st) st.process.write('n\n'); }
+            }, PERMISSION_TIMEOUT_MS);
+            permissionTimeouts.set(pid, timeout);
+            break;
+          }
+          case 'token_usage':
+            {
+              const input = event.inputTokens || 0;
+              const output = event.outputTokens || 0;
+              const cacheRead = event.cacheReadTokens || 0;
+              const cacheCreate = event.cacheCreateTokens || 0;
+              const contextPct = input > 0 ? Math.round((input / config.agent.contextWindowTokens) * 100) : 0;
+              stateTracker.updateTokenUsage(msgId, { input, output, cacheRead, cacheCreate });
+              broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input, output, cacheRead, cacheCreate, contextPct } }, agentMessageId: msgId, timestamp: Date.now() });
+            }
+            break;
           case 'done': {
             stateTracker.setDone(msgId);
             // Capture accumulated content before deletion (for plan extraction + intent scanning)
             const doneContent = replAccumulatedContent.get(agentName) || '';
             replAccumulatedContent.delete(agentName);
             // Extract hidden plan JSON from Planner output
-            if (agentName === 'planner' && doneContent) {
+            if (agentName === 'planner' && doneContent && event.exitCode === 0) {
               const planMatch = doneContent.match(/<!--AGENTHUB_PLAN(\{[\s\S]*?\})-->/);
               if (planMatch) {
                 try {
@@ -1177,6 +1202,8 @@ async function preActivateGroupAgents(
                     containerId: sandbox.containerId, workDir: sandbox.workDir, hostWorkDir: sandbox.hostWorkDir,
                   }, validated.planTitle).catch((err: any) => {
                     console.error(`[ws] Auto-dispatch failed: ${err.message}`);
+                    dispatchedPlans.delete(planId);
+                    broadcast(sessionId, { type: 'stream_error', error: `Auto-dispatch failed: ${err.message}` });
                   });
                 }
               } catch (err: any) {

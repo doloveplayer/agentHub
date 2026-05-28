@@ -221,9 +221,10 @@ export class EventParser {
       case 'tool_result':         return { ...base, type: 'tool_result' as const, content: event.content };
       case 'subagent_start':      return { ...base, type: 'subagent_start' as const, content: event.agentType };
       case 'subagent_result':     return { ...base, type: 'subagent_result' as const, content: event.agentType };
-      case 'permission_request':  return { ...base, type: 'permission_request' as const, toolName: event.tool, filePath: event.path };
+      case 'permission_request':  return { ...base, type: 'permission_request' as const, tool: event.tool, path: event.path };
       case 'done':                return { ...base, type: 'done' as const, exitCode: event.exitCode };
       case 'error':               return { ...base, type: 'error' as const, message: event.message };
+      case 'token_usage':          return { ...base, type: 'token_usage' as const, inputTokens: event.inputTokens, outputTokens: event.outputTokens, cacheReadTokens: event.cacheReadTokens, cacheCreateTokens: event.cacheCreateTokens };
       case 'system':              return null; // system events handled by StateTracker
       default:                    return null;
     }

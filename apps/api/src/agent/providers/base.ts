@@ -1,7 +1,7 @@
 export interface UnifiedAgentEvent {
   type: 'thinking' | 'tool_use' | 'tool_result' | 'subagent_start'
       | 'subagent_result' | 'permission_request' | 'milestone'
-      | 'blocked' | 'done' | 'error';
+      | 'blocked' | 'done' | 'error' | 'token_usage';
   content?: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
@@ -10,6 +10,14 @@ export interface UnifiedAgentEvent {
   message?: string;
   providerRaw?: unknown;
   timestamp: number;
+  // Permission request fields (REPL)
+  tool?: string;
+  path?: string;
+  // Token usage fields (REPL)
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreateTokens?: number;
 }
 
 export interface ProviderConfig {
@@ -48,4 +56,6 @@ export interface AbstractProvider {
   onEvent(handler: EventHandler): void;
   isAlive(): boolean;
   getAgentHome(): string;
+  updateTrustMode(mode: boolean): void;
+  stopChild?(): void;
 }
