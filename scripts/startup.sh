@@ -82,7 +82,7 @@ done
 # --- Start frontend ---
 echo "[4/4] Starting frontend (port 5175)..."
 cd apps/web
-npx vite --host 127.0.0.1 >> "$FRONTEND_LOG" 2>&1 &
+CHOKIDAR_USEPOLLING=true npx vite --host 127.0.0.1 >> "$FRONTEND_LOG" 2>&1 &
 FRONTEND_PID=$!
 echo "  ✓ frontend pid=$FRONTEND_PID"
 cd "$PROJECT_ROOT"
