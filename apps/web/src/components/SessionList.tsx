@@ -8,7 +8,7 @@ interface Props { onCloseMobile?: () => void; }
 type LoadState = 'loading' | 'error' | 'done';
 
 export function SessionList({ onCloseMobile }: Props) {
-  const { sessions, activeSessionId, setSessions, setActiveSession, user, unreadCounts, clearUnread, sessionPermissionModes, setSessionPermissionMode } = useAppStore();
+  const { sessions, activeSessionId, setSessions, setActiveSession, setAgents, user, unreadCounts, clearUnread, sessionPermissionModes, setSessionPermissionMode } = useAppStore();
   const [showCreate, setShowCreate] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
@@ -54,6 +54,8 @@ export function SessionList({ onCloseMobile }: Props) {
         customAgent: { name, displayName: customDisplay, description: customDesc, systemPrompt: customPrompt },
       });
       setSessions([session, ...sessions]);
+      // Refresh agents store so ChatView agentMap finds the new custom agent
+      api.getAgents().then(setAgents).catch(console.error);
       if (session.permissionMode) setSessionPermissionMode(session.id, session.permissionMode);
       setActiveSession(session.id);
       resetCreate();
