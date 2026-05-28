@@ -115,6 +115,22 @@ export function useChat(sessionId: string) {
                 appendToMessage(targetSessionId, data.agentMessageId, `\n\n---\n**Queued:** ${data.message || 'Waiting for available agent slot...'}`);
               }
               break;
+            case 'agent_wakeup':
+              // Inbox wakeup creates a new message — register it for streaming display
+              if (data.agentMessageId && data.agentName) {
+                const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                const store = useAppStore.getState();
+                const existing = store.messages[targetSessionId]?.find(m => m.id === data.agentMessageId);
+                if (!existing) {
+                  store.addMessage(targetSessionId, {
+                    id: data.agentMessageId, sessionId: targetSessionId,
+                    senderType: 'agent', agentId: '', content: '', status: 'streaming',
+                    createdAt: new Date().toISOString(),
+                  } as Message);
+                  store.addStreamingMessage(targetSessionId, data.agentMessageId);
+                }
+              }
+              break;
             case 'agent_queue_heartbeat':
               // Update queue position in real-time for queued agents
               if (data.agentMessageId) {

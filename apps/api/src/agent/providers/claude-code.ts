@@ -29,6 +29,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
   private pendingCleanup: (() => void) | null = null;
   private partialLine = '';
   private runSeq = 0;
+  private eventParser: EventParser = new EventParser();
 
   onEvent(handler: EventHandler): void { this.handlers.push(handler); }
 
@@ -85,7 +86,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
   private async runInContainer(prompt: string, resumeSession?: string): Promise<void> {
     this.partialLine = '';
     this.pendingCleanup = null;
-    EventParser.resetDeltaState();
+    this.eventParser.reset();
 
     const profile = this.currentTrustMode ? "bypass" : "read_only";
 
@@ -112,7 +113,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
         this.partialLine = lines.pop() ?? '';
         for (const line of lines) {
           if (!line.trim()) continue;
-          const events = EventParser.parseLine(line);
+          const events = this.eventParser.parseLine(line);
           for (const event of events) {
             if (event.type === 'system' && event.sessionId) {
               this.claudeSessionId = event.sessionId;
@@ -138,7 +139,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
         this.pendingCleanup = null;
         if (!this.killed) {
           if (this.partialLine.trim()) {
-            const events = EventParser.parseLine(this.partialLine);
+            const events = this.eventParser.parseLine(this.partialLine);
             for (const event of events) {
               if (event.type === 'system' && event.sessionId) {
                 this.claudeSessionId = event.sessionId;

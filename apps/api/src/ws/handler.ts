@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server } from 'http';
 import { ProviderFactory } from '../agent/providers/factory.js';
+import type { AbstractProvider } from '../agent/providers/base.js';
 import { InboxManager } from '../agent/InboxManager.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import { stateTracker } from '../agent/StateTracker.js';
@@ -465,7 +466,7 @@ async function handleChatMessage(
       const replProcInfo = agentProcesses.get(sessionId)?.get(agentNameForProc);
       if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
       agentStates.get(sessionId)!.set(mention.messageId, {
-        process: replProvider, timer: setTimeout(() => {}, config.agent.timeoutMs),
+        process: replProvider, timer: null,
         agentId: replProcInfo?.agentId || '', agentName: agentNameForProc,
       });
 
@@ -521,7 +522,7 @@ async function activateSoloAgent(
     provider.onEvent((event) => {
       if (event.type === 'done') {
         if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
-        agentProcesses.get(sessionId)!.set(agent.name, { provider, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id });
+        agentProcesses.get(sessionId)!.set(agent.name, { provider, timer: null, agentId: agent.id });
         agentNameToType.set(agent.name, agent.name);
         AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.settings as Record<string, unknown> | null);
         console.log(`[ws] Solo agent activated: ${agentName} for session=${sessionId}`);
@@ -548,7 +549,7 @@ async function activateSoloAgent(
 }
 
 /** Drain the GLOBAL pending queue: start waiting agents when slots free up. */
-function drainPendingQueue(): void {
+export function drainPendingQueue(): void {
   if (pendingAgentQueue.length === 0) return;
 
   const now = Date.now();
@@ -576,7 +577,7 @@ function drainPendingQueue(): void {
 }
 
 /** Drain the per-session pending queue: start waiting agents for a specific session when a slot frees. */
-function drainPerSessionQueue(sessionId: string): void {
+export function drainPerSessionQueue(sessionId: string): void {
   const queue = perSessionPendingQueues.get(sessionId);
   if (!queue || queue.length === 0) return;
 
@@ -617,7 +618,7 @@ function handleStopAgent(sessionId: string, data: { agentMessageId: string }): v
   const st = stateMap.get(data.agentMessageId);
   if (!st) { broadcast(sessionId, { type: 'stream_error', error: 'Agent not found' }); return; }
   console.log(`[ws] Stopping agent: session=${sessionId} agentMsg=${data.agentMessageId}`);
-  clearTimeout(st.timer);
+  if (st.timer) clearTimeout(st.timer);
   if (st.process.kill) st.process.kill(); else if (st.process.stop) st.process.stop();
   if (st.agentName) { agentCurrentMessage.delete(st.agentName); agentProcesses.get(sessionId)?.delete(st.agentName); }
   stateMap.delete(data.agentMessageId);
@@ -816,13 +817,17 @@ function handleApprovalReply(sessionId: string, _ws: WebSocket, data: { taskId: 
 
 // ---- Attach to HTTP server ----
 
+let heartbeatInterval: NodeJS.Timeout | null = null;
+
 export function attachWebSocket(server: Server): void {
   const wss = new WebSocketServer({ server, path: '/ws' });
   wss.on('connection', (ws: WebSocket, request) => handleConnection(ws, request));
   console.log('[ws] WebSocket server attached on /ws');
 
-  // Queue heartbeat: send position updates every 10s to sessions with queued agents
-  setInterval(() => {
+  // Queue heartbeat: send position updates every 10s to sessions with queued agents.
+  // Clear any previous interval (e.g., during HMR or integration tests) to avoid leaks.
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  heartbeatInterval = setInterval(() => {
     if (pendingAgentQueue.length === 0) return;
     const now = Date.now();
     for (let i = 0; i < pendingAgentQueue.length; i++) {
@@ -840,8 +845,52 @@ export function attachWebSocket(server: Server): void {
   }, 10_000);
 }
 
+/** Stop the queue heartbeat interval (for graceful shutdown / testing). */
+export function stopHeartbeat(): void {
+  if (heartbeatInterval) {
+    clearInterval(heartbeatInterval);
+    heartbeatInterval = null;
+  }
+}
+
 export function handleWebSocket(ws: WebSocket, request: any): void {
   handleConnection(ws, request);
+}
+
+/**
+ * Wake up an idle REPL agent with an inbox prompt.
+ * Creates a message, sets up state tracking, and increments the concurrency counter
+ * so the frontend can properly display the agent's response and the counter is balanced.
+ */
+async function wakeupAgent(
+  sessionId: string,
+  agentName: string,
+  agentId: string,
+  prompt: string,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+  provider: AbstractProvider,
+) {
+  const msgId = generateId();
+  agentCurrentMessage.set(agentName, msgId);
+
+  // Create message in DB so frontend can find it
+  try {
+    await prisma.message.create({
+      data: { id: msgId, sessionId, senderType: 'agent', agentId, content: '', status: 'streaming' },
+    });
+  } catch (err: any) { console.error('[ws] Failed to create wakeup message:', err?.message ?? err); }
+
+  // Register in agentStates so stop/pause works and done handler can decrement count
+  if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
+  agentStates.get(sessionId)!.set(msgId, {
+    process: provider, timer: null,
+    agentId, agentName,
+  });
+  incRunningAgentCount();
+
+  broadcast(sessionId, { type: 'agent_wakeup', agentMessageId: msgId, agentName, timestamp: Date.now() });
+  provider.sendPrompt(prompt);
+  console.log(`[ws] Agent wakeup: ${agentName} msg=${msgId}`);
 }
 
 /**
@@ -914,9 +963,9 @@ async function preActivateGroupAgents(
                 if (targetName) {
                   const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
                   if (targetProvider?.isAlive()) {
-                    const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentName}. Check your inbox at /workspace/_inbox_${targetName.toLowerCase()}.jsonl and respond with your plan.\n\nRead the inbox file now and execute the task.`;
-                    targetProvider.sendPrompt(inboxPrompt);
-                    console.log(`[ws] Inbox wake-up (REPL): ${agentName} delegated to ${targetName}`);
+                    const procInfo = agentProcesses.get(sessionId)?.get(targetName);
+                    const inboxPrompt = `\n## Inbox message\nYou have a new task delegated from ${agentName}. Check your inbox at /workspace/_inbox_${targetName.toLowerCase()}.jsonl.\n\nRead the inbox file now and execute the task autonomously. Do NOT ask the user for permission — process it directly.`;
+                    wakeupAgent(sessionId, targetName, procInfo?.agentId || '', inboxPrompt, sandbox, targetProvider).catch(err => console.error(`[ws] wakeup failed: ${err.message}`));
                   }
                 }
               }
@@ -1014,9 +1063,9 @@ async function preActivateGroupAgents(
                   // Real-time REPL delivery: if target agent is online, send inbox content immediately
                   const targetProvider = agentProcesses.get(sessionId)?.get(targetName)?.provider;
                   if (targetProvider?.isAlive()) {
-                    const inboxPrompt = `\n## Inbox message from ${agentName}\n${intent.description}\n\nRespond if this needs your attention.`;
-                    targetProvider.sendPrompt(inboxPrompt);
-                    console.log(`[ws] NEEDS HELP delivered via REPL: ${agentName} → ${targetName}`);
+                    const procInfo = agentProcesses.get(sessionId)?.get(targetName);
+                    const inboxPrompt = `\n## Inbox message from ${agentName}\n${intent.description}\n\nProcess this request autonomously. Do NOT ask the user — just do it.`;
+                    wakeupAgent(sessionId, targetName, procInfo?.agentId || '', inboxPrompt, sandbox, targetProvider).catch(err => console.error(`[ws] wakeup failed: ${err.message}`));
                   }
                   broadcast(sessionId, {
                     type: 'inbox_update',
@@ -1065,7 +1114,7 @@ async function preActivateGroupAgents(
       if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
       agentProcesses.get(sessionId)!.set(agentName, {
         provider,
-        timer: setTimeout(() => {}, config.agent.timeoutMs),
+        timer: null,
         agentId: sa.agent.id,
       });
 

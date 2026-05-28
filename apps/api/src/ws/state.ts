@@ -18,7 +18,7 @@ export const sessionPermissionModes = new Map<string, string>();
 /** sessionId → active agent info (process + timer) */
 export interface AgentProcess {
   process: { write(input: string): void; kill?(): void; stop?(): void };
-  timer: NodeJS.Timeout;
+  timer: NodeJS.Timeout | null;
   agentId: string;
   agentName?: string;
 }
@@ -26,7 +26,7 @@ export const agentStates = new Map<string, Map<string, AgentProcess>>();
 
 /** sessionId → Map<agentName → REPL process info> */
 export const agentProcesses = new Map<string, Map<string, {
-  provider: AbstractProvider; timer: NodeJS.Timeout; agentId: string;
+  provider: AbstractProvider; timer: NodeJS.Timeout | null; agentId: string;
 }>>();
 
 /** sessionId → sandbox info */
@@ -185,7 +185,7 @@ export function cleanupSessionResources(sessionId: string): void {
   const procMap = agentProcesses.get(sessionId);
   if (procMap) {
     for (const [agentName, info] of procMap) {
-      clearTimeout(info.timer);
+      if (info.timer) clearTimeout(info.timer);
       info.provider.stop();
       agentCurrentMessage.delete(agentName);
     }
@@ -208,7 +208,7 @@ export function cleanupSessionResources(sessionId: string): void {
       if (stateMap.has(agentMsgId)) { clearTimeout(timeout); permissionTimeouts.delete(pid); }
     }
     for (const [msgId, state] of stateMap) {
-      clearTimeout(state.timer);
+      if (state.timer) clearTimeout(state.timer);
       if (state.process.kill) state.process.kill(); else if (state.process.stop) state.process.stop();
       decRunningAgentCount();
     }
@@ -253,6 +253,6 @@ export function clearRunningAgent(sessionId: string, agentMessageId: string): vo
   const stateMap = agentStates.get(sessionId);
   if (!stateMap) return;
   const st = stateMap.get(agentMessageId);
-  if (st) { clearTimeout(st.timer); stateMap.delete(agentMessageId); decRunningAgentCount(); }
+  if (st) { if (st.timer) clearTimeout(st.timer); stateMap.delete(agentMessageId); decRunningAgentCount(); }
   if (stateMap.size === 0) agentStates.delete(sessionId);
 }

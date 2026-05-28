@@ -32,22 +32,39 @@ interface StreamJsonLine {
 }
 
 export class EventParser {
+  // Shared instance for static backward compatibility.
+  // Tests and legacy code that don't need concurrent safety call the static methods.
+  private static _shared = new EventParser();
+
   // Guard against text duplication when Claude Code --verbose emits both
   // content_block_delta (streaming) and assistant (final) events.
-  private static receivedDeltaText = false;
+  private receivedDeltaText = false;
   // Accumulate tool input from content_block_delta chunks
-  private static pendingToolName: string | null = null;
-  private static pendingToolInputJson = '';
-  private static pendingToolInitialInput: Record<string, unknown> | null = null;
+  private pendingToolName: string | null = null;
+  private pendingToolInputJson = '';
+  private pendingToolInitialInput: Record<string, unknown> | null = null;
+
+  // ---- Static backward-compat API (uses shared instance) ----
 
   static resetDeltaState(): void {
-    EventParser.receivedDeltaText = false;
-    EventParser.pendingToolName = null;
-    EventParser.pendingToolInputJson = '';
-    EventParser.pendingToolInitialInput = null;
+    EventParser._shared.reset();
   }
 
   static parseLine(line: string): ParsedEvent[] {
+    return EventParser._shared.parseLine(line);
+  }
+
+  // ---- Instance API (concurrency-safe — one instance per provider) ----
+
+  /** Reset all mutable state. Equivalent to the old static resetDeltaState(). */
+  reset(): void {
+    this.receivedDeltaText = false;
+    this.pendingToolName = null;
+    this.pendingToolInputJson = '';
+    this.pendingToolInitialInput = null;
+  }
+
+  parseLine(line: string): ParsedEvent[] {
     const trimmed = line.trim();
     if (!trimmed) return [];
 
@@ -64,35 +81,35 @@ export class EventParser {
 
     switch (data.type) {
       case 'assistant':
-        return EventParser.parseAssistant(data);
+        return this.parseAssistant(data);
       case 'content_block_start':
-        return EventParser.parseContentBlockStart(data);
+        return this.parseContentBlockStart(data);
       case 'content_block_delta':
-        return EventParser.parseContentBlockDelta(data);
+        return this.parseContentBlockDelta(data);
       case 'content_block_stop':
-        return EventParser.parseContentBlockStop();
+        return this.parseContentBlockStop();
       case 'tool_use':
-        return EventParser.parseToolUse(data);
+        return this.parseToolUse(data);
       case 'tool_result':
-        return EventParser.parseToolResult(data);
+        return this.parseToolResult(data);
       case 'stream_event':
-        return EventParser.parseStreamEvent(data);
+        return this.parseStreamEvent(data);
       case 'permission_request':
-        return EventParser.parsePermissionRequest(data);
+        return this.parsePermissionRequest(data);
       case 'subagent_start':
-        return EventParser.parseSubagentStart(data);
+        return this.parseSubagentStart(data);
       case 'subagent_result':
-        return EventParser.parseSubagentResult(data);
+        return this.parseSubagentResult(data);
       case 'system':
-        return EventParser.parseSystem(data);
+        return this.parseSystem(data);
       case 'result':
-        return EventParser.parseResult(data);
+        return this.parseResult(data);
       default:
         return [];
     }
   }
 
-  private static parseAssistant(data: StreamJsonLine): ParsedEvent[] {
+  private parseAssistant(data: StreamJsonLine): ParsedEvent[] {
     const msg = data.message as {
       content?: Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }>;
       usage?: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
@@ -113,7 +130,7 @@ export class EventParser {
 
     if (!content || !Array.isArray(content)) return events;
 
-    const skipText = EventParser.receivedDeltaText;
+    const skipText = this.receivedDeltaText;
 
     if (!skipText) {
       const chunks: string[] = [];
@@ -140,80 +157,83 @@ export class EventParser {
     return events;
   }
 
-  private static parseContentBlockStart(data: StreamJsonLine): ParsedEvent[] {
+  private parseContentBlockStart(data: StreamJsonLine): ParsedEvent[] {
     const cb = (data as any).content_block;
     if (cb && cb.type === 'tool_use' && cb.name) {
       // Don't emit yet — SDK streams tool input via subsequent content_block_delta events.
       // Accumulate and emit on content_block_stop instead.
-      EventParser.pendingToolName = cb.name;
-      EventParser.pendingToolInputJson = '';
-      EventParser.pendingToolInitialInput = cb.input && Object.keys(cb.input).length > 0 ? cb.input : null;
+      this.pendingToolName = cb.name;
+      this.pendingToolInputJson = '';
+      this.pendingToolInitialInput = cb.input && Object.keys(cb.input).length > 0 ? cb.input : null;
       return [];
     }
     return [];
   }
 
   /** SDK emits stream_event wrapping content_block_start / content_block_delta / content_block_stop */
-  private static parseStreamEvent(data: StreamJsonLine): ParsedEvent[] {
+  private parseStreamEvent(data: StreamJsonLine): ParsedEvent[] {
     const evt = (data as any).event;
     if (!evt) return [];
     if (evt.type === 'content_block_start') {
-      return EventParser.parseContentBlockStart({ ...data, content_block: evt.content_block } as any);
+      return this.parseContentBlockStart({ ...data, content_block: evt.content_block } as any);
     }
     if (evt.type === 'content_block_delta') {
-      return EventParser.parseContentBlockDelta({ ...data, delta: evt.delta } as any);
+      return this.parseContentBlockDelta({ ...data, delta: evt.delta } as any);
     }
     if (evt.type === 'content_block_stop') {
-      return EventParser.parseContentBlockStop();
+      return this.parseContentBlockStop();
     }
     return [];
   }
 
-  private static parseContentBlockDelta(data: StreamJsonLine): ParsedEvent[] {
+  private parseContentBlockDelta(data: StreamJsonLine): ParsedEvent[] {
     const delta = (data as any).delta;
     if (delta && delta.type === 'text_delta' && typeof delta.text === 'string') {
-      EventParser.receivedDeltaText = true;
+      this.receivedDeltaText = true;
       return [{ type: 'text', content: delta.text }];
     }
     // Accumulate tool input JSON chunks
     if (delta && delta.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
-      EventParser.pendingToolInputJson += delta.partial_json;
+      this.pendingToolInputJson += delta.partial_json;
     }
     return [];
   }
 
   /** Emit accumulated tool_use event when content_block completes. */
-  private static parseContentBlockStop(): ParsedEvent[] {
-    if (!EventParser.pendingToolName) return [];
-    const toolName = EventParser.pendingToolName;
-    let input: Record<string, unknown> = EventParser.pendingToolInitialInput || {};
+  private parseContentBlockStop(): ParsedEvent[] {
+    if (!this.pendingToolName) return [];
+    const toolName = this.pendingToolName;
+    let input: Record<string, unknown> = this.pendingToolInitialInput || {};
 
-    // Parse accumulated JSON deltas if no initial input was provided
-    if (Object.keys(input).length === 0 && EventParser.pendingToolInputJson) {
+    // Merge accumulated JSON deltas over initial input (they are complementary, not exclusive)
+    if (this.pendingToolInputJson) {
       try {
-        input = JSON.parse(EventParser.pendingToolInputJson);
-      } catch {
-        // Partial JSON — use what we have
-        input = { _raw: EventParser.pendingToolInputJson.slice(0, 200) };
+        const deltaInput = JSON.parse(this.pendingToolInputJson);
+        input = { ...input, ...deltaInput };
+      } catch (err: any) {
+        console.error(`[EventParser] Failed to parse pending tool input JSON for "${toolName}":`, err?.message ?? err, 'raw:', this.pendingToolInputJson.slice(0, 200));
+        if (Object.keys(input).length === 0) {
+          input = { _raw: this.pendingToolInputJson.slice(0, 200) };
+        }
       }
     }
 
     // Reset pending state
-    EventParser.pendingToolName = null;
-    EventParser.pendingToolInputJson = '';
-    EventParser.pendingToolInitialInput = null;
+    this.pendingToolName = null;
+    this.pendingToolInputJson = '';
+    this.pendingToolInitialInput = null;
 
     return [{ type: 'tool_use', toolName, input }];
   }
 
-  private static parseToolUse(data: StreamJsonLine): ParsedEvent[] {
+  private parseToolUse(data: StreamJsonLine): ParsedEvent[] {
     const tu = data.tool_use || data;
     const toolName = tu.name || (data as any).name || 'unknown';
     const input = tu.input || (data as any).input || {};
     return [{ type: 'tool_use', toolName, input }];
   }
 
-  private static parseToolResult(data: StreamJsonLine): ParsedEvent[] {
+  private parseToolResult(data: StreamJsonLine): ParsedEvent[] {
     const content =
       typeof (data as any).content === 'string'
         ? (data as any).content
@@ -223,7 +243,7 @@ export class EventParser {
     return [{ type: 'tool_result', content }];
   }
 
-  private static parsePermissionRequest(data: StreamJsonLine): ParsedEvent[] {
+  private parsePermissionRequest(data: StreamJsonLine): ParsedEvent[] {
     const pr = data.permission_request || data;
     const tool = pr.tool || data.tool || '';
     const path = pr.path || data.path;
@@ -231,27 +251,27 @@ export class EventParser {
     return [{ type: 'permission_request', tool, path }];
   }
 
-  private static parseSubagentStart(data: StreamJsonLine): ParsedEvent[] {
+  private parseSubagentStart(data: StreamJsonLine): ParsedEvent[] {
     const sa = data.subagent_start || data;
     const agentType = sa.agentType || data.agentType || '';
     const description = sa.description || data.description || '';
     return [{ type: 'subagent_start', agentType, description }];
   }
 
-  private static parseSubagentResult(data: StreamJsonLine): ParsedEvent[] {
+  private parseSubagentResult(data: StreamJsonLine): ParsedEvent[] {
     const sr = data.subagent_result || data;
     const agentType = sr.agentType || data.agentType || '';
     return [{ type: 'subagent_result', agentType }];
   }
 
-  private static parseSystem(data: StreamJsonLine): ParsedEvent[] {
+  private parseSystem(data: StreamJsonLine): ParsedEvent[] {
     const subtype = data.subtype || '';
     const message = typeof data.message === 'string' ? data.message : '';
     const sessionId = data.session_id;
     return [{ type: 'system', subtype, message, sessionId }];
   }
 
-  private static parseResult(data: StreamJsonLine): ParsedEvent[] {
+  private parseResult(data: StreamJsonLine): ParsedEvent[] {
     if (data.subtype === 'success') {
       return [{ type: 'done', exitCode: data.is_error ? 1 : 0 }];
     }

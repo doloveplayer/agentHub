@@ -1,42 +1,10 @@
 import { Hono } from 'hono';
-import type { Context } from 'hono';
 import { z } from 'zod';
 import { config, runtimeConfig } from '../config.js';
 import { prisma } from '../db/prisma.js';
-import { verifyToken } from '../lib/jwt.js';
+import { getUser } from '../lib/auth.js';
 
 const settings = new Hono();
-
-interface JwtUser {
-  userId: string;
-  githubLogin: string;
-}
-
-/**
- * Extract user from JWT Bearer token in Authorization header.
- * Returns user object on success, or a Response on failure.
- */
-async function getUser(c: Context): Promise<JwtUser | Response> {
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader) {
-    return c.json({ error: 'Missing authorization header' }, 401);
-  }
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
-    return c.json({ error: 'Invalid authorization header format' }, 401);
-  }
-  try {
-    const payload = verifyToken(parts[1]);
-    // Verify user still exists in DB
-    const user = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true } });
-    if (!user) {
-      return c.json({ error: 'User not found — please re-authenticate' }, 401);
-    }
-    return { userId: payload.userId, githubLogin: payload.githubLogin };
-  } catch {
-    return c.json({ error: 'Invalid or expired token' }, 401);
-  }
-}
 
 // GET /api/settings/user — return current user settings, create defaults if missing
 settings.get('/user', async (c) => {
@@ -104,8 +72,13 @@ settings.put('/user', async (c) => {
 settings.get('/runtime', async (c) => {
   const result = await getUser(c);
   if (result instanceof Response) return result;
+  const user = result;
 
-  return c.json(runtimeConfig.agent.toJSON());
+  const data = runtimeConfig.agent.toJSON();
+  if (config.github.allowedUsers.includes(user.githubLogin)) {
+    return c.json({ ...data, isAdmin: true });
+  }
+  return c.json(data);
 });
 
 // PUT /api/settings/runtime — admin-only update runtime config

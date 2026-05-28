@@ -56,6 +56,7 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
   private partialLine = '';
   private runSeq = 0;
   private doneReceived = false;  // guard against double-done (SDK result + close handler)
+  private eventParser: EventParser = new EventParser();
   private mapPermissionMode: (profile: string) => any;
   private mapAllowedTools: (profile: string) => string[];
 
@@ -96,7 +97,7 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
     this.doneReceived = false;
     this.partialLine = '';
     this.pendingCleanup = null;
-    EventParser.resetDeltaState();
+    this.eventParser.reset();
 
     const hwDir = hostWorkDir || _workDir;
     const agentTag = promptFileId || 'agent';
@@ -125,7 +126,7 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
         this.partialLine = lines.pop() ?? '';
         for (const line of lines) {
           if (!line.trim()) continue;
-          const events = EventParser.parseLine(line);
+          const events = this.eventParser.parseLine(line);
           for (const event of events) {
             if (event.type === 'system' && event.sessionId && this._onClaudeSession) {
               this._onClaudeSession(event.sessionId);
@@ -150,7 +151,7 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
         if (!this.killed) {
           // Flush remaining partial line
           if (this.partialLine.trim()) {
-            const events = EventParser.parseLine(this.partialLine);
+            const events = this.eventParser.parseLine(this.partialLine);
             for (const event of events) {
               if (event.type === 'system' && event.sessionId && this._onClaudeSession) {
                 this._onClaudeSession(event.sessionId);

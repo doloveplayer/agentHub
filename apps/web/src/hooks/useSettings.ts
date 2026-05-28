@@ -20,7 +20,7 @@ export function useSettings() {
       if (runtimeRes.ok) {
         const runtime = await runtimeRes.json();
         store.setRuntime(runtime);
-        store.setAdmin(true);
+        store.setAdmin(runtime.isAdmin === true);
       }
     } catch (err) {
       console.error('[settings] fetch failed:', err);

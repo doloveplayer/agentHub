@@ -64,7 +64,7 @@ export class RuntimeAgentConfig {
         if (!isNaN(val)) (this as any)[`_${row.key}`] = val;
       }
       console.log('[config] Loaded persisted runtime config:', this.toJSON());
-    } catch { /* table may not exist yet — use env defaults */ }
+    } catch (err: any) { console.error('[config] Failed to load persisted config:', err?.message ?? err); }
   }
 
   /** Persist a single key to DB */
@@ -75,7 +75,7 @@ export class RuntimeAgentConfig {
         create: { key, value: String(value) },
         update: { value: String(value) },
       });
-    } catch { /* best-effort */ }
+    } catch (err: any) { console.error('[config] Failed to persist config key:', key, err?.message ?? err); }
   }
 
   // Async setters with validation and DB persistence

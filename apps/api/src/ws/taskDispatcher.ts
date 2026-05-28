@@ -201,12 +201,12 @@ async function startReplForTask(
     }).catch(() => null);
     if (taskMsg) {
       if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
-      agentStates.get(sessionId)!.set(taskMsg.id, { process: provider, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id, agentName });
+      agentStates.get(sessionId)!.set(taskMsg.id, { process: provider, timer: null, agentId: agent.id, agentName });
       incRunningAgentCount();
     }
     if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
     agentProcesses.get(sessionId)!.set(agentName, {
-      provider, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id,
+      provider, timer: null, agentId: agent.id,
     });
     agentCurrentMessage.set(agentName, taskMsgId);
     broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
@@ -220,7 +220,7 @@ async function startReplForTask(
           broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: (event.content || '').slice(0, 120) }, agentMessageId: taskMsgId, timestamp: Date.now() });
           break;
         case 'tool_use':
-          broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: (event as any).toolName, inputPreview: JSON.stringify((event as any).input || {}).slice(0, 80) }, agentMessageId: taskMsgId, timestamp: Date.now() });
+          broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: (event as any).toolName || (event as any).toolInput?.toolName, input: (event as any).toolInput, inputPreview: JSON.stringify((event as any).toolInput || {}).slice(0, 80) }, agentMessageId: taskMsgId, timestamp: Date.now() });
           break;
         case 'tool_result':
           broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { resultPreview: ((event as any).content || '').slice(0, 80) }, agentMessageId: taskMsgId, timestamp: Date.now() });
@@ -245,6 +245,11 @@ async function startReplForTask(
           queue.current = null;
           // Release concurrency slot (counterpart to incRunningAgentCount in startReplForTask)
           clearRunningAgent(sessionId, taskMsgId);
+          // Drain any pending agents waiting for a concurrency slot
+          import('./handler.js').then(({ drainPendingQueue, drainPerSessionQueue }) => {
+            drainPendingQueue();
+            drainPerSessionQueue(sessionId);
+          }).catch(() => {});
           processNextInQueue(sessionId, agentName, queue);
           void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, event.exitCode === 0);
           break;
@@ -255,6 +260,11 @@ async function startReplForTask(
           queue.current = null;
           // Release concurrency slot on error too
           clearRunningAgent(sessionId, taskMsgId);
+          // Drain any pending agents waiting for a concurrency slot
+          import('./handler.js').then(({ drainPendingQueue, drainPerSessionQueue }) => {
+            drainPendingQueue();
+            drainPerSessionQueue(sessionId);
+          }).catch(() => {});
           processNextInQueue(sessionId, agentName, queue);
           break;
       }

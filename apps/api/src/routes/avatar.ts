@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import { mkdir, writeFile } from 'fs/promises';
 import { resolve } from 'path';
 import { prisma } from '../db/prisma.js';
-import { verifyToken } from '../lib/jwt.js';
+import { getUser } from '../lib/auth.js';
 
 const avatar = new Hono();
 
@@ -22,35 +22,6 @@ const EXTENSION_MAP: Record<string, string> = {
   'image/gif': '.gif',
   'image/webp': '.webp',
 };
-
-interface JwtUser {
-  userId: string;
-  githubLogin: string;
-}
-
-/**
- * Extract user from JWT Bearer token in Authorization header.
- */
-async function getUser(c: Context): Promise<JwtUser | Response> {
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader) {
-    return c.json({ error: 'Missing authorization header' }, 401);
-  }
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
-    return c.json({ error: 'Invalid authorization header format' }, 401);
-  }
-  try {
-    const payload = verifyToken(parts[1]);
-    const dbUser = await prisma.user.findUnique({ where: { id: payload.userId }, select: { id: true } });
-    if (!dbUser) {
-      return c.json({ error: 'User not found — please re-authenticate' }, 401);
-    }
-    return { userId: payload.userId, githubLogin: payload.githubLogin };
-  } catch {
-    return c.json({ error: 'Invalid or expired token' }, 401);
-  }
-}
 
 // POST /api/avatar/upload — multipart file upload
 avatar.post('/upload', async (c) => {
