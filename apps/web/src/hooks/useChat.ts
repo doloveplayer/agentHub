@@ -26,8 +26,12 @@ interface MentionTag {
 export function useChat(sessionId: string) {
   const token = useAppStore((s) => s.token);
   const agents = useAppStore((s) => s.agents);
-  const trustMode = useAppStore((s) => s.trustMode);
+  const sessionPermissionModes = useAppStore((s) => s.sessionPermissionModes);
+  const sessions = useAppStore((s) => s.sessions);
   const orchestrationMode = useAppStore((s) => s.orchestrationMode);
+  // Derive effective trust mode from session-specific permission mode, matching backend logic
+  const permMode = sessionPermissionModes[sessionId] || sessions.find(s => s.id === sessionId)?.permissionMode || 'ask';
+  const trustMode = permMode === 'smart' || permMode === 'trust';
   const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addReviewReport, addToast } = useAppStore();
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {

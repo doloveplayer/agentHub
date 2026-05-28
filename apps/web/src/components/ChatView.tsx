@@ -103,7 +103,7 @@ export function ChatView() {
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
   const { send, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan } = useChat(activeSessionId ?? '');
   const addToast = useAppStore((s) => s.addToast);
-  const [resolvedPermissions] = useState<Set<string>>(() => new Set());
+  const [resolvedPermissions, setResolvedPermissions] = useState<Set<string>>(() => new Set());
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
   const renderedPlanIds = useRef(new Set<string>());
 
@@ -150,7 +150,11 @@ export function ChatView() {
           const pid = ev.details.permissionId ?? ev.id;
           const resolved = resolvedPermissions.has(pid);
           return (
-            <div key={ev.id} className="bg-hub-warning/10 border border-hub-warning/30 rounded-hub-lg px-4 py-3 my-2">
+            <div key={ev.id} ref={(el) => {
+              if (el && !resolved && isStreaming) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }
+            }} className="bg-hub-warning/10 border border-hub-warning/30 rounded-hub-lg px-4 py-3 my-2 animate-pulse">
               <div className="flex items-center gap-2 mb-2">
                 <Shield className="w-4 h-4 text-hub-warning" />
                 <span className="text-sm font-medium text-hub-warning">Permission Request</span>
@@ -162,13 +166,13 @@ export function ChatView() {
               {!resolved && isStreaming ? (
                 <div className="flex gap-2">
                   <button
-                    onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, true); }}
+                    onClick={() => { const next = new Set(resolvedPermissions); next.add(pid); setResolvedPermissions(next); respondToPermission(pid, true); }}
                     className="px-4 py-1.5 bg-hub-success hover:bg-hub-success/80 text-white text-xs rounded-md font-medium transition"
                   >
                     Allow
                   </button>
                   <button
-                    onClick={() => { resolvedPermissions.add(pid); respondToPermission(pid, false); }}
+                    onClick={() => { const next = new Set(resolvedPermissions); next.add(pid); setResolvedPermissions(next); respondToPermission(pid, false); }}
                     className="px-4 py-1.5 bg-hub-danger hover:bg-hub-danger/80 text-white text-xs rounded-md font-medium transition"
                   >
                     Deny
