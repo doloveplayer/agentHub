@@ -32,10 +32,12 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask }: P
   const agentStates = sessionAgents.map((agent) => {
     const agentMsgs = messages.filter((m) => m.agentId === agent.id);
     const running = agentMsgs.some((m) => m.status === 'streaming');
+    const queued = agentMsgs.some((m) => m.status === 'queued');
     const done = agentMsgs.length > 0 && agentMsgs.every((m) => m.status === 'done');
 
-    let status: 'running' | 'done' | 'idle' = 'idle';
+    let status: 'running' | 'queued' | 'done' | 'idle' = 'idle';
     if (running) status = 'running';
+    else if (queued) status = 'queued';
     else if (done) status = 'done';
 
     const events: AgentEvent[] = [];
@@ -47,10 +49,10 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask }: P
     return { agent, status, events };
   });
 
-  // Sort: running → done → idle
+  // Sort: running → queued → done → idle
   const sortedAgents = [...agentStates].sort((a, b) => {
-    const order = { running: 0, done: 1, idle: 2 };
-    return (order[a.status] ?? 2) - (order[b.status] ?? 2);
+    const order = { running: 0, queued: 1, done: 2, idle: 3 };
+    return (order[a.status] ?? 3) - (order[b.status] ?? 3);
   });
 
   // Filter for errors-only mode
@@ -59,6 +61,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask }: P
     : sortedAgents;
 
   const runningCount = sortedAgents.filter(a => a.status === 'running').length;
+  const queuedCount = sortedAgents.filter(a => a.status === 'queued').length;
   const idleCount = sortedAgents.filter(a => a.status === 'idle').length;
   const runningAgent = sortedAgents.find(a => a.status === 'running');
   const lastToolEvent = runningAgent
@@ -67,7 +70,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask }: P
     : null;
   const overviewText = runningAgent
     ? `${runningAgent.agent.displayName} 正在 ${lastToolEvent?.details.toolName || '思考中...'}`
-    : (runningCount === 0 ? '全部空闲' : '');
+    : (queuedCount > 0 ? `${queuedCount} 个 agent 排队中` : (runningCount === 0 ? '全部空闲' : ''));
 
   const tabs: PanelTab[] = ['Files', 'Agents', 'Tasks', 'Preview'];
   const modes: { key: ViewMode; label: string }[] = [

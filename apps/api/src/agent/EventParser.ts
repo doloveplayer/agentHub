@@ -35,7 +35,17 @@ export class EventParser {
   // Guard against text duplication when Claude Code --verbose emits both
   // content_block_delta (streaming) and assistant (final) events.
   private static receivedDeltaText = false;
-  static resetDeltaState(): void { EventParser.receivedDeltaText = false; }
+  // Accumulate tool input from content_block_delta chunks
+  private static pendingToolName: string | null = null;
+  private static pendingToolInputJson = '';
+  private static pendingToolInitialInput: Record<string, unknown> | null = null;
+
+  static resetDeltaState(): void {
+    EventParser.receivedDeltaText = false;
+    EventParser.pendingToolName = null;
+    EventParser.pendingToolInputJson = '';
+    EventParser.pendingToolInitialInput = null;
+  }
 
   static parseLine(line: string): ParsedEvent[] {
     const trimmed = line.trim();
@@ -60,7 +70,7 @@ export class EventParser {
       case 'content_block_delta':
         return EventParser.parseContentBlockDelta(data);
       case 'content_block_stop':
-        return [];
+        return EventParser.parseContentBlockStop();
       case 'tool_use':
         return EventParser.parseToolUse(data);
       case 'tool_result':
@@ -133,12 +143,17 @@ export class EventParser {
   private static parseContentBlockStart(data: StreamJsonLine): ParsedEvent[] {
     const cb = (data as any).content_block;
     if (cb && cb.type === 'tool_use' && cb.name) {
-      return [{ type: 'tool_use', toolName: cb.name, input: cb.input || {} }];
+      // Don't emit yet — SDK streams tool input via subsequent content_block_delta events.
+      // Accumulate and emit on content_block_stop instead.
+      EventParser.pendingToolName = cb.name;
+      EventParser.pendingToolInputJson = '';
+      EventParser.pendingToolInitialInput = cb.input && Object.keys(cb.input).length > 0 ? cb.input : null;
+      return [];
     }
     return [];
   }
 
-  /** SDK emits stream_event wrapping content_block_start / content_block_delta */
+  /** SDK emits stream_event wrapping content_block_start / content_block_delta / content_block_stop */
   private static parseStreamEvent(data: StreamJsonLine): ParsedEvent[] {
     const evt = (data as any).event;
     if (!evt) return [];
@@ -147,6 +162,9 @@ export class EventParser {
     }
     if (evt.type === 'content_block_delta') {
       return EventParser.parseContentBlockDelta({ ...data, delta: evt.delta } as any);
+    }
+    if (evt.type === 'content_block_stop') {
+      return EventParser.parseContentBlockStop();
     }
     return [];
   }
@@ -157,7 +175,35 @@ export class EventParser {
       EventParser.receivedDeltaText = true;
       return [{ type: 'text', content: delta.text }];
     }
+    // Accumulate tool input JSON chunks
+    if (delta && delta.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
+      EventParser.pendingToolInputJson += delta.partial_json;
+    }
     return [];
+  }
+
+  /** Emit accumulated tool_use event when content_block completes. */
+  private static parseContentBlockStop(): ParsedEvent[] {
+    if (!EventParser.pendingToolName) return [];
+    const toolName = EventParser.pendingToolName;
+    let input: Record<string, unknown> = EventParser.pendingToolInitialInput || {};
+
+    // Parse accumulated JSON deltas if no initial input was provided
+    if (Object.keys(input).length === 0 && EventParser.pendingToolInputJson) {
+      try {
+        input = JSON.parse(EventParser.pendingToolInputJson);
+      } catch {
+        // Partial JSON — use what we have
+        input = { _raw: EventParser.pendingToolInputJson.slice(0, 200) };
+      }
+    }
+
+    // Reset pending state
+    EventParser.pendingToolName = null;
+    EventParser.pendingToolInputJson = '';
+    EventParser.pendingToolInitialInput = null;
+
+    return [{ type: 'tool_use', toolName, input }];
   }
 
   private static parseToolUse(data: StreamJsonLine): ParsedEvent[] {

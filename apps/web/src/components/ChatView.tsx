@@ -8,8 +8,9 @@ import { MessageInput } from './MessageInput';
 import { MessageActions } from './MessageActions';
 import { AgentStatusPanel } from './AgentStatusPanel';
 import { agentColor } from './AgentMentionPopup';
-import { Shield, AlertTriangle, ChevronDown, Lock, Eye, Sparkles, Zap } from 'lucide-react';
+import { Shield, AlertTriangle, ChevronDown, Lock, Eye, Sparkles, Zap, Settings } from 'lucide-react';
 import { ConfirmationPanel } from './ConfirmationPanel';
+import { SettingsPanel } from './SettingsPanel';
 import { DiffCard } from './DiffCard';
 import { DeployCard } from './DeployCard';
 import { TestReportCard } from './TestReportCard';
@@ -190,6 +191,7 @@ export function ChatView() {
   const updateSessionInList = useAppStore((s) => s.updateSessionInList);
   const [showPermDropdown, setShowPermDropdown] = useState(false);
   const [showTrustWarning, setShowTrustWarning] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const getPermissionMode = (): string => {
     if (!activeSessionId) return 'ask';
@@ -339,6 +341,11 @@ export function ChatView() {
               </div>
             )}
           </div>
+
+          {/* Settings button */}
+          <button onClick={() => setSettingsOpen(true)} className="p-1.5 rounded hover:bg-hub-hover text-hub-tertiary transition shrink-0" title="Settings">
+            <Settings className="w-3.5 h-3.5" />
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto chat-scroll">
           {messages.map((msg: any) => (
@@ -443,6 +450,7 @@ export function ChatView() {
           </div>
         </div>
       )}
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

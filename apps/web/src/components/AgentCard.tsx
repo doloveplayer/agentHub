@@ -28,7 +28,7 @@ function avatarColor(name: string): string {
 interface Props {
   agentId: string;
   displayName: string;
-  status: 'running' | 'done' | 'idle';
+  status: 'running' | 'queued' | 'done' | 'idle';
   events: AgentEvent[];
   onStop?: () => void;
   agentName?: string;
@@ -37,6 +37,7 @@ interface Props {
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   running: { label: '在线', cls: 'bg-hub-success/20 text-hub-success' },
+  queued:  { label: '排队中', cls: 'bg-hub-warning/20 text-hub-warning' },
   done:    { label: '完成', cls: 'bg-hub-link/20 text-hub-link' },
   idle:    { label: '空闲', cls: 'bg-hub-muted/20 text-hub-muted' },
 };
@@ -48,7 +49,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const inboxCount = useAppStore(s => agentName ? (s.inboxNotifications[agentName] || 0) : 0);
 
   useEffect(() => {
-    if (status === 'running') setExpanded(true);
+    if (status === 'running' || status === 'queued') setExpanded(true);
   }, [status]);
 
   // Clear terminal log on done/idle — only running agents show tool history
@@ -139,7 +140,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
             />
           ))}
         </div>
-        {status === 'running' && onStop && (
+        {(status === 'running' || status === 'queued') && onStop && (
           <button
             onClick={(e) => { e.stopPropagation(); onStop(); }}
             className="p-1 rounded hover:bg-hub-danger/15 text-hub-danger/80 flex-shrink-0 transition"

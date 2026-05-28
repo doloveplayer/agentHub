@@ -5,9 +5,9 @@ import type { Server } from 'http';
 import type http from 'http';
 import type net from 'net';
 import { execSync } from 'child_process';
-import { writeFileSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
-import { config } from './config.js';
+import { config, runtimeConfig } from './config.js';
 import { attachWebSocket, broadcast } from './ws/handler.js';
 import { ProviderFactory } from './agent/providers/factory.js';
 import { SandboxManager } from './agent/SandboxManager.js';
@@ -23,6 +23,8 @@ import deployRoutes from './routes/deploy.js';
 import testRoutes from './routes/test.js';
 import securityRoutes from './routes/security.js';
 import reviewRoutes from './routes/review.js';
+import settingsRoutes from './routes/settings.js';
+import avatarRoutes from './routes/avatar.js';
 
 // Startup cleanup: remove orphaned sandbox containers and directories
 // from previous backend runs
@@ -47,6 +49,11 @@ try {
     console.log(`[startup] Reset ${result.count} stale streaming message(s) to done`);
   }
 } catch { /* DB might not be ready or prisma not connected yet */ }
+
+// Load persisted runtime config from DB (agent concurrency, timeouts, etc.)
+try {
+  await runtimeConfig.agent.loadPersisted(prisma);
+} catch { /* table may not exist yet — use env defaults */ }
 
 // Auto-seed default agents (uses shared prisma client)
 async function seedDefaultAgents() {
@@ -79,6 +86,16 @@ app.use(
   }),
 );
 
+// Static uploads (avatars etc.)
+app.get('/uploads/*', (c) => {
+  const filePath = resolve(process.cwd(), c.req.path.slice(1));
+  if (!existsSync(filePath)) return c.notFound();
+  const buf = readFileSync(filePath);
+  const ext = filePath.split('.').pop()?.toLowerCase();
+  const mime = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[ext ?? ''] ?? 'application/octet-stream';
+  return new Response(buf, { headers: { 'Content-Type': mime, 'Cache-Control': 'max-age=86400' } });
+});
+
 // Public routes
 app.route('/api/auth', authRoutes);
 
@@ -93,6 +110,8 @@ app.route('/api/deploy', deployRoutes);
 app.route('/api/test', testRoutes);
 app.route('/api/security', securityRoutes);
 app.route('/api/review', reviewRoutes);
+app.route('/api/settings', settingsRoutes);
+app.route('/api/avatar', avatarRoutes);
 
 // Health check
 app.get('/api/health', (c) => {

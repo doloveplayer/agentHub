@@ -35,6 +35,103 @@ function optionalInt(key: string, fallback: number): number {
   return val ? parseInt(val, 10) : fallback;
 }
 
+/**
+ * Mutable runtime configuration for agent parameters.
+ * Values can be changed at runtime via sync setters (for tests) or async persist setters (for API).
+ * On startup, loadPersisted() restores values from the GlobalConfig DB table.
+ */
+export class RuntimeAgentConfig {
+  private _maxConcurrent: number;
+  private _timeoutMs: number;
+  private _queueTimeoutMs: number;
+  private _perSessionMax: number;
+
+  constructor() {
+    this._maxConcurrent = optionalInt('MAX_CONCURRENT_AGENTS', 2);
+    this._timeoutMs = optionalInt('AGENT_TIMEOUT_MS', 300_000);
+    this._queueTimeoutMs = optionalInt('AGENT_QUEUE_TIMEOUT_MS', 120_000);
+    this._perSessionMax = optionalInt('AGENT_PER_SESSION_MAX', 8);
+  }
+
+  /** Load persisted values from DB, falling back to env vars */
+  async loadPersisted(prisma: any) {
+    try {
+      const rows = await prisma.globalConfig.findMany({
+        where: { key: { in: ['maxConcurrent', 'timeoutMs', 'queueTimeoutMs', 'perSessionMax'] } },
+      });
+      for (const row of rows) {
+        const val = Number(row.value);
+        if (!isNaN(val)) (this as any)[`_${row.key}`] = val;
+      }
+      console.log('[config] Loaded persisted runtime config:', this.toJSON());
+    } catch { /* table may not exist yet — use env defaults */ }
+  }
+
+  /** Persist a single key to DB */
+  private async persist(prisma: any, key: string, value: number) {
+    try {
+      await prisma.globalConfig.upsert({
+        where: { key },
+        create: { key, value: String(value) },
+        update: { value: String(value) },
+      });
+    } catch { /* best-effort */ }
+  }
+
+  // Async setters with validation and DB persistence
+  async setMaxConcurrent(prisma: any, v: number) {
+    if (v > 0 && v <= 20) { this._maxConcurrent = v; await this.persist(prisma, 'maxConcurrent', v); }
+  }
+  async setTimeoutMs(prisma: any, v: number) {
+    if (v >= 10_000 && v <= 3_600_000) { this._timeoutMs = v; await this.persist(prisma, 'timeoutMs', v); }
+  }
+  async setQueueTimeoutMs(prisma: any, v: number) {
+    if (v >= 10_000 && v <= 1_800_000) { this._queueTimeoutMs = v; await this.persist(prisma, 'queueTimeoutMs', v); }
+  }
+  async setPerSessionMax(prisma: any, v: number) {
+    if (v > 0 && v <= 50) { this._perSessionMax = v; await this.persist(prisma, 'perSessionMax', v); }
+  }
+
+  // Sync getters/setters (for test compatibility and backward compat)
+  get maxConcurrent(): number { return this._maxConcurrent; }
+  set maxConcurrent(v: number) {
+    if (v > 0 && v <= 20) this._maxConcurrent = v;
+  }
+
+  get timeoutMs(): number { return this._timeoutMs; }
+  set timeoutMs(v: number) {
+    if (v >= 10_000 && v <= 3_600_000) this._timeoutMs = v;
+  }
+
+  get queueTimeoutMs(): number { return this._queueTimeoutMs; }
+  set queueTimeoutMs(v: number) {
+    if (v >= 10_000 && v <= 1_800_000) this._queueTimeoutMs = v;
+  }
+
+  get perSessionMax(): number { return this._perSessionMax; }
+  set perSessionMax(v: number) {
+    if (v > 0 && v <= 50) this._perSessionMax = v;
+  }
+
+  toJSON() {
+    return {
+      maxConcurrent: this._maxConcurrent,
+      timeoutMs: this._timeoutMs,
+      queueTimeoutMs: this._queueTimeoutMs,
+      perSessionMax: this._perSessionMax,
+    };
+  }
+}
+
+/** The singleton runtime config instance, used for mutable agent parameters */
+export const runtimeConfig = {
+  agent: new RuntimeAgentConfig(),
+};
+
+/**
+ * Frozen config object for static configuration (DB, JWT, GitHub, sandbox, etc.).
+ * Agent runtime params delegate to runtimeConfig.agent via getters for backward compat.
+ */
 export const config = {
   port: parseInt(optional('PORT', '3000'), 10),
 
@@ -72,13 +169,12 @@ export const config = {
   frontendUrl: optional('FRONTEND_URL', 'http://localhost:5175'),
 
   agent: {
-    timeoutMs: optionalInt('AGENT_TIMEOUT_MS', 300_000),  // 5 min default
-    maxConcurrent: optionalInt('MAX_CONCURRENT_AGENTS', 2),
-    queueTimeoutMs: optionalInt('AGENT_QUEUE_TIMEOUT_MS', 120_000),
+    get maxConcurrent() { return runtimeConfig.agent.maxConcurrent; },
+    get timeoutMs() { return runtimeConfig.agent.timeoutMs; },
+    get queueTimeoutMs() { return runtimeConfig.agent.queueTimeoutMs; },
+    get perSessionMax() { return runtimeConfig.agent.perSessionMax; },
     provider: optional('AGENTHUB_AGENT_PROVIDER', optional('AGENT_PROVIDER', 'claude-code')),
     contextWindowTokens: optionalInt('AGENT_CONTEXT_WINDOW_TOKENS', 200_000), // Claude Sonnet 4 default
-    perSessionMax: optionalInt('AGENT_PER_SESSION_MAX', 8),
   },
 
 } as const;
-

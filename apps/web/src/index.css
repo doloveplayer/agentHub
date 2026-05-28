@@ -182,28 +182,37 @@
     object-fit: contain;
   }
   .markdown-content code {
-    border-radius: 0.25rem;
-    background: var(--bg-code);
-    color: #a7f3d0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.86em;
-    padding: 0.1rem 0.28rem;
+    font-size: inherit;
+    color: var(--accent-primary);
+    background: transparent;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    font-weight: 500;
   }
   .markdown-content pre {
     max-width: 100%;
     overflow-x: auto;
-    border-radius: 0.5rem;
-    border: 1px solid var(--border-subtle);
-    background: var(--bg-code);
-    padding: 0.75rem;
+    margin: 0.5rem 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-left: 2px solid var(--accent-primary);
+    border-left-color: rgba(79, 209, 197, 0.4);
+    padding-left: 0.75rem;
   }
+  /* Block code: restore monospace */
   .markdown-content pre code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.86em;
+    font-weight: 400;
     display: block;
     background: transparent;
     color: var(--text-primary);
-    line-height: 1.55;
+    line-height: 1.6;
     padding: 0;
     white-space: pre;
+    border: none;
   }
   .markdown-content img {
     max-height: 20rem;

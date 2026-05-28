@@ -1,9 +1,9 @@
 # AgentHub 产品需求文档 (PRD)
 
 > **版本**：v0.5.0
-> **状态**：Phase 1/2 完成，Phase 3 核心能力完成，统一 REPL 架构落地
+> **状态**：Phase 1/2 完成，Phase 3 核心能力完成，统一 REPL 架构落地，Phase 5 设置页面规划中
 > **拟定人**：AgentHub 项目团队
-> **日期**：2026-05-19 · 修订 2026-05-27（统一 REPL 架构 + 多 Agent 协作闭环）
+> **日期**：2026-05-19 · 修订 2026-05-28（多 Agent 并发修复 + Phase 5 用户设置与运行时配置）
 
 ---
 
@@ -17,6 +17,7 @@
    - [阶段 2：多 Agent 群聊与 @ 指令](#42-阶段-2多-agent-群聊与--指令)
    - [阶段 3：Smart Hub 核心能力](#43-阶段-3smart-hub-核心能力)
    - [阶段 4：产物预览与部署闭环](#44-阶段-4产物预览与部署闭环)
+   - [阶段 5：用户设置与运行时配置](#45-阶段-5用户设置与运行时配置)
 5. [技术栈详细说明](#5-技术栈详细说明)
 6. [系统架构概要](#6-系统架构概要)
 7. [多平台 Agent 接入层设计](#7-多平台-agent-接入层设计)
@@ -290,6 +291,71 @@ AgentCoordinator 事件路由：done/error → inbox 通知 Planner
 - [ ] "引用并交给 Agent" → 自动构建含上下文引用的 prompt
 - [ ] Agent 只处理引用部分或基于引用部分做增量修改
 - [ ] 交互历史可追溯（哪段内容被哪个 Agent 在何时处理）
+
+---
+
+### 4.5 阶段 5：用户设置与运行时配置
+
+**目标**：提供用户设置面板，支持头像管理、个人偏好，以及管理员对全局 Agent 运行时参数的热更新配置。
+
+**原则**：设置分为用户级（每人独立）和全局级（admin 可改）。运行时参数变更即时生效，无需重启。
+
+```
+用户设置面板
+├── Profile 标签
+│   ├── 头像上传 (本地文件, max 2MB)
+│   ├── 主题切换 (dark/light)
+│   └── 通知偏好
+└── Agent Config 标签 (admin only)
+    ├── 全局并发上限 (maxConcurrent, 默认 2, 范围 1-20)
+    ├── 每会话 Agent 上限 (perSessionMax, 默认 8, 范围 1-50)
+    ├── Agent 超时 (timeoutMs, 默认 300s, 范围 10-3600s)
+    └── 队列超时 (queueTimeoutMs, 默认 120s, 范围 10-1800s)
+```
+
+#### 4.5.1 用户设置
+
+- [ ] 头像上传（本地文件，支持 PNG/JPG/GIF/WebP，限制 2MB）
+- [ ] 头像存储到服务端 `.uploads/avatars/` 目录，DB 存相对路径
+- [ ] 主题偏好存储到 `UserSettings` 表
+- [ ] 通知开关（是否接收 inbox 通知推送）
+
+#### 4.5.2 运行时配置
+
+- [ ] `config.ts` 重构：从 frozen const 拆分为 mutable `RuntimeConfig` + immutable `config`
+- [ ] 运行时参数通过 getter 委托，现有代码 `config.agent.maxConcurrent` 无需改动
+- [ ] Admin-only PUT `/api/settings/runtime` 端点，参数范围校验
+- [ ] Runtime config 改变立即生效（下次 `config.agent.maxConcurrent` 读取即新值）
+
+#### 4.5.3 设置入口
+
+- [ ] 顶部导航栏右侧齿轮图标按钮
+- [ ] 点击弹出右侧滑出面板（320px），包含 Profile 和 Agent Config 标签
+- [ ] 点击遮罩或关闭按钮关闭面板
+
+#### 4.5.4 数据模型
+
+```prisma
+model UserSettings {
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id])
+  theme                String   @default("dark")
+  notificationsEnabled Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+```
+
+**接口设计**：
+
+| 方法 | 路径 | 说明 | 权限 |
+|------|------|------|------|
+| GET | `/api/settings/user` | 获取当前用户设置 | 登录 |
+| PUT | `/api/settings/user` | 更新用户设置（头像/主题/通知） | 登录 |
+| GET | `/api/settings/runtime` | 读取当前运行时配置 | 登录 |
+| PUT | `/api/settings/runtime` | 更新运行时配置 | Admin |
+| POST | `/api/avatar/upload` | 上传头像文件 (multipart) | 登录 |
 
 ---
 

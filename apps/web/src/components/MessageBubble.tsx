@@ -59,6 +59,12 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
           <span className="text-xs text-hub-tertiary font-medium">{label}</span>
           {time && <span className="text-[10px] text-hub-muted">{time}</span>}
           {/* Status indicators */}
+          {!isHuman && message.status === 'queued' && (
+            <span className="flex items-center gap-1 text-[10px] text-hub-warning">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Waiting in queue...
+            </span>
+          )}
           {!isHuman && message.status === 'streaming' && (
             <span className="flex items-center gap-1 text-[10px] text-hub-accent">
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -156,9 +162,16 @@ const markdownComponents: Components = {
     );
   },
   code: ({ inline, className, children, ...props }: any) => {
-    const codeStr = String(children ?? '').replace(/\n$/, '');
+    const codeStr = childrenToText(children).replace(/\n$/, '');
     if (inline) {
-      return <code className="bg-hub-raised px-1 py-0.5 rounded text-[12px] font-mono" {...props}>{children}</code>;
+      return (
+        <code
+          style={{ color: 'var(--accent-primary)', fontWeight: 500 }}
+          {...props}
+        >
+          {codeStr}
+        </code>
+      );
     }
     const language = /language-(\w+)/.exec(className ?? '')?.[1] ?? '';
     return <FoldableCodeBlock language={language} code={codeStr} />;
@@ -182,39 +195,41 @@ function FoldableCodeBlock({ language, code }: { language: string; code: string 
   };
 
   return (
-    <div className="relative my-2 rounded-lg overflow-hidden bg-[#1a1a2e] border border-hub">
-      {/* Header bar */}
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#16162a] border-b border-hub text-[11px] text-hub-tertiary">
-        <span className="font-mono text-hub-muted">{language || 'code'}</span>
-        <div className="flex items-center gap-1">
+    <div className="relative my-2 group/code">
+      {/* Header: language label + actions */}
+      <div className="flex items-center justify-between mb-0.5">
+        <span className="font-mono text-[10px] text-hub-muted">{language || 'code'}</span>
+        <div className="flex items-center gap-1 opacity-0 group-hover/code:opacity-100 transition">
           <button
             onClick={() => insertPrompt(`请修改并应用这段代码：\n\n\`\`\`${language}\n${code}\n\`\`\``)}
-            className="inline-flex h-6 w-6 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
+            className="inline-flex h-5 w-5 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
             title="让 Agent 修改这段代码"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
           </button>
           <button
             onClick={handleCopy}
-            className="inline-flex h-6 w-6 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
+            className="inline-flex h-5 w-5 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
             title="Copy"
           >
             {copied
-              ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+              ? <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              : <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
             }
           </button>
         </div>
       </div>
-      {/* Code area */}
-      <pre className="p-3 text-[12px] leading-relaxed overflow-x-auto font-mono text-hub-primary">
-        <code>{displayCode}</code>
-      </pre>
+      {/* Code area: side border style */}
+      <div className="border-l-2 border-hub-accent/40 pl-3">
+        <pre className="text-[12px] leading-relaxed overflow-x-auto font-mono text-hub-primary m-0 p-0 bg-transparent">
+          <code>{displayCode}</code>
+        </pre>
+      </div>
       {/* Fold toggle */}
       {shouldFold && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="w-full py-1.5 text-[11px] text-hub-link hover:bg-[#1e1e36] transition border-t border-hub"
+          className="mt-1 text-[11px] text-hub-link hover:text-hub-accent transition"
         >
           {expanded ? '收起' : `展开全部 (${lines.length} 行)`}
         </button>

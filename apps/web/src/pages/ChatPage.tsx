@@ -4,11 +4,13 @@ import { ChatView } from '../components/ChatView';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/appStore';
 import { useResizablePanel } from '../hooks/useResizablePanel';
-import { Menu } from 'lucide-react';
+import { Menu, Settings } from 'lucide-react';
+import { SettingsPanel } from '../components/SettingsPanel';
 
 export function ChatPage() {
   const setAgents = useAppStore((s) => s.setAgents);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { width: sidebarWidth, onMouseDown: onSidebarResize } = useResizablePanel({
     defaultWidth: 256, minWidth: 180, maxWidth: 400, side: 'left',
   });
@@ -48,9 +50,13 @@ export function ChatPage() {
             <Menu className="w-5 h-5 text-hub-tertiary" />
           </button>
           <span className="text-sm font-medium text-hub-secondary">AgentHub</span>
+          <button onClick={() => setSettingsOpen(true)} className="ml-auto p-1.5 rounded-md hover:bg-hub-hover">
+            <Settings className="w-5 h-5 text-hub-tertiary" />
+          </button>
         </div>
         <ChatView />
       </div>
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </div>
   );
 }

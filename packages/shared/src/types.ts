@@ -33,7 +33,7 @@ export interface Message {
   senderType: 'human' | 'agent';
   agentId?: string;
   content: string;
-  status: 'sending' | 'streaming' | 'done' | 'error';
+  status: 'sending' | 'queued' | 'streaming' | 'done' | 'error';
   createdAt: string;
 }
 

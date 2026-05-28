@@ -35,7 +35,7 @@ import {
 import {
   broadcast, sessionPermissionModes, agentProcesses, agentStates, agentTaskQueues,
   agentCurrentTask, agentCurrentMessage, sandboxes,
-  incRunningAgentCount, decRunningAgentCount,
+  incRunningAgentCount, clearRunningAgent,
   type AgentTaskQueue, type TaskDispatchNode,
 } from './state.js';
 import {
@@ -243,6 +243,8 @@ async function startReplForTask(
           agentCurrentTask.delete(agentName);
           agentCurrentMessage.delete(agentName);
           queue.current = null;
+          // Release concurrency slot (counterpart to incRunningAgentCount in startReplForTask)
+          clearRunningAgent(sessionId, taskMsgId);
           processNextInQueue(sessionId, agentName, queue);
           void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, event.exitCode === 0);
           break;
@@ -251,6 +253,8 @@ async function startReplForTask(
           agentCurrentTask.delete(agentName);
           agentCurrentMessage.delete(agentName);
           queue.current = null;
+          // Release concurrency slot on error too
+          clearRunningAgent(sessionId, taskMsgId);
           processNextInQueue(sessionId, agentName, queue);
           break;
       }

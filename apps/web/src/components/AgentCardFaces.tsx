@@ -55,7 +55,7 @@ export function FaceTerminalLog({ events }: { events: AgentEvent[] }) {
         const details = ev.details || {};
         switch (ev.type) {
           case 'thinking':
-            return <div key={i} className="text-hub-muted">{`[${time}] THINK  ${(details.content || '').slice(0, 80)}`}</div>;
+            return <div key={i} className="text-orange-400">{`[${time}] THINK  ${(details.content || '').slice(0, 80)}`}</div>;
           case 'tool_use':
             return <div key={i} className="text-hub-accent">{`[${time}] TOOL   ${details.toolName || '?'} ${details.inputPreview || ''}`}</div>;
           case 'tool_result':

@@ -155,6 +155,28 @@ describe('EventParser', () => {
     assert.strictEqual(evs[0].type, 'tool_use');
   });
 
+  it('accumulates tool input from content_block_start/delta/stop', () => {
+    EventParser.resetDeltaState();
+    // content_block_start with tool_use — should NOT emit yet
+    const start = EventParser.parseLine('{"type":"content_block_start","content_block":{"type":"tool_use","name":"Bash","input":{}}}');
+    assert.strictEqual(start.length, 0);
+
+    // content_block_delta with input JSON chunks
+    const d1 = EventParser.parseLine('{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"{\\"comm"}}');
+    assert.strictEqual(d1.length, 0);
+    const d2 = EventParser.parseLine('{"type":"content_block_delta","delta":{"type":"input_json_delta","partial_json":"and\\":\\"ls -la\\"}"}}');
+    assert.strictEqual(d2.length, 0);
+
+    // content_block_stop — should emit complete tool_use with accumulated input
+    const stop = EventParser.parseLine('{"type":"content_block_stop"}');
+    assert.strictEqual(stop.length, 1);
+    assert.strictEqual(stop[0].type, 'tool_use');
+    assert.strictEqual((stop[0] as any).toolName, 'Bash');
+    assert.deepStrictEqual((stop[0] as any).input, { command: 'ls -la' });
+
+    EventParser.resetDeltaState();
+  });
+
   it('parses result as done', () => {
     const evs = EventParser.parseLine('{"type":"result","subtype":"success"}');
     assert.ok(evs.length > 0);

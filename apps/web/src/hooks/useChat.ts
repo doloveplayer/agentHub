@@ -111,7 +111,19 @@ export function useChat(sessionId: string) {
             case 'agent_queued':
               if (data.agentMessageId) {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                setMessageStatus(targetSessionId, data.agentMessageId, 'queued');
                 appendToMessage(targetSessionId, data.agentMessageId, `\n\n---\n**Queued:** ${data.message || 'Waiting for available agent slot...'}`);
+              }
+              break;
+            case 'agent_queue_heartbeat':
+              // Update queue position in real-time for queued agents
+              if (data.agentMessageId) {
+                addAgentEvent(data.agentMessageId, {
+                  id: 'hb-' + Date.now(),
+                  type: 'tool_result',  // reuse existing type for display
+                  timestamp: data.timestamp || Date.now(),
+                  details: { content: `排队中 (位置 ${data.position}/${data.totalQueued}, 已等待 ${data.waitSeconds}s)` },
+                });
               }
               break;
             case 'connected':
@@ -133,6 +145,13 @@ export function useChat(sessionId: string) {
               // with the same permissionId. Use that as the single interactive
               // card source to avoid duplicate Allow/Deny controls.
               if (eventType === 'permission_request') break;
+              // Transition queued → streaming when agent starts processing
+              if (data.status === 'running' && data.agentMessageId) {
+                const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                setMessageStatus(targetSessionId, data.agentMessageId, 'streaming');
+                addStreamingMessage(targetSessionId, data.agentMessageId);
+                break;
+              }
               if (data.agentMessageId && eventType) {
                 addAgentEvent(data.agentMessageId, {
                   id: 'ae-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),

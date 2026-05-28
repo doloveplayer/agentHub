@@ -460,9 +460,20 @@ async function handleChatMessage(
       // REPL path: reuse the persistent provider
       replProvider.updateTrustMode(trustMode);
       agentCurrentMessage.set(agentNameForProc, mention.messageId);
+
+      // Register in agentStates so stop/pause works and done handler can decrement count.
+      const replProcInfo = agentProcesses.get(sessionId)?.get(agentNameForProc);
+      if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
+      agentStates.get(sessionId)!.set(mention.messageId, {
+        process: replProvider, timer: setTimeout(() => {}, config.agent.timeoutMs),
+        agentId: replProcInfo?.agentId || '', agentName: agentNameForProc,
+      });
+
       console.log(`[ws] REPL sendPrompt: session=${sessionId} agent=${agentNameForProc} msg=${mention.messageId}`);
       try {
         replProvider.sendPrompt(agentPrompt);
+        // Notify frontend that agent is now actively processing (transition from queued → running)
+        broadcast(sessionId, { type: 'agent_status', status: 'running', agentMessageId: mention.messageId, timestamp: Date.now() });
       } catch (err: any) {
         console.error(`[ws] REPL sendPrompt failed: ${err.message}`);
         broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed: ${err.message}` });
@@ -514,6 +525,15 @@ async function activateSoloAgent(
         agentNameToType.set(agent.name, agent.name);
         AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.settings as Record<string, unknown> | null);
         console.log(`[ws] Solo agent activated: ${agentName} for session=${sessionId}`);
+
+        // If this done is for a user message (not activation), release concurrency slot
+        const currentMsgId = agentCurrentMessage.get(agent.name);
+        if (currentMsgId) {
+          clearRunningAgent(sessionId, currentMsgId);
+          agentCurrentMessage.delete(agent.name);
+          drainPendingQueue();
+          drainPerSessionQueue(sessionId);
+        }
         resolve();
       }
       if (event.type === 'error') {
@@ -800,6 +820,24 @@ export function attachWebSocket(server: Server): void {
   const wss = new WebSocketServer({ server, path: '/ws' });
   wss.on('connection', (ws: WebSocket, request) => handleConnection(ws, request));
   console.log('[ws] WebSocket server attached on /ws');
+
+  // Queue heartbeat: send position updates every 10s to sessions with queued agents
+  setInterval(() => {
+    if (pendingAgentQueue.length === 0) return;
+    const now = Date.now();
+    for (let i = 0; i < pendingAgentQueue.length; i++) {
+      const req = pendingAgentQueue[i];
+      const waitMs = now - req.enqueuedAt;
+      broadcast(req.sessionId, {
+        type: 'agent_queue_heartbeat',
+        agentMessageId: req.mention.messageId,
+        position: i + 1,
+        totalQueued: pendingAgentQueue.length,
+        waitSeconds: Math.round(waitMs / 1000),
+        timestamp: now,
+      });
+    }
+  }, 10_000);
 }
 
 export function handleWebSocket(ws: WebSocket, request: any): void {
@@ -992,6 +1030,11 @@ async function preActivateGroupAgents(
               }
             }
             agentCoordinator.onAgentDone({ sessionId, agentName, agentType: agentName, messageId: msgId, hostWorkDir: sandbox.hostWorkDir, resolveAgent: (t: string) => resolveAgentNameInSession(sessionId, t), broadcast }, event.exitCode ?? 0, doneContent.slice(0, 200));
+            // Release concurrency slot and drain waiting queues
+            clearRunningAgent(sessionId, msgId);
+            agentCurrentMessage.delete(agentName);
+            drainPendingQueue();
+            drainPerSessionQueue(sessionId);
             break;
           }
           case 'error':

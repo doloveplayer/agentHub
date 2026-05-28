@@ -8,14 +8,15 @@ datasource db {
 }
 
 model User {
-  id        String    @id @default(uuid())
-  githubId  Int       @unique
+  id        String        @id @default(uuid())
+  githubId  Int           @unique
   login     String
   avatarUrl String
   email     String?
   sessions  Session[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  settings  UserSettings?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
 }
 
 model Session {
@@ -80,4 +81,21 @@ model PlanExecution {
   @@unique([sessionId, planId])
   @@index([sessionId])
   @@index([planId])
+}
+
+model UserSettings {
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme                String   @default("dark")
+  notificationsEnabled Boolean  @default(true)
+  avatarUrl            String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model GlobalConfig {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }
