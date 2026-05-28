@@ -194,12 +194,45 @@ async function startReplForTask(
     const { ProviderFactory } = await import('../agent/providers/factory.js');
     const provider = ProviderFactory.create('claude-code');
 
+    // Create message and register state BEFORE provider.start(),
+    // so task_assigned reaches the frontend before any stream_chunk events.
+    const taskMsg = await prisma.message.create({
+      data: { id: taskMsgId, sessionId, senderType: 'agent', agentId: agent.id, content: '', status: 'streaming' },
+    }).catch(() => null);
+    if (taskMsg) {
+      if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
+      agentStates.get(sessionId)!.set(taskMsg.id, { process: provider, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id, agentName });
+      incRunningAgentCount();
+    }
+    if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
+    agentProcesses.get(sessionId)!.set(agentName, {
+      provider, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id,
+    });
+    agentCurrentMessage.set(agentName, taskMsgId);
+    broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
+
     let output = '';
     provider.onEvent((event) => {
       switch (event.type) {
         case 'thinking':
           output += event.content || '';
           broadcast(sessionId, { type: 'stream_chunk', content: event.content || '', agentMessageId: taskMsgId });
+          broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: (event.content || '').slice(0, 120) }, agentMessageId: taskMsgId, timestamp: Date.now() });
+          break;
+        case 'tool_use':
+          broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: (event as any).toolName, inputPreview: JSON.stringify((event as any).input || {}).slice(0, 80) }, agentMessageId: taskMsgId, timestamp: Date.now() });
+          break;
+        case 'tool_result':
+          broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { resultPreview: ((event as any).content || '').slice(0, 80) }, agentMessageId: taskMsgId, timestamp: Date.now() });
+          break;
+        case 'token_usage':
+          stateTracker.updateTokenUsage(taskMsgId, {
+            input: (event as any).inputTokens || 0,
+            output: (event as any).outputTokens || 0,
+            cacheRead: (event as any).cacheReadTokens || 0,
+            cacheCreate: (event as any).cacheCreateTokens || 0,
+          });
+          broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input: (event as any).inputTokens || 0, output: (event as any).outputTokens || 0, cacheRead: (event as any).cacheReadTokens || 0, cacheCreate: (event as any).cacheCreateTokens || 0, contextPct: 0 } }, agentMessageId: taskMsgId, timestamp: Date.now() });
           break;
         case 'done':
           broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent: output, exitCode: event.exitCode ?? 0 });
@@ -221,26 +254,10 @@ async function startReplForTask(
       }
     });
 
+    console.log(`[ws] Task REPL started: agent=${agentName} task=${task.id}`);
     await provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
       agentName, hostWorkDir: sandbox.hostWorkDir, trustMode: true,
     });
-
-    if (!agentProcesses.has(sessionId)) agentProcesses.set(sessionId, new Map());
-    agentProcesses.get(sessionId)!.set(agentName, {
-      provider, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id,
-    });
-    agentCurrentMessage.set(agentName, taskMsgId);
-
-    const taskMsg = await prisma.message.create({
-      data: { id: taskMsgId, sessionId, senderType: 'agent', agentId: agent.id, content: '', status: 'streaming' },
-    }).catch(() => null);
-    if (taskMsg) {
-      if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
-      agentStates.get(sessionId)!.set(taskMsg.id, { process: provider, timer: setTimeout(() => {}, config.agent.timeoutMs), agentId: agent.id, agentName });
-      incRunningAgentCount();
-    }
-    broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
-    console.log(`[ws] Task REPL started: agent=${agentName} task=${task.id}`);
   } catch (err: any) {
     console.error(`[ws] Task REPL start failed: ${err.message}`);
     broadcast(sessionId, { type: 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: `Failed to start: ${err.message}` });
