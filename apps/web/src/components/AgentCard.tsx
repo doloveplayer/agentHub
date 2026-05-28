@@ -33,7 +33,6 @@ interface Props {
   onStop?: () => void;
   agentName?: string;
   collapsed?: boolean;
-  viewMode?: 'detailed' | 'aggregated' | 'errors';
 }
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
@@ -42,10 +41,11 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   idle:    { label: '空闲', cls: 'bg-hub-muted/20 text-hub-muted' },
 };
 
-export function AgentCard({ agentId, displayName, status, events, onStop, agentName, collapsed, viewMode }: Props) {
+export function AgentCard({ agentId, displayName, status, events, onStop, agentName, collapsed }: Props) {
   const [activeFace, setActiveFace] = useState(0);
   const [expanded, setExpanded] = useState(true);
   const [fading, setFading] = useState(false);
+  const inboxCount = useAppStore(s => agentName ? (s.inboxNotifications[agentName] || 0) : 0);
 
   useEffect(() => {
     if (status === 'running') setExpanded(true);
@@ -114,6 +114,16 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0 ${badge.cls}`}>
           {badge.label}
         </span>
+        {/* Inbox notification badge */}
+        {inboxCount > 0 && (
+          <span
+            className="text-[10px] px-1.5 py-0.5 rounded-full bg-hub-accent/20 text-hub-accent font-bold cursor-pointer hover:bg-hub-accent/30 transition"
+            title={`${inboxCount} unread messages from other agents`}
+            onClick={(e) => { e.stopPropagation(); useAppStore.getState().clearInboxNotifications(agentName!); }}
+          >
+            {inboxCount}
+          </span>
+        )}
         {/* Dot indicators */}
         <div className="flex items-center gap-1 ml-auto flex-shrink-0">
           {[0, 1, 2].map((face) => (

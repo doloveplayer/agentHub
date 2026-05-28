@@ -144,7 +144,6 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask }: P
                 status={status}
                 events={events}
                 onStop={runningMsg && onStopAgent ? () => onStopAgent(runningMsg.id) : undefined}
-                viewMode={viewMode}
                 collapsed={collapsed}
               />
               );

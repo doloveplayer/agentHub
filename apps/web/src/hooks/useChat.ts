@@ -3,18 +3,8 @@ import { useAppStore } from '../store/appStore';
 import type { AgentEvent } from '../store/appStore';
 import { api } from '../lib/api';
 import { parseMentions } from '../lib/mentionParser';
+import { safeContent } from '../lib/text';
 import type { Message, AgentConfig } from '@agenthub/shared';
-
-/** Safely convert any value to a string — prevents `[object Object]` when stream_chunk carries a non-string payload. */
-function safeContent(value: unknown): string {
-  if (typeof value === 'string') return value;
-  if (value === null || value === undefined) return '';
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
 
 const socketPool = new Map<string, WebSocket>();
 
@@ -38,7 +28,7 @@ export function useChat(sessionId: string) {
   const agents = useAppStore((s) => s.agents);
   const trustMode = useAppStore((s) => s.trustMode);
   const orchestrationMode = useAppStore((s) => s.orchestrationMode);
-  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addSecurityReport, addReviewReport, addToast } = useAppStore();
+  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addReviewReport, addToast } = useAppStore();
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {
     if (!token || !sessionId) return Promise.reject(new Error('No token or sessionId'));
@@ -389,16 +379,6 @@ export function useChat(sessionId: string) {
               if (data.report) {
                 addTestReport(sessionId, {
                   id: 'test-' + Date.now(),
-                  report: data.report,
-                  exitCode: data.exitCode ?? 0,
-                  timestamp: data.timestamp || Date.now(),
-                });
-              }
-              break;
-            case 'security_report':
-              if (data.report) {
-                addSecurityReport(sessionId, {
-                  id: 'sec-' + Date.now(),
                   report: data.report,
                   exitCode: data.exitCode ?? 0,
                   timestamp: data.timestamp || Date.now(),

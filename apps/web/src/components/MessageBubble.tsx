@@ -6,17 +6,7 @@ import remarkGfm from 'remark-gfm';
 import type { Message } from '@agenthub/shared';
 import { agentColor } from './AgentMentionPopup';
 import { safeMarkdownUrl } from '../lib/markdown';
-
-/** Safely convert any value to a displayable string — prevents `[object Object]` rendering. */
-function safeContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (content === null || content === undefined) return '';
-  try {
-    return JSON.stringify(content, null, 2);
-  } catch {
-    return String(content);
-  }
-}
+import { safeContent } from '../lib/text';
 
 interface Props {
   message: Message;

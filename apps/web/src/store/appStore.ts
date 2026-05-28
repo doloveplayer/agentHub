@@ -55,13 +55,6 @@ export interface TestReportState {
   timestamp: number;
 }
 
-export interface SecurityReportState {
-  id: string;
-  report: any;
-  exitCode: number;
-  timestamp: number;
-}
-
 export interface ReviewReportState {
   id: string;
   report: any;
@@ -92,7 +85,6 @@ interface AppState {
   diffCards: Record<string, DiffCardState[]>;
   deploymentCards: Record<string, DeploymentCardState[]>;
   testReports: Record<string, TestReportState[]>;
-  securityReports: Record<string, SecurityReportState[]>;
   reviewReports: Record<string, ReviewReportState[]>;
   setPlanSummary: (planId: string, summary: { total: number; completed: number; failed: number; fileChanges: string[]; timestamp: number }) => void;
 
@@ -117,7 +109,6 @@ interface AppState {
   addDiffCard: (sessionId: string, card: DiffCardState) => void;
   upsertDeploymentCard: (sessionId: string, card: Omit<DeploymentCardState, 'logs' | 'updatedAt'> & { log?: string; timestamp?: number }) => void;
   addTestReport: (sessionId: string, report: TestReportState) => void;
-  addSecurityReport: (sessionId: string, report: SecurityReportState) => void;
   addReviewReport: (sessionId: string, report: ReviewReportState) => void;
   setTaskAgent: (planId: string, taskId: string, agentId: string, agentName: string) => void;
   agentCurrentTask: Record<string, { planId: string; taskId: string; title: string } | null>;
@@ -167,7 +158,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   diffCards: {},
   deploymentCards: {},
   testReports: {},
-  securityReports: {},
   reviewReports: {},
   agentCurrentTask: {},
   agentTaskCounts: {},
@@ -327,9 +317,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addTestReport: (sessionId, report) =>
     set((state) => ({ testReports: { ...state.testReports, [sessionId]: [...(state.testReports[sessionId] ?? []), report] } })),
-
-  addSecurityReport: (sessionId, report) =>
-    set((state) => ({ securityReports: { ...state.securityReports, [sessionId]: [...(state.securityReports[sessionId] ?? []), report] } })),
 
   addReviewReport: (sessionId, report) =>
     set((state) => ({ reviewReports: { ...state.reviewReports, [sessionId]: [...(state.reviewReports[sessionId] ?? []), report] } })),

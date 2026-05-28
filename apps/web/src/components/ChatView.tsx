@@ -13,33 +13,15 @@ import { ConfirmationPanel } from './ConfirmationPanel';
 import { DiffCard } from './DiffCard';
 import { DeployCard } from './DeployCard';
 import { TestReportCard } from './TestReportCard';
-import { SecurityCard } from './SecurityCard';
 import { ReviewCard } from './ReviewCard';
 import type { Message, AgentConfig } from '@agenthub/shared';
+import { safeContent, formatTokens } from '../lib/text';
 
 const EMPTY_MESSAGES: Message[] = [];
 const EMPTY_DIFF_CARDS: any[] = [];
 const EMPTY_DEPLOYMENT_CARDS: any[] = [];
 const EMPTY_TEST_REPORTS: any[] = [];
-const EMPTY_SECURITY_REPORTS: any[] = [];
 const EMPTY_REVIEW_REPORTS: any[] = [];
-
-/**
- * Safely convert any value to a displayable string.
- * Objects/arrays are JSON-stringified; primitives are cast normally;
- * null/undefined become empty string.
- * This prevents `[object Object]` when a non-string value ends up
- * in message content (e.g. from a stream_chunk carrying an object payload).
- */
-function safeContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (content === null || content === undefined) return '';
-  try {
-    return JSON.stringify(content, null, 2);
-  } catch {
-    return String(content);
-  }
-}
 
 /** Renders ConfirmationPanel below a Planner agent's message (DAG lives in sidebar Tasks tab) */
 function PlanRenderer({
@@ -116,7 +98,6 @@ export function ChatView() {
   const diffCards = useAppStore((s) => activeSessionId ? (s.diffCards[activeSessionId] ?? EMPTY_DIFF_CARDS) : EMPTY_DIFF_CARDS);
   const deploymentCards = useAppStore((s) => activeSessionId ? (s.deploymentCards[activeSessionId] ?? EMPTY_DEPLOYMENT_CARDS) : EMPTY_DEPLOYMENT_CARDS);
   const testReports = useAppStore((s) => activeSessionId ? (s.testReports[activeSessionId] ?? EMPTY_TEST_REPORTS) : EMPTY_TEST_REPORTS);
-  const securityReports = useAppStore((s) => activeSessionId ? (s.securityReports[activeSessionId] ?? EMPTY_SECURITY_REPORTS) : EMPTY_SECURITY_REPORTS);
   const reviewReports = useAppStore((s) => activeSessionId ? (s.reviewReports[activeSessionId] ?? EMPTY_REVIEW_REPORTS) : EMPTY_REVIEW_REPORTS);
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
   const { send, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan } = useChat(activeSessionId ?? '');
@@ -203,12 +184,6 @@ export function ChatView() {
       </div>
     );
   };
-
-  function formatTokens(n: number): string {
-    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-    if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
-    return String(n);
-  }
 
   const sessionPermissionModes = useAppStore((s) => s.sessionPermissionModes);
   const setSessionPermissionMode = useAppStore((s) => s.setSessionPermissionMode);
@@ -407,7 +382,6 @@ export function ChatView() {
             <DeployCard key={card.deploymentId} sessionId={activeSessionId} deployment={card} />
           ))}
           {testReports.map((item) => <TestReportCard key={item.id} report={item.report} />)}
-          {securityReports.map((item) => <SecurityCard key={item.id} sessionId={activeSessionId} report={item.report} />)}
           {reviewReports.map((item) => <ReviewCard key={item.id} report={item.report} />)}
           <div ref={bottomRef} />
         </div>

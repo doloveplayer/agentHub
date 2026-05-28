@@ -1,4 +1,5 @@
 import type { AgentEvent } from '../store/appStore';
+import { formatTokens } from '../lib/text';
 
 // ---- Face 1: Business Card ----
 export function FaceBusinessCard({
@@ -74,11 +75,6 @@ export function FaceTerminalLog({ events }: { events: AgentEvent[] }) {
 }
 
 // ---- Face 3: Dashboard ----
-function formatTokens(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
-  return String(n);
-}
-
 export function FaceDashboard({
   model,
   contextPct,
