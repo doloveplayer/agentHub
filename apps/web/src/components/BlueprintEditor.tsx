@@ -24,7 +24,7 @@ const PALETTE_NODES: PaletteNode[] = [
   { type: 'DeployAgent', label: 'Deploy', icon: Rocket, color: '#8b5cf6', description: 'Deploy to target platform' },
   { type: 'FrontendAgent', label: 'Frontend', icon: Globe, color: '#ec4899', description: 'Build UI components' },
   { type: 'BackendAgent', label: 'Backend', icon: Shield, color: '#14b8a6', description: 'Build API endpoints' },
-  { type: 'DevOpsAgent', label: 'DevOps', icon: Upload, color: '#f97316', description: 'CI/CD and infrastructure' },
+
 ];
 
 // ---- Edge condition types ----

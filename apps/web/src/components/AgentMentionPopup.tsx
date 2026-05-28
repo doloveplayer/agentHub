@@ -14,7 +14,7 @@ export function agentColor(name: string): string {
   const colors: Record<string, string> = {
     'code-agent': '#8b5cf6',
     'review-agent': '#38a169',
-    'devops-agent': '#ea580c',
+
     'planner': '#4fd1c5',
     'test-agent': '#569cd6',
     'security-agent': '#d69e2e',

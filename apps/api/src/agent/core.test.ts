@@ -123,8 +123,8 @@ describe('toTaskStates', () => {
     const plan = {
       planTitle: 'Test', summary: 's',
       tasks: [
-        { id: 'task-1', title: 'T1', description: 'd1', agentType: 'CodeAgent' as const, dependsOn: [], expectedOutput: 'f1', priority: 'high' as const },
-        { id: 'task-2', title: 'T2', description: 'd2', agentType: 'ReviewAgent' as const, dependsOn: ['task-1'], expectedOutput: 'f2', priority: 'medium' as const },
+        { id: 'task-1', title: 'T1', description: 'd1', agentType: 'code-agent' as const, dependsOn: [], expectedOutput: 'f1', priority: 'high' as const },
+        { id: 'task-2', title: 'T2', description: 'd2', agentType: 'review-agent' as const, dependsOn: ['task-1'], expectedOutput: 'f2', priority: 'medium' as const },
       ],
     };
     const states = toTaskStates(plan, 'plan-123');
