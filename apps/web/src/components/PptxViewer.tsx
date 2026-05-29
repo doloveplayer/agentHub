@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import { buildQuotePrompt, type QuotePayload } from '../lib/quoteContext';
 
 interface Props {
   /** PPTX file as base64 data or URL */
@@ -16,6 +17,9 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
   const [scale, setScale] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [dragEnd, setDragEnd] = useState<{ x: number; y: number } | null>(null);
+  const [selecting, setSelecting] = useState(false);
 
   // Load PPTX and initialize previewer
   useEffect(() => {
@@ -109,6 +113,52 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
     setScale((s) => Math.max(0.5, +(s - 0.1).toFixed(1)));
   }, []);
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragStart({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    setSelecting(true);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!selecting) return;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    setDragEnd({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  };
+
+  const handleMouseUp = () => {
+    setSelecting(false);
+    if (!dragStart || !dragEnd || !containerRef.current) return;
+
+    const canvas = containerRef.current.querySelector('canvas');
+    if (!canvas) return;
+
+    const x = Math.min(dragStart.x, dragEnd.x) / scale;
+    const y = Math.min(dragStart.y, dragEnd.y) / scale;
+    const w = Math.abs(dragEnd.x - dragStart.x) / scale;
+    const h = Math.abs(dragEnd.y - dragStart.y) / scale;
+
+    if (w < 10 || h < 10) { setDragStart(null); setDragEnd(null); return; }
+
+    const cropCanvas = document.createElement('canvas');
+    cropCanvas.width = w;
+    cropCanvas.height = h;
+    const ctx = cropCanvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+      const dataUrl = cropCanvas.toDataURL('image/png');
+      const payload: QuotePayload = {
+        text: `[PPT 幻灯片 ${currentSlide + 1} 截图区域]`,
+        sourceType: 'ppt',
+        contextMeta: { filePath: `slide-${currentSlide + 1}` },
+      };
+      const prompt = buildQuotePrompt(payload) + `\n\n截图数据:\n${dataUrl}`;
+      window.dispatchEvent(new CustomEvent('agenthub:prompt-insert', { detail: { prompt } }));
+    }
+    setDragStart(null);
+    setDragEnd(null);
+  };
+
   return (
     <div className="rounded border border-hub bg-hub-input overflow-hidden">
       {/* Toolbar */}
@@ -156,7 +206,13 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
       </div>
 
       {/* Slide viewport */}
-      <div className="relative overflow-auto" style={{ maxHeight: 500 }}>
+      <div
+        className="relative overflow-auto cursor-crosshair"
+        style={{ maxHeight: 500 }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+      >
         {loading && (
           <div className="flex items-center justify-center py-8 text-xs text-hub-muted">
             Loading slides...
@@ -174,6 +230,18 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
             transformOrigin: 'top left',
           }}
         />
+        {/* Selection overlay */}
+        {dragStart && dragEnd && (
+          <div
+            className="absolute border-2 border-hub-accent bg-hub-accent/10 pointer-events-none"
+            style={{
+              left: Math.min(dragStart.x, dragEnd.x),
+              top: Math.min(dragStart.y, dragEnd.y),
+              width: Math.abs(dragEnd.x - dragStart.x),
+              height: Math.abs(dragEnd.y - dragStart.y),
+            }}
+          />
+        )}
       </div>
     </div>
   );
