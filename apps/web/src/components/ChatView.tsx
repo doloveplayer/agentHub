@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
 import { useChat } from '../hooks/useChat';
@@ -8,9 +8,11 @@ import { MessageInput } from './MessageInput';
 import { MessageActions } from './MessageActions';
 import { AgentStatusPanel } from './AgentStatusPanel';
 import { agentColor } from './AgentMentionPopup';
-import { Shield, AlertTriangle, ChevronDown, Lock, Eye, Sparkles, Zap, Settings } from 'lucide-react';
+import { Shield, AlertTriangle, ChevronDown, Lock, Eye, Sparkles, Zap, Settings, Plus, Minus } from 'lucide-react';
 import { ConfirmationPanel } from './ConfirmationPanel';
 import { SettingsPanel } from './SettingsPanel';
+import { AddAgentModal } from './AddAgentModal';
+import { RemoveAgentModal } from './RemoveAgentModal';
 import { DiffCard } from './DiffCard';
 import { DeployCard } from './DeployCard';
 import { TestReportCard } from './TestReportCard';
@@ -117,6 +119,17 @@ export function ChatView() {
     ?.map((sa: any) => agentMap.get(sa.agentId))
     .filter(Boolean) ?? [];
 
+  // @mention agents: in group mode, restrict to session members; in solo, show all
+  const mentionableAgents = useMemo(() => {
+    if (!activeSession || activeSession.type !== 'group') {
+      return agents;
+    }
+    const sessionAgentIds = new Set(
+      ((activeSession as any)?.agents || []).map((sa: any) => sa.agentId)
+    );
+    return agents.filter((a) => sessionAgentIds.has(a.id));
+  }, [activeSession, agents]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, agentEvents]);
@@ -196,6 +209,8 @@ export function ChatView() {
   const [showPermDropdown, setShowPermDropdown] = useState(false);
   const [showTrustWarning, setShowTrustWarning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showAddAgents, setShowAddAgents] = useState(false);
+  const [showRemoveAgents, setShowRemoveAgents] = useState(false);
 
   const getPermissionMode = (): string => {
     if (!activeSessionId) return 'ask';
@@ -297,6 +312,24 @@ export function ChatView() {
       <div className="flex-1 flex flex-col min-w-0">
         {/* Session header with permission mode indicator */}
         <div className="px-4 py-2 border-b border-hub flex items-center gap-2 bg-hub-surface relative z-10">
+          {/* Add/Remove agent buttons — only for group sessions */}
+          {activeSession?.type === 'group' && (
+            <>
+              <button onClick={() => setShowAddAgents(true)}
+                className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-hub-accent/30 text-hub-accent hover:bg-hub-accent/10 transition shrink-0"
+                title="Add agent to group"
+              >
+                <Plus className="w-3 h-3" /> Add
+              </button>
+              <button onClick={() => setShowRemoveAgents(true)}
+                className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-hub-danger/30 text-hub-danger hover:bg-hub-danger/10 transition shrink-0"
+                title="Remove agent from group"
+              >
+                <Minus className="w-3 h-3" /> Rmv
+              </button>
+            </>
+          )}
+
           {/* Session title */}
           <span className="text-xs text-hub-secondary font-medium truncate flex-1 min-w-0">
             {activeSession?.title ?? 'Session'}
@@ -455,6 +488,12 @@ export function ChatView() {
         </div>
       )}
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {activeSession?.type === 'group' && (
+        <>
+          <AddAgentModal sessionId={activeSessionId} open={showAddAgents} onClose={() => setShowAddAgents(false)} />
+          <RemoveAgentModal sessionId={activeSessionId} open={showRemoveAgents} onClose={() => setShowRemoveAgents(false)} />
+        </>
+      )}
     </div>
   );
 }
