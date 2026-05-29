@@ -25,6 +25,7 @@ import securityRoutes from './routes/security.js';
 import reviewRoutes from './routes/review.js';
 import settingsRoutes from './routes/settings.js';
 import avatarRoutes from './routes/avatar.js';
+import { seedAgentTemplates } from './defaultAgents.js';
 
 // Startup cleanup: remove orphaned sandbox containers and directories
 // from previous backend runs
@@ -69,6 +70,7 @@ async function seedDefaultAgents() {
 }
 
 await seedDefaultAgents();
+await seedAgentTemplates();
 await seedDefaultAdmin();
 
 // Initialize agent providers

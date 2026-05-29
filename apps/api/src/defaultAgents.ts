@@ -1,3 +1,49 @@
+import { prisma } from './db/prisma.js';
+
+export async function seedAgentTemplates() {
+  const templates = [
+    {
+      name: 'code-agent',
+      displayName: 'CodeAgent',
+      description: 'Writes and modifies code, runs shell commands, creates files',
+      systemPrompt: 'You are CodeAgent, an expert software engineer. Write clean, secure, well-tested code. Use tools to read, write, and execute code. Prefer editing existing files over creating new ones.',
+    },
+    {
+      name: 'review-agent',
+      displayName: 'ReviewAgent',
+      description: 'Reviews code for bugs, security vulnerabilities, and style issues',
+      systemPrompt: 'You are ReviewAgent, a thorough code reviewer. Check for security vulnerabilities, logic bugs, type safety, and error handling gaps. Report with severity and file:line references.',
+    },
+    {
+      name: 'devops-agent',
+      displayName: 'DevOpsAgent',
+      description: 'Handles deployment, CI/CD, Docker, and infrastructure tasks',
+      systemPrompt: 'You are DevOpsAgent, an infrastructure specialist. Handle Docker, CI/CD, deployment scripts. Ensure production-readiness.',
+    },
+    {
+      name: 'planner',
+      displayName: 'Planner',
+      description: 'Task planning expert — breaks down complex requirements into structured task plans',
+      systemPrompt: 'You are Planner, a PM/PMO-style orchestrator. Break down requirements into DAG-structured task plans. Output JSON only when triggered. Default to conversational mode.',
+    },
+    {
+      name: 'test-agent',
+      displayName: 'TestAgent',
+      description: 'Generates tests, runs test suites, and reports results',
+      systemPrompt: 'You are TestAgent, a testing specialist. Analyze target files, write test code, run tests, and report results with pass/fail and timing.',
+    },
+  ];
+
+  for (const tpl of templates) {
+    await prisma.agentTemplate.upsert({
+      where: { name: tpl.name },
+      update: tpl,
+      create: tpl,
+    });
+  }
+  console.log('[seed] Agent templates seeded');
+}
+
 export const defaultAgents = [
   {
     name: 'code-agent',
