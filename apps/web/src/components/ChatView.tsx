@@ -120,6 +120,8 @@ export function ChatView() {
       id: sa.agentId,
       name: sa.name,
       displayName: sa.displayName,
+      description: '',
+      systemPrompt: '',
     } as AgentConfig)
     ?? [];
 

@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, MessageSquare, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil, ChevronDown, ChevronRight, Bot, Save } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
+import type { Session, AgentConfig } from '@agenthub/shared';
 
 interface Props { onCloseMobile?: () => void; }
 
@@ -9,7 +10,7 @@ type LoadState = 'loading' | 'error' | 'done';
 
 interface AgentGroup {
   agent: { id: string; name: string; displayName: string };
-  sessions: any[];
+  sessions: Session[];
 }
 
 export function SessionList({ onCloseMobile }: Props) {
@@ -74,7 +75,7 @@ export function SessionList({ onCloseMobile }: Props) {
 
   // Agent store lookup for inline editing
   const agentMap = useMemo(() => {
-    const m = new Map<string, any>();
+    const m = new Map<string, AgentConfig>();
     for (const a of agents) m.set(a.id, a);
     return m;
   }, [agents]);
@@ -210,7 +211,10 @@ export function SessionList({ onCloseMobile }: Props) {
     });
   };
 
+  const [agentEditError, setAgentEditError] = useState<string | null>(null);
+
   const handleSaveAgent = async (agentId: string) => {
+    setAgentEditError(null);
     try {
       await api.updateAgent(agentId, {
         displayName: agentEdit.displayName,
@@ -234,10 +238,11 @@ export function SessionList({ onCloseMobile }: Props) {
         });
         setSessions(updatedSessions);
       }
-    } catch (err) {
+      setEditingAgentId(null);
+    } catch (err: any) {
       console.error('Failed to update agent:', err);
+      setAgentEditError(err.message || 'Failed to save');
     }
-    setEditingAgentId(null);
   };
 
   const handleCancelEditAgent = () => {
@@ -268,14 +273,15 @@ export function SessionList({ onCloseMobile }: Props) {
 
   // --- Render helpers ---
 
-  const renderSessionRow = (s: any) => (
+  const renderSessionRow = (s: any, opts?: { indent?: boolean; icon?: React.ReactNode }) => (
     <div
       key={s.id}
       onClick={() => handleSelect(s.id)}
-      className={`pl-8 pr-4 py-2.5 cursor-pointer hover:bg-hub-hover flex items-start gap-2 group transition-all duration-hub border-l-[3px] ${
+      className={`${opts?.indent === false ? 'px-4' : 'pl-8 pr-4'} py-2.5 cursor-pointer hover:bg-hub-hover flex items-start gap-2 group transition-all duration-hub border-l-[3px] ${
         activeSessionId === s.id ? 'bg-hub-active border-l-hub-accent' : 'border-l-transparent'
       }`}
     >
+      {opts?.icon && <span className="mt-0.5 shrink-0">{opts.icon}</span>}
       <div className="min-w-0 flex-1">
         <div className="text-[13px] text-hub-secondary truncate flex items-center gap-1.5">
           {editingSessionId === s.id ? (
@@ -393,6 +399,11 @@ export function SessionList({ onCloseMobile }: Props) {
                 className="w-full mt-0.5 px-2 py-1 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent resize-none font-mono"
               />
             </div>
+            {agentEditError && (
+              <div className="text-[11px] text-hub-danger bg-hub-danger/10 px-2 py-1 rounded">
+                {agentEditError}
+              </div>
+            )}
             <div className="flex gap-2 justify-end">
               <button
                 onClick={handleCancelEditAgent}
@@ -411,7 +422,7 @@ export function SessionList({ onCloseMobile }: Props) {
         )}
 
         {/* Sessions under this agent */}
-        {!isCollapsed && agentSessions.map(renderSessionRow)}
+        {!isCollapsed && agentSessions.map((s) => renderSessionRow(s))}
       </div>
     );
   };
@@ -546,62 +557,9 @@ export function SessionList({ onCloseMobile }: Props) {
                   </span>
                 </button>
                 {!collapsedSections.has('group') && groupSessions.map((s: any) => (
-                  <div
-                    key={s.id}
-                    onClick={() => handleSelect(s.id)}
-                    className={`px-4 py-2.5 cursor-pointer hover:bg-hub-hover flex items-start gap-2.5 group transition-all duration-hub border-l-[3px] ${
-                      activeSessionId === s.id ? 'bg-hub-active border-l-hub-accent' : 'border-l-transparent'
-                    }`}
-                  >
-                    <Users className="w-4 h-4 mt-0.5 text-hub-accent shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[13px] text-hub-secondary truncate flex items-center gap-1.5">
-                        {editingSessionId === s.id ? (
-                          <input
-                            value={editingTitle}
-                            onChange={(e) => setEditingTitle(e.target.value)}
-                            onBlur={() => handleSaveRenameSession(s.id)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRenameSession(s.id); if (e.key === 'Escape') { setEditingSessionId(null); setEditingTitle(''); } }}
-                            autoFocus
-                            onClick={(e) => e.stopPropagation()}
-                            className="bg-hub-input border border-hub-accent rounded px-1.5 py-0.5 text-[13px] text-hub-primary w-full outline-none"
-                          />
-                        ) : (
-                          <>
-                            <span className="truncate">{s.title}</span>
-                            <button
-                              onClick={(e) => handleStartRenameSession(s.id, s.title, e)}
-                              className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-hub-hover rounded shrink-0 transition"
-                              title="Rename"
-                            >
-                              <Pencil className="w-3 h-3 text-hub-tertiary" />
-                            </button>
-                          </>
-                        )}
-                        {s.agents && (
-                          <span className="text-[10px] text-hub-tertiary shrink-0">
-                            ({s.agents.length})
-                          </span>
-                        )}
-                        {(unreadCounts[s.id] || 0) > 0 && activeSessionId !== s.id && (
-                          <span className="ml-auto bg-hub-accent text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0">
-                            {unreadCounts[s.id] > 99 ? '99+' : unreadCounts[s.id]}
-                          </span>
-                        )}
-                      </div>
-                      {s.lastMessage && (
-                        <div className="text-xs text-hub-tertiary truncate mt-0.5">
-                          {s.lastMessage.senderType === 'human' ? 'You: ' : ''}{s.lastMessage.content}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      onClick={(e) => handleDeleteSessionClick(s.id, s.title, e)}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-hub-hover rounded-lg shrink-0 transition"
-                    >
-                      <Trash2 className="w-3 h-3 text-hub-tertiary" />
-                    </button>
-                  </div>
+                  <React.Fragment key={s.id}>
+                    {renderSessionRow(s, { indent: false, icon: <Users className="w-4 h-4 text-hub-accent" /> })}
+                  </React.Fragment>
                 ))}
               </div>
             )}
