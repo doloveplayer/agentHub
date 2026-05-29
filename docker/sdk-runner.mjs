@@ -13,6 +13,8 @@
  *   AGENTHUB_RESUME_SESSION    session ID for --resume (optional)
  *   AGENTHUB_MAX_TURNS         max turns (optional)
  *   AGENTHUB_EFFORT            SDK effort level (optional)
+ *   AGENTHUB_THINKING_EFFORT   thinking effort level (default: "high")
+ *   AGENTHUB_THINKING_BUDGET   thinking budget_tokens (default: 16000, 0 = disabled)
  */
 
 import { createRequire } from 'module';
@@ -42,7 +44,13 @@ const permissionMode = process.env.AGENTHUB_PERMISSION_MODE || 'default';
 const model = process.env.AGENTHUB_MODEL || undefined;
 const resumeSession = process.env.AGENTHUB_RESUME_SESSION || undefined;
 const maxTurns = process.env.AGENTHUB_MAX_TURNS ? parseInt(process.env.AGENTHUB_MAX_TURNS, 10) : undefined;
-const effort = process.env.AGENTHUB_EFFORT || undefined;
+const effort = process.env.AGENTHUB_EFFORT || process.env.AGENTHUB_THINKING_EFFORT || undefined;
+
+// Thinking config: enabled by default with 16000 budget_tokens
+const thinkingBudget = process.env.AGENTHUB_THINKING_BUDGET
+  ? parseInt(process.env.AGENTHUB_THINKING_BUDGET, 10)
+  : 16000;
+const thinking = thinkingBudget > 0 ? { type: 'enabled', budget_tokens: thinkingBudget } : undefined;
 
 let allowedTools = [];
 if (process.env.AGENTHUB_ALLOWED_TOOLS) {
@@ -61,6 +69,7 @@ const options = {
   allowedTools,
   maxTurns,
   effort,
+  thinking,
   settingSources: ['project'],
   env: process.env,
 };

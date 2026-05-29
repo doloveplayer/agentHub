@@ -33,7 +33,8 @@ export function spawnSDKInDocker(
   // Mirror auth env vars into the container. Only pass the essential ones.
   const envVars: Record<string, string> = {};
   const passthrough = new Set([
-    'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL',
+    'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'ANTHROPIC_MODEL',
+    'ANTHROPIC_THINKING_EFFORT', 'ANTHROPIC_THINKING_BUDGET',
   ]);
   for (const key of passthrough) {
     const val = process.env[key];
@@ -42,6 +43,17 @@ export function spawnSDKInDocker(
   // Fallback: copy ANTHROPIC_AUTH_TOKEN -> ANTHROPIC_API_KEY if API_KEY is missing
   if (!envVars['ANTHROPIC_API_KEY'] && envVars['ANTHROPIC_AUTH_TOKEN']) {
     envVars['ANTHROPIC_API_KEY'] = envVars['ANTHROPIC_AUTH_TOKEN'];
+  }
+  // Forward ANTHROPIC_MODEL to sdk-runner via AGENTHUB_MODEL
+  if (envVars['ANTHROPIC_MODEL']) {
+    envVars['AGENTHUB_MODEL'] = envVars['ANTHROPIC_MODEL'];
+  }
+  // Forward thinking config to sdk-runner
+  if (envVars['ANTHROPIC_THINKING_EFFORT']) {
+    envVars['AGENTHUB_THINKING_EFFORT'] = envVars['ANTHROPIC_THINKING_EFFORT'];
+  }
+  if (envVars['ANTHROPIC_THINKING_BUDGET']) {
+    envVars['AGENTHUB_THINKING_BUDGET'] = envVars['ANTHROPIC_THINKING_BUDGET'];
   }
 
   envVars['AGENTHUB_PROMPT_FILE'] = `/workspace/${promptFile}`;

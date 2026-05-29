@@ -372,86 +372,8 @@ sessions.get('/:id/workspace', async (c) => {
   });
 });
 
-// POST /:id/agents — add agent to session
-sessions.post('/:id/agents', async (c) => {
-  const { userId } = c.get('user');
-  const sessionId = c.req.param('id');
-
-  const session = await prisma.session.findUnique({ where: { id: sessionId } });
-  if (!session) return c.json({ error: 'Session not found' }, 404);
-  if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
-
-  let body: { agentId: string };
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-
-  if (!body.agentId) return c.json({ error: 'agentId is required' }, 400);
-
-  // Check agent exists
-  const agent = await prisma.agent.findUnique({ where: { id: body.agentId } });
-  if (!agent) return c.json({ error: 'Agent not found' }, 404);
-  if (!agent.isActive) return c.json({ error: 'Agent is not active' }, 400);
-
-  // Check if already in session
-  const existing = await prisma.sessionAgent.findUnique({
-    where: { sessionId_agentId: { sessionId, agentId: body.agentId } },
-  });
-  if (existing) return c.json({ error: 'Agent already in session' }, 409);
-
-  // Add agent to session
-  const sessionAgent = await prisma.sessionAgent.create({
-    data: { sessionId, agentId: body.agentId },
-    include: { agent: { select: { id: true, name: true, displayName: true } } },
-  });
-
-  // Broadcast agent_joined event
-  broadcast(sessionId, {
-    type: 'agent_joined',
-    sessionId,
-    agent: {
-      id: sessionAgent.agent.id,
-      name: sessionAgent.agent.name,
-      displayName: sessionAgent.agent.displayName,
-    },
-    timestamp: Date.now(),
-  });
-
-  return c.json({
-    agentId: sessionAgent.agent.id,
-    name: sessionAgent.agent.name,
-    displayName: sessionAgent.agent.displayName,
-  }, 201);
-});
-
-// DELETE /:id/agents/:agentId — remove agent from session
-sessions.delete('/:id/agents/:agentId', async (c) => {
-  const { userId } = c.get('user');
-  const sessionId = c.req.param('id');
-  const agentId = c.req.param('agentId');
-
-  const session = await prisma.session.findUnique({ where: { id: sessionId } });
-  if (!session) return c.json({ error: 'Session not found' }, 404);
-  if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
-
-  try {
-    await prisma.sessionAgent.delete({
-      where: { sessionId_agentId: { sessionId, agentId } },
-    });
-
-    broadcast(sessionId, {
-      type: 'agent_left',
-      sessionId,
-      agentId,
-      timestamp: Date.now(),
-    });
-
-    return c.body(null, 204);
-  } catch (err: any) {
-    if (err.code === 'P2025') return c.json({ error: 'Agent not in session' }, 404);
-    throw err;
-  }
-});
-
 // PATCH /:id/agents/:agentId — update session-level agent config
+// (POST and DELETE for /:id/agents moved to routes/sessionAgents.ts)
 sessions.patch('/:id/agents/:agentId', async (c) => {
   const { userId } = c.get('user');
   const sessionId = c.req.param('id');

@@ -229,7 +229,6 @@ agents.delete('/:id', async (c) => {
   // Destroy container if running
   if (agent.containerId && agent.containerStatus === 'running') {
     try {
-      // @ts-expect-error - AgentContainer module may not exist yet
       const { AgentContainer } = await import('../agent/AgentContainer.js');
       await AgentContainer.destroy(agent.containerId);
     } catch { /* best-effort */ }
@@ -238,7 +237,6 @@ agents.delete('/:id', async (c) => {
   // Clean host work dir
   if (agent.hostWorkDir) {
     try {
-      // @ts-expect-error - AgentContainer module may not exist yet
       const { AgentContainer } = await import('../agent/AgentContainer.js');
       await AgentContainer.destroyHostDir(agent.id);
     } catch { /* best-effort */ }

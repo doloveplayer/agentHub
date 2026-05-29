@@ -22,6 +22,8 @@ export function AddAgentModal({ sessionId, open, onClose }: Props) {
   const sessionAgentIds = new Set(((session as any)?.agents || []).map((a: any) => a.agentId));
 
   const availableAgents = agents.filter((a) => {
+    // Only show user-created agents (not per-group system agents)
+    if ((a as any).type === 'system') return false;
     if (sessionAgentIds.has(a.id)) return false;
     if (search && !a.displayName.toLowerCase().includes(search.toLowerCase())) return false;
     return true;

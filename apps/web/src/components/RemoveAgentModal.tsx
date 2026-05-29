@@ -16,8 +16,8 @@ export function RemoveAgentModal({ sessionId, open, onClose }: Props) {
   const [removing, setRemoving] = useState<Set<string>>(new Set());
 
   const session = sessions.find((s) => s.id === sessionId);
-  const sessionAgents = (session?.agents || [])
-    .map((sa) => agents.find((a) => a.id === sa.agentId))
+  const sessionAgents = ((session as any)?.agents || [])
+    .map((sa: any) => agents.find((a) => a.id === sa.agentId))
     .filter(Boolean);
 
   const handleRemove = async (agentId: string) => {
@@ -25,6 +25,7 @@ export function RemoveAgentModal({ sessionId, open, onClose }: Props) {
     try {
       await api.removeAgentFromSession(sessionId, agentId);
       removeAgentFromSession(sessionId, agentId);
+      onClose();
     } catch (err) {
       console.error('Failed to remove agent:', err);
     } finally {
