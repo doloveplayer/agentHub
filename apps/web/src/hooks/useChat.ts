@@ -284,6 +284,32 @@ export function useChat(sessionId: string) {
                 useAppStore.getState().removeAgentFromSession(data.sessionId, data.agentId);
               }
               break;
+            case 'agent_added':
+              if (data.agentId && data.sessionId) {
+                // Refresh session agents from API
+                api.getSession(data.sessionId).then((s: any) => {
+                  useAppStore.getState().updateSessionInList(data.sessionId, { agents: s.agents });
+                }).catch(() => {});
+                // Add a system notification message
+                useAppStore.getState().addMessage(data.sessionId, {
+                  id: 'sys-' + Date.now(),
+                  sessionId: data.sessionId,
+                  senderType: 'agent',
+                  agentId: undefined,
+                  content: 'An agent was added to the group.',
+                  status: 'done',
+                  createdAt: new Date().toISOString(),
+                });
+              }
+              break;
+            case 'agent_removed':
+              if (data.agentId && data.sessionId) {
+                // Refresh session agents from API
+                api.getSession(data.sessionId).then((s: any) => {
+                  useAppStore.getState().updateSessionInList(data.sessionId, { agents: s.agents });
+                }).catch(() => {});
+              }
+              break;
             case 'inbox_wake_up':
               if (data.agentName && data.count > 0) {
                 useAppStore.getState().addInboxNotification(data.agentName);
