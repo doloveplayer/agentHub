@@ -19,6 +19,7 @@ import { parseReviewReport, parseTestOutput } from '../artifacts/ArtifactTools.j
 import { agentCoordinator } from '../agent/AgentCoordinator.js';
 import { permissionProfiles, type AgentCapability } from '../agent/PermissionProfiles.js';
 import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDetection.js';
+import { agentRuntime } from '../agent/AgentRuntime.js';
 
 import {
   sessions, sessionPermissionModes, agentStates, agentProcesses, sandboxes,
@@ -337,6 +338,12 @@ async function handleChatMessage(
   const PER_SESSION_MAX = config.agent.perSessionMax;
   const orchestrationMode = data.orchestrationMode || 'parallel';
 
+  // Build context-aware mode prefix for prompt injection
+  const sessionType = sessionTypes.get(sessionId) || 'solo';
+  const modePrefix = sessionType === 'solo'
+    ? '[Solo - 与用户一对一交流]'
+    : '[Group - 多Agent协作]';
+
   if (orchestrationMode === 'sequential' && mentions.length > 1) {
     sequentialQueues.set(sessionId, mentions.slice(1));
     mentions.splice(1);
@@ -442,52 +449,44 @@ async function handleChatMessage(
       diffAgentName,
       `Before ${diffAgentName} turn`,
     );
-    // Group session: try REPL provider first (pre-activated agents are already online).
-    // All sessions use REPL: group agents pre-activated in handleConnection,
-    // solo agents activated on-demand here.
-    let replProvider = agentProcesses.get(sessionId)?.get(agentNameForProc || '')?.provider;
-    // Don't check isAlive() — sendPrompt() spawns a new process even if the standby
-    // process has already exited. The provider is reusable as long as it's registered.
-    let useRepl = !!replProvider;
+    // Use AgentRuntime for global agent lifecycle management.
+    // Build the full prompt with mode prefix for context awareness.
+    const fullPrompt = `${modePrefix}\n\n${agentPrompt}`;
 
-    // Solo session: activate the agent on first message if not already running
-    if (!useRepl && agentNameForProc && sessionTypes.get(sessionId) !== 'group') {
-      await activateSoloAgent(sessionId, agentNameForProc, sandbox, trustMode);
-      replProvider = agentProcesses.get(sessionId)?.get(agentNameForProc)?.provider;
-      useRepl = !!replProvider;
+    if (!mention.agentId) {
+      console.error(`[ws] No agent resolved for mention in session=${sessionId}`);
+      broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: 'Agent unavailable' });
+      decRunningAgentCount();
+      drainPendingQueue();
+      drainPerSessionQueue(sessionId);
+      continue;
     }
 
-    if (useRepl && replProvider && agentNameForProc) {
-      // REPL path: reuse the persistent provider
-      replProvider.updateTrustMode(trustMode);
-      agentCurrentMessage.set(agentNameForProc, mention.messageId);
+    // Register in agentStates so stop/pause works via handleStopAgent
+    if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
+    agentStates.get(sessionId)!.set(mention.messageId, {
+      process: { write: () => {}, kill: () => {}, stop: () => {} },
+      timer: null,
+      agentId: mention.agentId,
+      agentName: agentNameForProc || undefined,
+      runtimeAgentId: mention.agentId || undefined,
+    });
 
-      // Register in agentStates so stop/pause works and done handler can decrement count.
-      const replProcInfo = agentProcesses.get(sessionId)?.get(agentNameForProc);
-      if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
-      agentStates.get(sessionId)!.set(mention.messageId, {
-        process: replProvider, timer: null,
-        agentId: replProcInfo?.agentId || '', agentName: agentNameForProc,
+    console.log(`[ws] AgentRuntime sendPrompt: session=${sessionId} agent=${mention.agentId} msg=${mention.messageId}`);
+    agentRuntime.sendPrompt(mention.agentId, sessionId, fullPrompt, mention.messageId).catch((err: any) => {
+      console.error(`[ws] AgentRuntime.sendPrompt failed: agent=${mention.agentId} session=${sessionId}`, err.message);
+      broadcast(sessionId, {
+        type: 'stream_error',
+        agentMessageId: mention.messageId,
+        error: `Agent execution failed: ${err.message}`,
       });
+      decRunningAgentCount();
+      drainPendingQueue();
+      drainPerSessionQueue(sessionId);
+    });
 
-      console.log(`[ws] REPL sendPrompt: session=${sessionId} agent=${agentNameForProc} msg=${mention.messageId}`);
-      try {
-        replProvider.sendPrompt(agentPrompt);
-        // Notify frontend that agent is now actively processing (transition from queued → running)
-        broadcast(sessionId, { type: 'agent_status', status: 'running', agentMessageId: mention.messageId, timestamp: Date.now() });
-      } catch (err: any) {
-        console.error(`[ws] REPL sendPrompt failed: ${err.message}`);
-        broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Failed: ${err.message}` });
-      }
-      return;
-    }
-
-    // No REPL provider available — shouldn't happen normally
-    console.error(`[ws] No REPL provider for ${agentNameForProc} in session=${sessionId}`);
-    broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: `Agent unavailable` });
-    decRunningAgentCount();
-    drainPendingQueue();
-    drainPerSessionQueue(sessionId);
+    // Notify frontend that agent is now actively processing
+    broadcast(sessionId, { type: 'agent_status', status: 'running', agentMessageId: mention.messageId, timestamp: Date.now() });
   }
 }
 
@@ -796,9 +795,20 @@ function handleStopAgent(sessionId: string, data: { agentMessageId: string }): v
   }
   console.log(`[ws] Stopping agent: session=${sessionId} agentMsg=${data.agentMessageId}`);
   if (st.timer) clearTimeout(st.timer);
-  if (st.process.kill) st.process.kill(); else if (st.process.stop) st.process.stop();
-  if (st.agentName) { agentCurrentMessage.delete(st.agentName); agentProcesses.get(sessionId)?.delete(st.agentName); }
-  stateMap.delete(data.agentMessageId);
+
+  // Delegate to AgentRuntime for globally-managed agents.
+  // Delete from stateMap FIRST to prevent clearRunningAgent (fired by 'done'
+  // event from stopProcessing) from double-decrementing.
+  if (st.runtimeAgentId) {
+    stateMap.delete(data.agentMessageId);
+    if (st.agentName) agentCurrentMessage.delete(st.agentName);
+    agentRuntime.stopProcessing(st.runtimeAgentId);
+  } else {
+    // Legacy session-scoped agent stop
+    if (st.process.kill) st.process.kill(); else if (st.process.stop) st.process.stop();
+    if (st.agentName) { agentCurrentMessage.delete(st.agentName); agentProcesses.get(sessionId)?.delete(st.agentName); }
+    stateMap.delete(data.agentMessageId);
+  }
   const stoppedAgentName = st.agentName;
   if (stoppedAgentName) {
     const sb = sandboxes.get(sessionId);

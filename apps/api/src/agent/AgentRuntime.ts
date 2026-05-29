@@ -8,11 +8,12 @@ import { AgentContainer } from './AgentContainer.js';
 import { AgentDirectoryManager } from './AgentDirectoryManager.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
-import { broadcast } from '../ws/state.js';
+import { broadcast, clearRunningAgent } from '../ws/state.js';
 
 interface QueueItem {
   sessionId: string;
   prompt: string;
+  agentMessageId?: string;
 }
 
 interface AgentEntry {
@@ -21,6 +22,7 @@ interface AgentEntry {
   hostWorkDir: string;
   idleTimer: NodeJS.Timeout | null;
   currentSession: string | null;
+  currentMessageId: string | null;
   queue: QueueItem[];
 }
 
@@ -28,7 +30,7 @@ class AgentRuntime {
   private agents = new Map<string, AgentEntry>();
 
   /** Send a prompt to an agent. Queues if busy, starts container if stopped. */
-  async sendPrompt(agentId: string, sessionId: string, prompt: string): Promise<void> {
+  async sendPrompt(agentId: string, sessionId: string, prompt: string, agentMessageId?: string): Promise<void> {
     let entry = this.agents.get(agentId);
 
     if (!entry) {
@@ -37,10 +39,11 @@ class AgentRuntime {
 
     if (entry.currentSession !== null && entry.currentSession !== sessionId) {
       // Agent is busy with another session — queue
-      entry.queue.push({ sessionId, prompt });
+      entry.queue.push({ sessionId, prompt, agentMessageId });
       broadcast(sessionId, {
         type: 'agent_queued',
         agentId,
+        agentMessageId,
         message: `Agent is busy. Position in queue: ${entry.queue.length}`,
       });
       return;
@@ -48,6 +51,7 @@ class AgentRuntime {
 
     // Agent is idle — send directly
     entry.currentSession = sessionId;
+    entry.currentMessageId = agentMessageId || null;
     this.clearIdleTimer(entry);
     entry.provider.sendPrompt(prompt);
   }
@@ -87,6 +91,7 @@ class AgentRuntime {
       hostWorkDir: agent.hostWorkDir!,
       idleTimer: null,
       currentSession: null,
+      currentMessageId: null,
       queue: [],
     };
 
@@ -102,31 +107,36 @@ class AgentRuntime {
   /** Forward REPL events to the correct session, manage queue lifecycle */
   private handleAgentEvent(agentId: string, entry: AgentEntry, event: UnifiedAgentEvent): void {
     const sessionId = entry.currentSession || 'unknown';
+    const agentMessageId = entry.currentMessageId || undefined;
 
     switch (event.type) {
       case 'thinking':
         if (event.content) {
-          broadcast(sessionId, { type: 'stream_chunk', content: event.content });
+          broadcast(sessionId, { type: 'stream_chunk', content: event.content, agentMessageId });
         }
         break;
       case 'tool_use':
         broadcast(sessionId, {
           type: 'agent_status',
           status: 'tool_use',
+          agentMessageId,
           details: { toolName: event.toolName, input: event.toolInput },
         });
         break;
       case 'done':
-        broadcast(sessionId, { type: 'stream_end', exitCode: event.exitCode ?? 0 });
+        broadcast(sessionId, { type: 'stream_end', exitCode: event.exitCode ?? 0, agentMessageId });
+        if (agentMessageId) clearRunningAgent(sessionId, agentMessageId);
         entry.currentSession = null;
+        entry.currentMessageId = null;
         this.processNextOrIdle(agentId, entry);
         break;
       case 'error':
-        broadcast(sessionId, { type: 'stream_error', error: event.message });
+        broadcast(sessionId, { type: 'stream_error', error: event.message, agentMessageId });
         break;
       case 'token_usage':
         broadcast(sessionId, {
           type: 'token_update',
+          agentMessageId,
           details: {
             tokenUsage: {
               input: event.inputTokens ?? 0,
@@ -143,6 +153,7 @@ class AgentRuntime {
     const next = entry.queue.shift();
     if (next) {
       entry.currentSession = next.sessionId;
+      entry.currentMessageId = next.agentMessageId || null;
       entry.provider.sendPrompt(next.prompt);
     } else {
       entry.idleTimer = setTimeout(() => {
@@ -181,6 +192,20 @@ class AgentRuntime {
   /** Check if agent is currently running */
   isRunning(agentId: string): boolean {
     return this.agents.has(agentId);
+  }
+
+  /** Stop current task processing for an agent. Provider stays alive for next task. */
+  stopProcessing(agentId: string): { sessionId: string | null; messageId: string | null } {
+    const entry = this.agents.get(agentId);
+    if (!entry) return { sessionId: null, messageId: null };
+
+    const sessionId = entry.currentSession;
+    const messageId = entry.currentMessageId;
+    try { entry.provider.stopChild?.(); } catch { /* best effort */ }
+    entry.currentSession = null;
+    entry.currentMessageId = null;
+    this.processNextOrIdle(agentId, entry);
+    return { sessionId, messageId };
   }
 
   private clearIdleTimer(entry: AgentEntry): void {

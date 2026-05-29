@@ -28,6 +28,7 @@ export interface AgentProcess {
   timer: NodeJS.Timeout | null;
   agentId: string;
   agentName?: string;
+  runtimeAgentId?: string;
 }
 export const agentStates = new Map<string, Map<string, AgentProcess>>();
 
