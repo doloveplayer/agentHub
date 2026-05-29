@@ -116,14 +116,16 @@ function isAllowedScreenshotUrl(value: string): boolean {
  *  to route through the API proxy path. */
 function injectHmrScript(html: string, sessionId: string, port: number): string {
   const proxyPath = `/api/preview/${sessionId}/proxy/${port}`;
-  const script = `<script>(${hmrPolyfill.toString()})(${JSON.stringify(proxyPath)})</script>`;
+  const hmrScript = `<script>(${hmrPolyfill.toString()})(${JSON.stringify(proxyPath)})</script>`;
+  const selScript = `<script>(${selectionCaptureScript.toString()})()</script>`;
+  const combined = hmrScript + selScript;
   if (html.includes('<head>')) {
-    return html.replace('<head>', `<head>${script}`);
+    return html.replace('<head>', `<head>${combined}`);
   }
   if (html.includes('<html>')) {
-    return html.replace('<html>', `<html><head>${script}</head>`);
+    return html.replace('<html>', `<html><head>${combined}</head>`);
   }
-  return script + html;
+  return combined + html;
 }
 
 /** Polyfill function (serialized as a string) — runs in the iframe sandbox.
@@ -148,6 +150,35 @@ function hmrPolyfill(proxyPath: string): void {
     return new OrigWebSocket(target, protocols);
   };
   (window as any).WebSocket.prototype = OrigWebSocket.prototype;
+}
+
+/** Selection capture script — injected alongside HMR polyfill.
+ *  Listens for text selection changes and posts selected text to parent window. */
+function selectionCaptureScript(): void {
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  document.addEventListener('selectionchange', () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
+        window.parent.postMessage({ type: 'agenthub:selection-clear' }, '*');
+        return;
+      }
+      const text = sel.toString().trim();
+      if (text.length < 2 || text.length > 5000) return;
+
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+
+      window.parent.postMessage({
+        type: 'agenthub:selection',
+        text,
+        rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+        url: window.location.href,
+      }, '*');
+    }, 300);
+  });
 }
 
 // Regex matches /api/preview/{sessionId}/proxy/{port}/{path}
