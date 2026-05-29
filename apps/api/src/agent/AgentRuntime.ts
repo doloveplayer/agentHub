@@ -1,36 +1,194 @@
-import type { ParsedEvent } from "./EventParser.js";
+// AgentRuntime — Global Agent Lifecycle Manager
+// Manages all agent REPL processes globally (not per-session), handling
+// lazy container startup, prompt queueing, and idle timeout shutdown.
 
-export type AgentRuntimeSource = "claude" | "codex" | "openclaw";
+import { ProviderFactory } from './providers/factory.js';
+import type { AbstractProvider, UnifiedAgentEvent } from './providers/base.js';
+import { AgentContainer } from './AgentContainer.js';
+import { AgentDirectoryManager } from './AgentDirectoryManager.js';
+import { prisma } from '../db/prisma.js';
+import { config } from '../config.js';
+import { broadcast } from '../ws/state.js';
 
-export interface AgentTaskInput {
-  nodeRunId: string;
-  blueprintRunId: string;
+interface QueueItem {
+  sessionId: string;
   prompt: string;
-  modelId?: string;
-  workingDirectory?: string;
-  permissionProfile?: "read_only" | "accept_edits" | "default" | "bypass";
-  outputSchema?: Record<string, unknown>;
-  skillIds?: string[];
-  timeoutMs?: number;
-  tools: string[];
 }
 
-export interface AgentTaskResult {
-  taskId: string;
-  runId: string;
-  sessionKey: string;
-  source: AgentRuntimeSource;
-  status: "succeeded" | "failed" | "cancelled";
-  output?: string;
-  error?: string;
-  updatedAt: string;
+interface AgentEntry {
+  provider: AbstractProvider;
+  containerId: string;
+  hostWorkDir: string;
+  idleTimer: NodeJS.Timeout | null;
+  currentSession: string | null;
+  queue: QueueItem[];
 }
 
-export interface AgentRuntime {
-  readonly source: AgentRuntimeSource;
-  startTask(
-    input: AgentTaskInput,
-    onEvent: (event: ParsedEvent) => void,
-  ): Promise<AgentTaskResult>;
-  cancelTask(taskId: string): Promise<void>;
+class AgentRuntime {
+  private agents = new Map<string, AgentEntry>();
+
+  /** Send a prompt to an agent. Queues if busy, starts container if stopped. */
+  async sendPrompt(agentId: string, sessionId: string, prompt: string): Promise<void> {
+    let entry = this.agents.get(agentId);
+
+    if (!entry) {
+      entry = await this.ensureRunning(agentId);
+    }
+
+    if (entry.currentSession !== null && entry.currentSession !== sessionId) {
+      // Agent is busy with another session — queue
+      entry.queue.push({ sessionId, prompt });
+      broadcast(sessionId, {
+        type: 'agent_queued',
+        agentId,
+        message: `Agent is busy. Position in queue: ${entry.queue.length}`,
+      });
+      return;
+    }
+
+    // Agent is idle — send directly
+    entry.currentSession = sessionId;
+    this.clearIdleTimer(entry);
+    entry.provider.sendPrompt(prompt);
+  }
+
+  /** Ensure agent container and REPL are running. Lazy-start if stopped. */
+  async ensureRunning(agentId: string): Promise<AgentEntry> {
+    const agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
+
+    if (!agent.containerId || agent.containerStatus === 'stopped') {
+      const info = await AgentContainer.create(agentId, agent.systemPrompt);
+      AgentDirectoryManager.initialize(info.hostWorkDir, agent.name, agent.systemPrompt);
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { containerId: info.containerId, containerStatus: 'running', hostWorkDir: info.hostWorkDir },
+      });
+      agent.containerId = info.containerId;
+      agent.hostWorkDir = info.hostWorkDir;
+    }
+
+    const provider = ProviderFactory.create(agent.provider);
+    await provider.start(
+      'agent-' + agentId,
+      'Standby — waiting for tasks',
+      agent.containerId!,
+      '/workspace',
+      {
+        apiKey: (agent.providerConfig as any)?.apiKey,
+        model: (agent.providerConfig as any)?.model,
+        hostWorkDir: agent.hostWorkDir!,
+        trustMode: true,
+      },
+    );
+
+    const entry: AgentEntry = {
+      provider,
+      containerId: agent.containerId!,
+      hostWorkDir: agent.hostWorkDir!,
+      idleTimer: null,
+      currentSession: null,
+      queue: [],
+    };
+
+    provider.onEvent((event: UnifiedAgentEvent) => {
+      this.handleAgentEvent(agentId, entry, event);
+    });
+
+    this.agents.set(agentId, entry);
+    console.log(`[AgentRuntime] Agent ${agent.name} running (container=${entry.containerId.slice(0, 12)})`);
+    return entry;
+  }
+
+  /** Forward REPL events to the correct session, manage queue lifecycle */
+  private handleAgentEvent(agentId: string, entry: AgentEntry, event: UnifiedAgentEvent): void {
+    const sessionId = entry.currentSession || 'unknown';
+
+    switch (event.type) {
+      case 'thinking':
+        if (event.content) {
+          broadcast(sessionId, { type: 'stream_chunk', content: event.content });
+        }
+        break;
+      case 'tool_use':
+        broadcast(sessionId, {
+          type: 'agent_status',
+          status: 'tool_use',
+          details: { toolName: event.toolName, input: event.toolInput },
+        });
+        break;
+      case 'done':
+        broadcast(sessionId, { type: 'stream_end', exitCode: event.exitCode ?? 0 });
+        entry.currentSession = null;
+        this.processNextOrIdle(agentId, entry);
+        break;
+      case 'error':
+        broadcast(sessionId, { type: 'stream_error', error: event.message });
+        break;
+      case 'token_usage':
+        broadcast(sessionId, {
+          type: 'token_update',
+          details: {
+            tokenUsage: {
+              input: event.inputTokens ?? 0,
+              output: event.outputTokens ?? 0,
+            },
+          },
+        });
+        break;
+    }
+  }
+
+  /** Process next queue item or start idle timer */
+  private processNextOrIdle(agentId: string, entry: AgentEntry): void {
+    const next = entry.queue.shift();
+    if (next) {
+      entry.currentSession = next.sessionId;
+      entry.provider.sendPrompt(next.prompt);
+    } else {
+      entry.idleTimer = setTimeout(() => {
+        this.stopContainer(agentId);
+      }, config.agentContainer.idleTimeoutMs);
+    }
+  }
+
+  /** Stop agent container after idle timeout */
+  async stopContainer(agentId: string): Promise<void> {
+    const entry = this.agents.get(agentId);
+    if (!entry) return;
+
+    this.clearIdleTimer(entry);
+    try { entry.provider.stop(); } catch { /* best effort */ }
+    await AgentContainer.destroy(entry.containerId).catch(() => {});
+    this.agents.delete(agentId);
+
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { containerStatus: 'stopped' },
+    }).catch(() => {});
+
+    console.log(`[AgentRuntime] Agent ${agentId.slice(0, 8)} container stopped (idle timeout)`);
+  }
+
+  /** Get queue status for an agent */
+  getQueueStatus(agentId: string): { pending: number; currentSession: string | null } {
+    const entry = this.agents.get(agentId);
+    return {
+      pending: entry?.queue.length ?? 0,
+      currentSession: entry?.currentSession ?? null,
+    };
+  }
+
+  /** Check if agent is currently running */
+  isRunning(agentId: string): boolean {
+    return this.agents.has(agentId);
+  }
+
+  private clearIdleTimer(entry: AgentEntry): void {
+    if (entry.idleTimer) {
+      clearTimeout(entry.idleTimer);
+      entry.idleTimer = null;
+    }
+  }
 }
+
+export const agentRuntime = new AgentRuntime();

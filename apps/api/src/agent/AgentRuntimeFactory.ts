@@ -1,5 +1,5 @@
 import { ClaudeAgentSDK, mapAllowedTools, mapPermissionMode } from "./ClaudeAgentSDK.js";
-import type { AgentRuntime, AgentRuntimeSource, AgentTaskInput, AgentTaskResult } from "./AgentRuntime.js";
+import type { AgentRuntime, AgentRuntimeSource, AgentTaskInput, AgentTaskResult } from "./AgentTaskRuntime.js";
 import type { ParsedEvent } from "./EventParser.js";
 
 /**

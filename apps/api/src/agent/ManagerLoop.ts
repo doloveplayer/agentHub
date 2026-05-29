@@ -1,5 +1,5 @@
 import { getAgentRuntime } from "./AgentRuntimeFactory.js";
-import type { AgentRuntime, AgentTaskInput } from "./AgentRuntime.js";
+import type { AgentRuntime, AgentTaskInput } from "./AgentTaskRuntime.js";
 
 export interface ManagerDecision {
   action: "continue" | "replan" | "abort";
