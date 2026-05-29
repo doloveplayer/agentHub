@@ -30,6 +30,7 @@ model Session {
   user               User           @relation(fields: [userId], references: [id])
   messages           Message[]
   agents             SessionAgent[]
+  quoteReferences    QuoteReference[]
   createdAt          DateTime       @default(now())
   updatedAt          DateTime       @updatedAt
 }
@@ -55,6 +56,19 @@ model Message {
   session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+model QuoteReference {
+  id              String   @id @default(uuid())
+  sourceMessageId String   // 被引用的消息 ID
+  targetMessageId String?  // Agent 处理后的结果消息 ID（处理完成后回填）
+  agentId         String?  // 处理该引用的 Agent ID
+  selectionText   String   // 用户选中的文本内容
+  sourceType      String   @default("message") // message | preview | ppt | document
+  contextMeta     Json?    // 额外上下文：{ filePath, language, paragraphIndex, ... }
+  sessionId       String
+  session         Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
 }
 
 model Agent {
