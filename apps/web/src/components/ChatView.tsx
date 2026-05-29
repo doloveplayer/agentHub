@@ -7,6 +7,7 @@ import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { MessageActions } from './MessageActions';
 import { AgentStatusPanel } from './AgentStatusPanel';
+import { QuoteToolbar } from './QuoteToolbar';
 import { agentColor } from './AgentMentionPopup';
 import { Shield, AlertTriangle, ChevronDown, Lock, Eye, Sparkles, Zap, Settings, Plus, Minus } from 'lucide-react';
 import { ConfirmationPanel } from './ConfirmationPanel';
@@ -217,6 +218,11 @@ export function ChatView() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showAddAgents, setShowAddAgents] = useState(false);
   const [showRemoveAgents, setShowRemoveAgents] = useState(false);
+  const [previewSelection, setPreviewSelection] = useState<{
+    text: string;
+    rect: { top: number; left: number; width: number; height: number };
+    url: string;
+  } | null>(null);
 
   const getPermissionMode = (): string => {
     if (!activeSessionId) return 'ask';
@@ -315,7 +321,7 @@ export function ChatView() {
   return (
     <div className="flex-1 flex h-full">
       {/* Chat area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative">
         {/* Session header with permission mode indicator */}
         <div className="px-4 py-2 border-b border-hub flex items-center gap-2 bg-hub-surface relative z-10">
           {/* Add/Remove agent buttons — only for group sessions */}
@@ -436,6 +442,7 @@ export function ChatView() {
           <div ref={bottomRef} />
         </div>
         <MessageInput onSend={send} disabled={hasRunningAgent} mentionableAgents={mentionableAgents} />
+        <QuoteToolbar selection={previewSelection} onDismiss={() => setPreviewSelection(null)} />
       </div>
 
       {/* Agent status panel — resizable right sidebar */}
@@ -449,7 +456,7 @@ export function ChatView() {
             <div className="w-4 h-full -ml-1.5" />
           </div>
           <div className="flex-1 min-w-0">
-            <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} onReplanTask={sendReplan} />
+            <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} onReplanTask={sendReplan} onPreviewSelection={setPreviewSelection} />
           </div>
         </div>
       )}

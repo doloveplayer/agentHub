@@ -14,12 +14,13 @@ interface Props {
   sessionAgents: AgentConfig[];
   onStopAgent?: (agentMessageId: string) => void;
   onReplanTask?: (planId: string, taskId: string) => void;
+  onPreviewSelection?: (selection: { text: string; rect: { top: number; left: number; width: number; height: number }; url: string } | null) => void;
 }
 
 type PanelTab = 'Files' | 'Agents' | 'Tasks' | 'Preview';
 type ViewMode = 'detailed' | 'aggregated' | 'errors';
 
-export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask }: Props) {
+export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onPreviewSelection }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>('Agents');
   const [viewMode, setViewMode] = useState<ViewMode>('detailed');
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -164,7 +165,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask }: P
           <ActivePlanView onReplanTask={onReplanTask} />
         )}
         {activeTab === 'Preview' && activeSessionId && (
-          <PreviewFrame sessionId={activeSessionId} />
+          <PreviewFrame sessionId={activeSessionId} onSelection={onPreviewSelection} />
         )}
       </div>
     </div>
