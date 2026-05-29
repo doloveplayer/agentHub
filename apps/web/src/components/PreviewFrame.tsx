@@ -3,12 +3,19 @@ import { ExternalLink, RefreshCcw } from 'lucide-react';
 import { api } from '../lib/api';
 import { ScreenshotComparisonCard } from './ScreenshotComparisonCard';
 
+interface SelectionData {
+  text: string;
+  rect: { top: number; left: number; width: number; height: number };
+  url: string;
+}
+
 interface Props {
   sessionId: string;
+  onSelection?: (selection: SelectionData | null) => void;
 }
 
 /** Inline preview component for embedding inside panel tabs or message cards */
-export function PreviewFrame({ sessionId }: Props) {
+export function PreviewFrame({ sessionId, onSelection }: Props) {
   const [ports, setPorts] = useState<number[]>([]);
   const [port, setPort] = useState<number>(5175);
   const [url, setUrl] = useState('');
@@ -65,6 +72,18 @@ export function PreviewFrame({ sessionId }: Props) {
     tryPorts(0);
     return () => { cancelled = true; };
   }, [sessionId]);
+
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.data?.type === 'agenthub:selection') {
+        onSelection?.(event.data as SelectionData);
+      } else if (event.data?.type === 'agenthub:selection-clear') {
+        onSelection?.(null);
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, [onSelection]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
