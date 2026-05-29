@@ -8,6 +8,7 @@ import { agentColor } from './AgentMentionPopup';
 import { safeMarkdownUrl } from '../lib/markdown';
 import { safeContent } from '../lib/text';
 import { buildQuotePrompt, type QuotePayload } from '../lib/quoteContext';
+import { InteractionHistory } from './InteractionHistory';
 
 interface Props {
   message: Message;
@@ -127,6 +128,9 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
             <span className="text-hub-muted italic text-xs">[No output]</span>
           )}
         </div>
+        {message.status === 'done' && !isHuman && (
+          <InteractionHistory messageId={message.id} />
+        )}
       </div>
     </div>
   );

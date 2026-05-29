@@ -195,5 +195,5 @@ export const api = {
     }),
 
   getQuoteReferences: (messageId: string) =>
-    request<{ references: any[] }>(`/quote-references?messageId=${messageId}`),
+    request<{ quotedFrom: any[]; quotedBy: any[] }>(`/quote-references?messageId=${encodeURIComponent(messageId)}`),
 };
