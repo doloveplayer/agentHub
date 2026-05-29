@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Plus, MessageSquare, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Plus, MessageSquare, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil, ChevronDown, ChevronRight, Bot, Save } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
 
@@ -7,20 +7,28 @@ interface Props { onCloseMobile?: () => void; }
 
 type LoadState = 'loading' | 'error' | 'done';
 
+interface AgentGroup {
+  agent: { id: string; name: string; displayName: string };
+  sessions: any[];
+}
+
 export function SessionList({ onCloseMobile }: Props) {
-  const { sessions, activeSessionId, setSessions, setActiveSession, setAgents, user, unreadCounts, clearUnread, sessionPermissionModes, setSessionPermissionMode } = useAppStore();
+  const { sessions, activeSessionId, setSessions, setActiveSession, setAgents, agents, user, unreadCounts, clearUnread, sessionPermissionModes, setSessionPermissionMode } = useAppStore();
   const [showCreate, setShowCreate] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string; type: 'session' | 'agent' } | null>(null);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(new Set());
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+  const [agentEdit, setAgentEdit] = useState({ displayName: '', description: '', systemPrompt: '' });
 
   const loadSessions = () => {
     setLoadState('loading');
     api.getSessions()
       .then((data) => {
         setSessions(data);
-        // Populate session permission modes from loaded data
         const modes: Record<string, string> = {};
         for (const s of data) {
           if (s.permissionMode) modes[s.id] = s.permissionMode;
@@ -29,15 +37,47 @@ export function SessionList({ onCloseMobile }: Props) {
           sessionPermissionModes: { ...state.sessionPermissionModes, ...modes },
         }));
         setLoadState('done');
+        api.getAgents().then(setAgents).catch(console.error);
       })
       .catch(() => {
         setLoadState('error');
       });
   };
 
-  useEffect(() => {
-    loadSessions();
-  }, []);
+  useEffect(() => { loadSessions(); }, []);
+
+  // Group solo sessions by agent
+  const { soloGroups, groupSessions } = useMemo(() => {
+    const soloByAgent = new Map<string, AgentGroup>();
+    const groupSessions: any[] = [];
+
+    for (const s of sessions) {
+      if (s.type === 'group') {
+        groupSessions.push(s);
+        continue;
+      }
+      const agentInfo = s.agents?.[0];
+      const agentId = agentInfo?.agentId || 'unknown';
+      if (!soloByAgent.has(agentId)) {
+        soloByAgent.set(agentId, {
+          agent: agentInfo
+            ? { id: agentInfo.agentId, name: agentInfo.name, displayName: agentInfo.displayName }
+            : { id: agentId, name: 'unknown', displayName: 'Unknown Agent' },
+          sessions: [],
+        });
+      }
+      soloByAgent.get(agentId)!.sessions.push(s);
+    }
+
+    return { soloGroups: Array.from(soloByAgent.values()), groupSessions };
+  }, [sessions]);
+
+  // Agent store lookup for inline editing
+  const agentMap = useMemo(() => {
+    const m = new Map<string, any>();
+    for (const a of agents) m.set(a.id, a);
+    return m;
+  }, [agents]);
 
   const [customAgentMode, setCustomAgentMode] = useState(false);
   const [customName, setCustomName] = useState('');
@@ -54,7 +94,6 @@ export function SessionList({ onCloseMobile }: Props) {
         customAgent: { name, displayName: customDisplay, description: customDesc, systemPrompt: customPrompt },
       });
       setSessions([session, ...sessions]);
-      // Refresh agents store so ChatView agentMap finds the new custom agent
       api.getAgents().then(setAgents).catch(console.error);
       if (session.permissionMode) setSessionPermissionMode(session.id, session.permissionMode);
       setActiveSession(session.id);
@@ -63,6 +102,9 @@ export function SessionList({ onCloseMobile }: Props) {
     }
     const session = await api.createSession(type === 'group' ? { type: 'group' } : {});
     setSessions([session, ...sessions]);
+    if (type === 'group') {
+      api.getAgents().then(setAgents).catch(console.error);
+    }
     if (session.permissionMode) {
       setSessionPermissionMode(session.id, session.permissionMode);
     }
@@ -88,18 +130,14 @@ export function SessionList({ onCloseMobile }: Props) {
     }));
   };
 
-  const handleDeleteClick = (id: string, title: string, e: React.MouseEvent) => {
+  // --- Session rename ---
+  const handleStartRenameSession = (id: string, title: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setDeleteTarget({ id, title });
-  };
-
-  const handleStartRename = (id: string, title: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setEditingId(id);
+    setEditingSessionId(id);
     setEditingTitle(title);
   };
 
-  const handleSaveRename = async (id: string) => {
+  const handleSaveRenameSession = async (id: string) => {
     const trimmed = editingTitle.trim();
     if (trimmed && trimmed !== sessions.find(s => s.id === id)?.title) {
       try {
@@ -107,26 +145,276 @@ export function SessionList({ onCloseMobile }: Props) {
         useAppStore.getState().updateSessionInList(id, { title: trimmed });
       } catch { /* ignore */ }
     }
-    setEditingId(null);
+    setEditingSessionId(null);
     setEditingTitle('');
+  };
+
+  // --- Session delete ---
+  const handleDeleteSessionClick = (id: string, title: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleteTarget({ id, title, type: 'session' });
   };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const { id } = deleteTarget;
-    await api.deleteSession(id);
-    const remaining = sessions.filter((s) => s.id !== id);
-    setSessions(remaining);
-    if (activeSessionId === id) {
-      // Find nearest session: prefer the one right after in the list, else first, else null
-      const idx = sessions.findIndex((s) => s.id === id);
-      const next = remaining[Math.min(idx, remaining.length - 1)];
-      setActiveSession(next?.id ?? null);
+    const { id, type } = deleteTarget;
+
+    if (type === 'agent') {
+      // Delete agent: cascade removes solo sessions + removes from groups
+      try {
+        await api.deleteAgent(id);
+        // Remove all solo sessions for this agent from local state
+        const remaining = sessions.filter((s) => {
+          if (s.type !== 'solo') return true;
+          return !(s.agents?.[0]?.agentId === id);
+        });
+        setSessions(remaining);
+        // Refresh agents list
+        api.getAgents().then(setAgents).catch(console.error);
+        // If active session was deleted, switch to nearest
+        if (remaining.length < sessions.length) {
+          const deletedSessions = sessions.filter(s => s.type === 'solo' && s.agents?.[0]?.agentId === id);
+          if (deletedSessions.some(s => s.id === activeSessionId)) {
+            setActiveSession(remaining[0]?.id ?? null);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to delete agent:', err);
+      }
+    } else {
+      // Delete single session
+      await api.deleteSession(id);
+      const remaining = sessions.filter((s) => s.id !== id);
+      setSessions(remaining);
+      if (activeSessionId === id) {
+        const idx = sessions.findIndex((s) => s.id === id);
+        const next = remaining[Math.min(idx, remaining.length - 1)];
+        setActiveSession(next?.id ?? null);
+      }
     }
     setDeleteTarget(null);
   };
 
   const cancelDelete = () => setDeleteTarget(null);
+
+  // --- Agent inline edit ---
+  const handleStartEditAgent = (agentId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const agent = agentMap.get(agentId);
+    if (!agent) return;
+    setEditingAgentId(agentId);
+    setAgentEdit({
+      displayName: agent.displayName || '',
+      description: agent.description || '',
+      systemPrompt: agent.systemPrompt || '',
+    });
+  };
+
+  const handleSaveAgent = async (agentId: string) => {
+    try {
+      await api.updateAgent(agentId, {
+        displayName: agentEdit.displayName,
+        description: agentEdit.description,
+        systemPrompt: agentEdit.systemPrompt,
+      });
+      // Update agents store
+      const updated = agents.map(a => a.id === agentId
+        ? { ...a, displayName: agentEdit.displayName, description: agentEdit.description, systemPrompt: agentEdit.systemPrompt }
+        : a
+      );
+      setAgents(updated);
+      // Update session titles that reference this agent's displayName
+      const oldAgent = agentMap.get(agentId);
+      if (oldAgent && oldAgent.displayName !== agentEdit.displayName) {
+        const updatedSessions = sessions.map(s => {
+          if (s.type === 'solo' && s.agents?.[0]?.agentId === agentId) {
+            return { ...s, agents: [{ ...s.agents[0], displayName: agentEdit.displayName }] };
+          }
+          return s;
+        });
+        setSessions(updatedSessions);
+      }
+    } catch (err) {
+      console.error('Failed to update agent:', err);
+    }
+    setEditingAgentId(null);
+  };
+
+  const handleCancelEditAgent = () => {
+    setEditingAgentId(null);
+  };
+
+  // --- Agent delete ---
+  const handleDeleteAgentClick = (agentId: string, agentName: string, sessionCount: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDeleteTarget({ id: agentId, title: `${agentName} (${sessionCount} sessions)`, type: 'agent' });
+  };
+
+  const toggleAgent = (agentId: string) => {
+    setCollapsedAgents(prev => {
+      const next = new Set(prev);
+      next.has(agentId) ? next.delete(agentId) : next.add(agentId);
+      return next;
+    });
+  };
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections(prev => {
+      const next = new Set(prev);
+      next.has(section) ? next.delete(section) : next.add(section);
+      return next;
+    });
+  };
+
+  // --- Render helpers ---
+
+  const renderSessionRow = (s: any) => (
+    <div
+      key={s.id}
+      onClick={() => handleSelect(s.id)}
+      className={`pl-8 pr-4 py-2.5 cursor-pointer hover:bg-hub-hover flex items-start gap-2 group transition-all duration-hub border-l-[3px] ${
+        activeSessionId === s.id ? 'bg-hub-active border-l-hub-accent' : 'border-l-transparent'
+      }`}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="text-[13px] text-hub-secondary truncate flex items-center gap-1.5">
+          {editingSessionId === s.id ? (
+            <input
+              value={editingTitle}
+              onChange={(e) => setEditingTitle(e.target.value)}
+              onBlur={() => handleSaveRenameSession(s.id)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRenameSession(s.id); if (e.key === 'Escape') { setEditingSessionId(null); setEditingTitle(''); } }}
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+              className="bg-hub-input border border-hub-accent rounded px-1.5 py-0.5 text-[13px] text-hub-primary w-full outline-none"
+            />
+          ) : (
+            <>
+              <span className="truncate">{s.title}</span>
+              <button
+                onClick={(e) => handleStartRenameSession(s.id, s.title, e)}
+                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-hub-hover rounded shrink-0 transition"
+                title="Rename"
+              >
+                <Pencil className="w-3 h-3 text-hub-tertiary" />
+              </button>
+            </>
+          )}
+          {(unreadCounts[s.id] || 0) > 0 && activeSessionId !== s.id && (
+            <span className="ml-auto bg-hub-accent text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0">
+              {unreadCounts[s.id] > 99 ? '99+' : unreadCounts[s.id]}
+            </span>
+          )}
+        </div>
+        {s.lastMessage && (
+          <div className="text-xs text-hub-tertiary truncate mt-0.5">
+            {s.lastMessage.senderType === 'human' ? 'You: ' : ''}{s.lastMessage.content}
+          </div>
+        )}
+      </div>
+      <button
+        onClick={(e) => handleDeleteSessionClick(s.id, s.title, e)}
+        className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-hub-hover rounded-lg shrink-0 transition"
+      >
+        <Trash2 className="w-3 h-3 text-hub-tertiary" />
+      </button>
+    </div>
+  );
+
+  const renderAgentGroup = (group: AgentGroup) => {
+    const { agent, sessions: agentSessions } = group;
+    const isCollapsed = collapsedAgents.has(agent.id);
+    const isEditing = editingAgentId === agent.id;
+    const fullAgent = agentMap.get(agent.id);
+
+    return (
+      <div key={agent.id}>
+        {/* Agent header row */}
+        <div
+          className="px-4 py-2.5 flex items-center gap-2 group hover:bg-hub-hover/50 cursor-pointer select-none"
+          onClick={() => toggleAgent(agent.id)}
+        >
+          {isCollapsed ? (
+            <ChevronRight className="w-3.5 h-3.5 text-hub-tertiary shrink-0" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5 text-hub-tertiary shrink-0" />
+          )}
+          <Bot className="w-4 h-4 text-hub-accent shrink-0" />
+          <span className="text-sm font-medium text-hub-primary truncate flex-1 min-w-0">
+            {agent.displayName}
+          </span>
+          <span className="text-[10px] text-hub-tertiary bg-hub-active px-1.5 py-0.5 rounded-full shrink-0">
+            {agentSessions.length}
+          </span>
+          {/* Agent action buttons — hover */}
+          <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition">
+            <button
+              onClick={(e) => handleStartEditAgent(agent.id, e)}
+              className="p-1 hover:bg-hub-hover rounded transition"
+              title="Edit agent"
+            >
+              <Pencil className="w-3 h-3 text-hub-tertiary" />
+            </button>
+            <button
+              onClick={(e) => handleDeleteAgentClick(agent.id, agent.displayName, agentSessions.length, e)}
+              className="p-1 hover:bg-hub-danger/10 rounded transition"
+              title="Delete agent"
+            >
+              <Trash2 className="w-3 h-3 text-hub-tertiary hover:text-hub-danger" />
+            </button>
+          </div>
+        </div>
+
+        {/* Agent inline editor */}
+        {isEditing && (
+          <div className="px-4 py-3 bg-hub-active/50 border-y border-hub space-y-2" onClick={(e) => e.stopPropagation()}>
+            <div>
+              <label className="text-[10px] text-hub-tertiary uppercase tracking-wider">Display Name</label>
+              <input
+                value={agentEdit.displayName}
+                onChange={(e) => setAgentEdit(prev => ({ ...prev, displayName: e.target.value }))}
+                className="w-full mt-0.5 px-2 py-1 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-hub-tertiary uppercase tracking-wider">Description</label>
+              <input
+                value={agentEdit.description}
+                onChange={(e) => setAgentEdit(prev => ({ ...prev, description: e.target.value }))}
+                className="w-full mt-0.5 px-2 py-1 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-hub-tertiary uppercase tracking-wider">System Prompt</label>
+              <textarea
+                value={agentEdit.systemPrompt}
+                onChange={(e) => setAgentEdit(prev => ({ ...prev, systemPrompt: e.target.value }))}
+                rows={4}
+                className="w-full mt-0.5 px-2 py-1 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent resize-none font-mono"
+              />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={handleCancelEditAgent}
+                className="px-3 py-1 text-[11px] text-hub-secondary hover:bg-hub-hover rounded transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSaveAgent(agent.id)}
+                className="px-3 py-1 text-[11px] bg-hub-accent text-white rounded hover:bg-hub-accent-hover transition font-medium flex items-center gap-1"
+              >
+                <Save className="w-3 h-3" /> Save
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Sessions under this agent */}
+        {!isCollapsed && agentSessions.map(renderSessionRow)}
+      </div>
+    );
+  };
 
   return (
     <div className="w-full h-full bg-hub-surface border-r border-hub flex flex-col">
@@ -142,7 +430,7 @@ export function SessionList({ onCloseMobile }: Props) {
             <Plus className="w-4 h-4 text-hub-tertiary" />
           </button>
           {showCreate && (
-            <div className="absolute top-full right-0 mt-1 bg-hub-raised border border-hub rounded-hub-lg shadow-xl z-50 w-72 overflow-hidden">
+            <div className="absolute top-full left-0 mt-1 bg-hub-raised border border-hub rounded-hub-lg shadow-xl z-50 w-72 overflow-hidden">
               {!customAgentMode ? (
                 <>
                   <button onClick={() => handleCreate('solo')} className="w-full text-left px-4 py-2.5 text-sm text-hub-secondary hover:bg-hub-hover flex items-center gap-2 transition font-medium">
@@ -213,71 +501,111 @@ export function SessionList({ onCloseMobile }: Props) {
           </div>
         )}
 
-        {loadState === 'done' && sessions.map((s: any) => (
-          <div
-            key={s.id}
-            onClick={() => handleSelect(s.id)}
-            className={`px-4 py-3 cursor-pointer hover:bg-hub-hover flex items-start gap-2.5 group transition-all duration-hub border-l-[3px] ${
-              activeSessionId === s.id ? 'bg-hub-active border-l-hub-accent' : 'border-l-transparent'
-            }`}
-          >
-            {s.type === 'group' ? (
-              <Users className="w-4 h-4 mt-0.5 text-hub-accent shrink-0" />
-            ) : (
-              <MessageSquare className="w-4 h-4 mt-0.5 text-hub-tertiary shrink-0" />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="text-sm text-hub-secondary truncate flex items-center gap-1.5">
-                {editingId === s.id ? (
-                  <input
-                    value={editingTitle}
-                    onChange={(e) => setEditingTitle(e.target.value)}
-                    onBlur={() => handleSaveRename(s.id)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRename(s.id); if (e.key === 'Escape') { setEditingId(null); setEditingTitle(''); } }}
-                    autoFocus
-                    onClick={(e) => e.stopPropagation()}
-                    className="bg-hub-input border border-hub-accent rounded px-1.5 py-0.5 text-sm text-hub-primary w-full outline-none"
-                  />
-                ) : (
-                  <>
-                    <span className="truncate">{s.title}</span>
-                    <button
-                      onClick={(e) => handleStartRename(s.id, s.title, e)}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-hub-hover rounded shrink-0 transition"
-                      title="Rename"
-                    >
-                      <Pencil className="w-3 h-3 text-hub-tertiary" />
-                    </button>
-                  </>
-                )}
-                {s.type === 'group' && s.agents && (
-                  <span className="text-[10px] text-hub-tertiary shrink-0">
-                    ({s.agents.length})
-                  </span>
-                )}
-                {(unreadCounts[s.id] || 0) > 0 && activeSessionId !== s.id && (
-                  <span className="ml-auto bg-hub-accent text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0">
-                    {unreadCounts[s.id] > 99 ? '99+' : unreadCounts[s.id]}
-                  </span>
-                )}
-              </div>
-              {s.lastMessage && (
-                <div className="text-xs text-hub-tertiary truncate mt-0.5">
-                  {s.lastMessage.senderType === 'human' ? 'You: ' : ''}{s.lastMessage.content}
-                </div>
-              )}
-            </div>
-            <button
-              onClick={(e) => handleDeleteClick(s.id, s.title, e)}
-              className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-hub-hover rounded-lg shrink-0 transition"
-            >
-              <Trash2 className="w-3 h-3 text-hub-tertiary" />
-            </button>
-          </div>
-        ))}
-
         {loadState === 'done' && sessions.length === 0 && (
           <p className="text-hub-muted text-sm text-center p-6">No sessions yet</p>
+        )}
+
+        {loadState === 'done' && (
+          <>
+            {/* Solo section — grouped by agent */}
+            {soloGroups.length > 0 && (
+              <div>
+                <button
+                  onClick={() => toggleSection('solo')}
+                  className="w-full px-4 py-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-hub-tertiary hover:bg-hub-hover/30 transition"
+                >
+                  {collapsedSections.has('solo') ? (
+                    <ChevronRight className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                  Solo
+                  <span className="ml-auto text-[10px] font-normal normal-case tracking-normal">
+                    {soloGroups.reduce((sum, g) => sum + g.sessions.length, 0)}
+                  </span>
+                </button>
+                {!collapsedSections.has('solo') && soloGroups.map(renderAgentGroup)}
+              </div>
+            )}
+
+            {/* Group section */}
+            {groupSessions.length > 0 && (
+              <div>
+                <button
+                  onClick={() => toggleSection('group')}
+                  className="w-full px-4 py-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-hub-tertiary hover:bg-hub-hover/30 transition"
+                >
+                  {collapsedSections.has('group') ? (
+                    <ChevronRight className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                  Group
+                  <span className="ml-auto text-[10px] font-normal normal-case tracking-normal">
+                    {groupSessions.length}
+                  </span>
+                </button>
+                {!collapsedSections.has('group') && groupSessions.map((s: any) => (
+                  <div
+                    key={s.id}
+                    onClick={() => handleSelect(s.id)}
+                    className={`px-4 py-2.5 cursor-pointer hover:bg-hub-hover flex items-start gap-2.5 group transition-all duration-hub border-l-[3px] ${
+                      activeSessionId === s.id ? 'bg-hub-active border-l-hub-accent' : 'border-l-transparent'
+                    }`}
+                  >
+                    <Users className="w-4 h-4 mt-0.5 text-hub-accent shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] text-hub-secondary truncate flex items-center gap-1.5">
+                        {editingSessionId === s.id ? (
+                          <input
+                            value={editingTitle}
+                            onChange={(e) => setEditingTitle(e.target.value)}
+                            onBlur={() => handleSaveRenameSession(s.id)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRenameSession(s.id); if (e.key === 'Escape') { setEditingSessionId(null); setEditingTitle(''); } }}
+                            autoFocus
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-hub-input border border-hub-accent rounded px-1.5 py-0.5 text-[13px] text-hub-primary w-full outline-none"
+                          />
+                        ) : (
+                          <>
+                            <span className="truncate">{s.title}</span>
+                            <button
+                              onClick={(e) => handleStartRenameSession(s.id, s.title, e)}
+                              className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-hub-hover rounded shrink-0 transition"
+                              title="Rename"
+                            >
+                              <Pencil className="w-3 h-3 text-hub-tertiary" />
+                            </button>
+                          </>
+                        )}
+                        {s.agents && (
+                          <span className="text-[10px] text-hub-tertiary shrink-0">
+                            ({s.agents.length})
+                          </span>
+                        )}
+                        {(unreadCounts[s.id] || 0) > 0 && activeSessionId !== s.id && (
+                          <span className="ml-auto bg-hub-accent text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0">
+                            {unreadCounts[s.id] > 99 ? '99+' : unreadCounts[s.id]}
+                          </span>
+                        )}
+                      </div>
+                      {s.lastMessage && (
+                        <div className="text-xs text-hub-tertiary truncate mt-0.5">
+                          {s.lastMessage.senderType === 'human' ? 'You: ' : ''}{s.lastMessage.content}
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={(e) => handleDeleteSessionClick(s.id, s.title, e)}
+                      className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-hub-hover rounded-lg shrink-0 transition"
+                    >
+                      <Trash2 className="w-3 h-3 text-hub-tertiary" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -299,10 +627,16 @@ export function SessionList({ onCloseMobile }: Props) {
           >
             <div className="flex items-center gap-2 mb-3">
               <AlertTriangle className="w-5 h-5 text-hub-danger shrink-0" />
-              <h3 className="text-sm font-semibold text-hub-primary">Delete Session</h3>
+              <h3 className="text-sm font-semibold text-hub-primary">
+                {deleteTarget.type === 'agent' ? 'Delete Agent' : 'Delete Session'}
+              </h3>
             </div>
             <p className="text-xs text-hub-tertiary mb-4">
-              This will permanently delete <strong className="text-hub-secondary">{deleteTarget.title}</strong> and all its messages. This action cannot be undone.
+              {deleteTarget.type === 'agent' ? (
+                <>This will permanently delete agent <strong className="text-hub-secondary">{deleteTarget.title}</strong>, all its solo sessions, and remove it from all groups. This action cannot be undone.</>
+              ) : (
+                <>This will permanently delete <strong className="text-hub-secondary">{deleteTarget.title}</strong> and all its messages. This action cannot be undone.</>
+              )}
             </p>
             <div className="flex justify-end gap-2">
               <button

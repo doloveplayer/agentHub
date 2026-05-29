@@ -1082,6 +1082,7 @@ interface Props {
 export function AddAgentModal({ sessionId, open, onClose }: Props) {
   const agents = useAppStore((s) => s.agents);
   const sessions = useAppStore((s) => s.sessions);
+  const user = useAppStore((s) => s.user);
   const addAgentToSession = useAppStore((s) => s.addAgentToSession);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -1090,9 +1091,10 @@ export function AddAgentModal({ sessionId, open, onClose }: Props) {
   const session = sessions.find((s) => s.id === sessionId);
   const sessionAgentIds = new Set(((session as any)?.agents || []).map((a: any) => a.agentId));
 
-  // Show user-created agents not already in this group
+  // Show only user's own agents (type='user' AND createdBy=currentUser), not already in group
   const availableAgents = agents.filter((a) => {
-    if (a.type !== 'user' && a.type !== undefined) return false;
+    if (a.type === 'system') return false;
+    if (a.createdBy && user?.id && a.createdBy !== user.id) return false;
     if (sessionAgentIds.has(a.id)) return false;
     if (search && !a.displayName.toLowerCase().includes(search.toLowerCase())) return false;
     return true;

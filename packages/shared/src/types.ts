@@ -58,6 +58,8 @@ export interface AgentConfig {
   provider?: AgentProvider;
   providerConfig?: AgentProviderConfig | null;
   capabilities?: Record<string, unknown> | null;
+  type?: 'user' | 'system';
+  createdBy?: string | null;
 }
 
 export interface Mention {

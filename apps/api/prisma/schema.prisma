@@ -68,6 +68,7 @@ model Agent {
   capabilities    Json?          // user-defined agent capability profiles (optional)
   isActive        Boolean        @default(true)
   type            String         @default("user")    // "user" | "system"
+  templateId      String?                             // 指向 AgentTemplate.id（system agent 特有）
   contextMode     String         @default("shared")  // "shared" | "isolated"
   containerId     String?
   containerStatus String         @default("stopped") // "stopped" | "running" | "error"

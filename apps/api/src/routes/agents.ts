@@ -15,6 +15,7 @@ agents.get('/', async (c) => {
     select: {
       id: true, name: true, displayName: true, description: true,
       systemPrompt: true, provider: true, providerConfig: true, capabilities: true,
+      type: true, createdBy: true,
     },
   });
   return c.json(list);
@@ -179,6 +180,8 @@ agents.post('/from-md', async (c) => {
       systemPrompt,
       provider,
       providerConfig: providerConfig as any,
+      type: 'user',
+      createdBy: userId,
     },
   });
   return c.json(agent, 201);
@@ -242,8 +245,21 @@ agents.delete('/:id', async (c) => {
     } catch { /* best-effort */ }
   }
 
-  // Soft-delete the agent (cascades SessionAgent removal via Prisma relation)
-  await prisma.agent.update({ where: { id }, data: { isActive: false } });
+  // Notify all groups this agent belongs to before removal
+  const sessionAgents = await prisma.sessionAgent.findMany({
+    where: { agentId: id },
+    select: { sessionId: true },
+  });
+  const { broadcast } = await import('../ws/state.js');
+  for (const sa of sessionAgents) {
+    broadcast(sa.sessionId, { type: 'agent_removed', agentId: id, sessionId: sa.sessionId });
+  }
+
+  // Remove from all groups + soft-delete in a single transaction
+  await prisma.$transaction([
+    prisma.sessionAgent.deleteMany({ where: { agentId: id } }),
+    prisma.agent.update({ where: { id }, data: { isActive: false } }),
+  ]);
 
   return c.body(null, 204);
 });

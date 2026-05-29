@@ -64,6 +64,11 @@ export const api = {
 
   getAgents: () => request<any[]>('/agents'),
 
+  updateAgent: (id: string, body: { displayName?: string; description?: string; systemPrompt?: string }) =>
+    request<any>(`/agents/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+
+  deleteAgent: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
+
   createAgentFromMd: (content: string, providerConfig?: Record<string, unknown>) =>
     request<any>('/agents/from-md', { method: 'POST', body: JSON.stringify({ content, providerConfig }) }),
 

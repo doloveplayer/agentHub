@@ -116,8 +116,12 @@ export function ChatView() {
   // Determine session type and participants
   const activeSession = sessions.find((s) => s.id === activeSessionId);
   const sessionAgents: AgentConfig[] = (activeSession as any)?.agents
-    ?.map((sa: any) => agentMap.get(sa.agentId))
-    .filter(Boolean) ?? [];
+    ?.map((sa: any) => agentMap.get(sa.agentId) ?? {
+      id: sa.agentId,
+      name: sa.name,
+      displayName: sa.displayName,
+    } as AgentConfig)
+    ?? [];
 
   // @mention agents: in group mode, restrict to session members; in solo, show all
   const mentionableAgents = useMemo(() => {

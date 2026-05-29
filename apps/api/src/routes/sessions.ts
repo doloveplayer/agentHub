@@ -141,6 +141,7 @@ sessions.post('/', async (c) => {
             provider: tpl.provider,
             type: 'system',
             contextMode: 'isolated',
+            templateId: tpl.id,
           },
         });
         agentIds.push(systemAgent.id);
@@ -151,11 +152,23 @@ sessions.post('/', async (c) => {
         where: { name: 'code-agent', type: 'user', createdBy: userId, isActive: true },
       });
       if (!defaultAgent) {
+        // Claim seeded agent (createdBy=null) or create from template
         const codeTpl = await prisma.agentTemplate.findUnique({ where: { name: 'code-agent' } });
-        if (codeTpl) {
+        const seeded = await prisma.agent.findFirst({ where: { name: 'code-agent', isActive: true } });
+        if (seeded && !seeded.createdBy) {
+          // Atomic claim: only succeeds if createdBy is still null (prevents race condition)
+          const claimed = await prisma.agent.updateMany({
+            where: { id: seeded.id, createdBy: null },
+            data: { createdBy: userId },
+          });
+          if (claimed.count > 0) {
+            defaultAgent = await prisma.agent.findUnique({ where: { id: seeded.id } });
+          }
+        }
+        if (!defaultAgent && codeTpl) {
           defaultAgent = await prisma.agent.create({
             data: {
-              name: 'code-agent',
+              name: `code-agent-${userId.slice(0, 8)}`,
               displayName: codeTpl.displayName,
               description: codeTpl.description,
               systemPrompt: codeTpl.systemPrompt,

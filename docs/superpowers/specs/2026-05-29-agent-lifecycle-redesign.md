@@ -303,6 +303,7 @@ Group session:
 
 // DELETE /api/sessions/:sessionId/agents/:agentId — 从 group 移除 agent
 // 不删除 agent 实例，只移除关联
+// 不限 agent 类型（系统 agent 和用户 agent 均可移除）
 ```
 
 ---
@@ -319,7 +320,8 @@ Group session:
 
 ### 5.2 Add Agent 模态框
 
-- 显示用户创建的所有 type='user' 的 agent（排除已在群内的）
+- 仅显示当前用户创建的 agent（type='user' AND createdBy=currentUser），排除系统默认 agent 和其他用户的 agent
+- 排除已在群内的 agent
 - 支持搜索过滤
 - 支持多选
 - 底部显示选中数量和确认按钮
