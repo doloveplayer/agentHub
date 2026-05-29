@@ -243,18 +243,11 @@ export function cleanupSessionResources(sessionId: string): void {
   sessions.delete(sessionId);
 }
 
-/** Track sessions where pre-activation is still in progress to avoid premature cleanup. */
-export const preActivatingSessions = new Set<string>();
-
 export function cleanupSessionClient(sessionId: string, ws: WebSocket): void {
   const conns = sessions.get(sessionId);
   if (!conns) return;
   conns.delete(ws);
   if (conns.size > 0) return;
-  if (preActivatingSessions.has(sessionId)) {
-    console.log(`[ws] Client left but pre-activation in progress for session=${sessionId.slice(0, 8)}, deferring cleanup`);
-    return;
-  }
   console.log(`[ws] Last client left session=${sessionId}, cleaning up...`);
   cleanupSessionResources(sessionId);
 }
