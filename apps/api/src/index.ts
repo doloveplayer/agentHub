@@ -26,6 +26,7 @@ import securityRoutes from './routes/security.js';
 import reviewRoutes from './routes/review.js';
 import settingsRoutes from './routes/settings.js';
 import avatarRoutes from './routes/avatar.js';
+import quoteRefRoutes from './routes/quoteReferences.js';
 import { seedAgentTemplates } from './defaultAgents.js';
 
 // Startup cleanup: remove orphaned sandbox containers and directories
@@ -117,6 +118,7 @@ app.route('/api/security', securityRoutes);
 app.route('/api/review', reviewRoutes);
 app.route('/api/settings', settingsRoutes);
 app.route('/api/avatar', avatarRoutes);
+app.route('/api/quote-references', quoteRefRoutes);
 
 // Health check
 app.get('/api/health', (c) => {
