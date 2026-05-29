@@ -135,6 +135,9 @@ export const taskModifications = new Map<string, string>();
 /** sessionId:agentName → Claude Code session ID (for --resume across one-shot turns within the same AgentHub session) */
 export const agentClaudeSessions = new Map<string, string>();
 
+/** agentMessageId → { sessionId, agentId } for backfilling QuoteReference on agent completion */
+export const quoteBackfillMap = new Map<string, { sessionId: string; agentId?: string }>();
+
 // ---- Conflict detection ----
 
 const perSessionFileMods = new Map<string, Map<string, Set<string>>>();
