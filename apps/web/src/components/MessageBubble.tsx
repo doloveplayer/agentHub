@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { User, Copy, Check, Quote, Loader2, AlertCircle, MoreHorizontal } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
@@ -7,6 +7,7 @@ import type { Message } from '@agenthub/shared';
 import { agentColor } from './AgentMentionPopup';
 import { safeMarkdownUrl } from '../lib/markdown';
 import { safeContent } from '../lib/text';
+import { buildQuotePrompt, type QuotePayload } from '../lib/quoteContext';
 
 interface Props {
   message: Message;
@@ -36,6 +37,7 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
     } catch { /* clipboard unavailable */ }
   };
   const color = isHuman ? undefined : agentColor(nameForKey);
+  const components = useMemo(() => createMarkdownComponents(message.id, agentName), [message.id, agentName]);
 
   const label = isHuman ? 'You' : (agentDisplayName || 'Agent');
   const initial = isHuman
@@ -105,7 +107,7 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
                 rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
                 skipHtml
                 urlTransform={(url) => safeMarkdownUrl(url)}
-                components={markdownComponents}
+                components={components}
               >
                 {safeContent(message.content)}
               </ReactMarkdown>
@@ -130,55 +132,65 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
   );
 }
 
-const markdownComponents: Components = {
-  a: ({ children, href, ...props }) => (
-    <a href={href} target="_blank" rel="noreferrer" {...props}>
-      {children}
-    </a>
-  ),
-  table: ({ children, ...props }) => (
-    <div className="markdown-table-wrap">
-      <table {...props}>{children}</table>
-    </div>
-  ),
-  img: ({ alt, src, ...props }) => (
-    <img alt={alt ?? ''} src={src ?? ''} loading="lazy" {...props} />
-  ),
-  p: ({ children }) => {
-    const text = childrenToText(children);
-    return (
-      <div className="group/paragraph relative pr-7">
+function createMarkdownComponents(messageId?: string, agentName?: string): Components {
+  return {
+    a: ({ children, href, ...props }) => (
+      <a href={href} target="_blank" rel="noreferrer" {...props}>
         {children}
-        {text && (
-          <button
-            onClick={() => insertPrompt(`请基于以下引用继续处理：\n\n> ${text.replace(/\n/g, '\n> ')}`)}
-            className="absolute right-0 top-0 hidden h-6 w-6 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover group-hover/paragraph:inline-flex"
-            title="引用并交给 Agent"
-          >
-            <Quote className="h-3.5 w-3.5" />
-          </button>
-        )}
+      </a>
+    ),
+    table: ({ children, ...props }) => (
+      <div className="markdown-table-wrap">
+        <table {...props}>{children}</table>
       </div>
-    );
-  },
-  code: ({ inline, className, children, ...props }: any) => {
-    const codeStr = childrenToText(children).replace(/\n$/, '');
-    if (inline) {
+    ),
+    img: ({ alt, src, ...props }) => (
+      <img alt={alt ?? ''} src={src ?? ''} loading="lazy" {...props} />
+    ),
+    p: ({ children }) => {
+      const text = childrenToText(children);
       return (
-        <code
-          style={{ color: 'var(--accent-primary)', fontWeight: 500 }}
-          {...props}
-        >
-          {codeStr}
-        </code>
+        <div className="group/paragraph relative pr-7">
+          {children}
+          {text && (
+            <button
+              onClick={() => {
+                const payload: QuotePayload = {
+                  text,
+                  sourceType: 'message',
+                  sourceMessageId: messageId,
+                  agentName,
+                };
+                insertPrompt(buildQuotePrompt(payload));
+              }}
+              className="absolute right-0 top-0 hidden h-6 w-6 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover group-hover/paragraph:inline-flex"
+              title="引用并交给 Agent"
+            >
+              <Quote className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       );
-    }
-    const language = /language-(\w+)/.exec(className ?? '')?.[1] ?? '';
-    return <FoldableCodeBlock language={language} code={codeStr} />;
-  },
-};
+    },
+    code: ({ inline, className, children, ...props }: any) => {
+      const codeStr = childrenToText(children).replace(/\n$/, '');
+      if (inline) {
+        return (
+          <code
+            style={{ color: 'var(--accent-primary)', fontWeight: 500 }}
+            {...props}
+          >
+            {codeStr}
+          </code>
+        );
+      }
+      const language = /language-(\w+)/.exec(className ?? '')?.[1] ?? '';
+      return <FoldableCodeBlock language={language} code={codeStr} messageId={messageId} agentName={agentName} />;
+    },
+  };
+}
 
-function FoldableCodeBlock({ language, code }: { language: string; code: string }) {
+function FoldableCodeBlock({ language, code, messageId, agentName }: { language: string; code: string; messageId?: string; agentName?: string }) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const lines = code.split('\n');
@@ -201,7 +213,16 @@ function FoldableCodeBlock({ language, code }: { language: string; code: string 
         <span className="font-mono text-[10px] text-hub-muted">{language || 'code'}</span>
         <div className="flex items-center gap-1 opacity-0 group-hover/code:opacity-100 transition">
           <button
-            onClick={() => insertPrompt(`请修改并应用这段代码：\n\n\`\`\`${language}\n${code}\n\`\`\``)}
+            onClick={() => {
+              const payload: QuotePayload = {
+                text: code,
+                sourceType: 'message',
+                sourceMessageId: messageId,
+                agentName,
+                contextMeta: { language },
+              };
+              insertPrompt(buildQuotePrompt(payload));
+            }}
             className="inline-flex h-5 w-5 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
             title="让 Agent 修改这段代码"
           >
