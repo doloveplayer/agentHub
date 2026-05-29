@@ -159,7 +159,7 @@ export const config = {
   },
 
   agentContainer: {
-    image: optional('AGENT_CONTAINER_IMAGE', 'agenthub-agent:latest'),
+    image: optional('AGENT_CONTAINER_IMAGE', 'agenthub-sandbox:latest'),
     memoryMb: optionalInt('AGENT_CONTAINER_MEMORY_MB', 1024),
     idleTimeoutMs: optionalInt('AGENT_IDLE_TIMEOUT_MS', 30 * 60 * 1000), // 30 min
     hostRoot: optional('AGENT_HOST_ROOT', resolve(PROJECT_ROOT, '.agents')),
