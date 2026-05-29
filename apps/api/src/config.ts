@@ -158,6 +158,13 @@ export const config = {
     groupMemoryMb: optionalInt('GROUP_SANDBOX_MEMORY_MB', 2048),
   },
 
+  agentContainer: {
+    image: optional('AGENT_CONTAINER_IMAGE', 'agenthub-agent:latest'),
+    memoryMb: optionalInt('AGENT_CONTAINER_MEMORY_MB', 1024),
+    idleTimeoutMs: optionalInt('AGENT_IDLE_TIMEOUT_MS', 30 * 60 * 1000), // 30 min
+    hostRoot: optional('AGENT_HOST_ROOT', resolve(PROJECT_ROOT, '.agents')),
+  },
+
   frontendUrl: optional('FRONTEND_URL', 'http://localhost:5175'),
 
   realWorkspaceRoots: optional('AGENTHUB_REAL_WORKSPACE_ROOTS', '/home'),
