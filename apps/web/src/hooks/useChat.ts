@@ -79,8 +79,11 @@ export function useChat(sessionId: string) {
               {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
                 appendToMessage(targetSessionId, data.agentMessageId, safeContent(data.content));
-              // Increment unread for inactive sessions (different tab)
-                if (useAppStore.getState().activeSessionId !== targetSessionId) {
+                // Increment unread only for user-initiated conversations (has active streaming messages)
+                // This prevents pre-activated group agents from triggering false unread badges
+                const store = useAppStore.getState();
+                const hasActiveStreaming = (store.streamingMessages[targetSessionId]?.length ?? 0) > 0;
+                if (store.activeSessionId !== targetSessionId && hasActiveStreaming) {
                   incrementUnread(targetSessionId);
                 }
               }

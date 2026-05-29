@@ -1,6 +1,6 @@
 # User Settings Page Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add a settings page where users can configure their avatar and admins can adjust runtime agent parameters (concurrency, timeouts).
 
@@ -34,7 +34,7 @@
 - Modify: `apps/api/prisma/schema.prisma` (add model)
 - Create: migration via `npx prisma migrate dev`
 
-- [ ] **Step 1: Add `UserSettings` model and `settings` field to User**
+- [x] **Step 1: Add `UserSettings` model and `settings` field to User**
 
 Append to `apps/api/prisma/schema.prisma`:
 
@@ -56,7 +56,7 @@ model GlobalConfig {
 }
 ```
 
-- [ ] **Step 2: Run migration**
+- [x] **Step 2: Run migration**
 
 ```bash
 cd apps/api && npx prisma migrate dev --name add_user_settings
@@ -64,7 +64,7 @@ cd apps/api && npx prisma migrate dev --name add_user_settings
 
 Expected: migration created, no errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/api/prisma/schema.prisma apps/api/prisma/migrations/
@@ -80,7 +80,7 @@ git commit -m "feat: add UserSettings model with theme and notification prefs"
 
 Currently `config` is `as const` frozen at import time. We need runtime-mutable properties for agent concurrency/timeout while preserving env-var defaults.
 
-- [ ] **Step 1: Create `RuntimeConfig` class**
+- [x] **Step 1: Create `RuntimeConfig` class**
 
 Replace the frozen config with a class that reads env vars as defaults but allows runtime override:
 
@@ -209,7 +209,7 @@ export const config = {
 
 **Why getters on the frozen `config.agent`**: All existing code uses `config.agent.maxConcurrent` etc. The getters delegate to `runtimeConfig`, so existing code works unchanged. Hot-reload through `runtimeConfig.agent.maxConcurrent = 4` is immediately visible.
 
-- [ ] **Step 2: Verify existing code compiles**
+- [x] **Step 2: Verify existing code compiles**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json
@@ -217,7 +217,7 @@ npx tsc --noEmit -p apps/api/tsconfig.json
 
 Expected: clean. All existing `config.agent.maxConcurrent` etc. still resolve through getters.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/api/src/config.ts
@@ -232,7 +232,7 @@ git commit -m "refactor: extract RuntimeConfig for hot-reloadable agent paramete
 - Create: `apps/api/src/routes/settings.ts`
 - Modify: `apps/api/src/index.ts` (register routes)
 
-- [ ] **Step 1: Create settings route file**
+- [x] **Step 1: Create settings route file**
 
 ```typescript
 // apps/api/src/routes/settings.ts
@@ -324,7 +324,7 @@ app.get('/runtime', async (_c) => {
 export default app;
 ```
 
-- [ ] **Step 2: Register routes in index.ts**
+- [x] **Step 2: Register routes in index.ts**
 
 In `apps/api/src/index.ts`, add after existing route imports:
 
@@ -340,7 +340,7 @@ app.route('/api/settings', settingsRoutes);
 app.route('/api/avatar', avatarRoutes);
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json
@@ -348,7 +348,7 @@ npx tsc --noEmit -p apps/api/tsconfig.json
 
 Expected: clean.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/api/src/routes/settings.ts apps/api/src/index.ts
@@ -363,7 +363,7 @@ git commit -m "feat: add settings API endpoints for user prefs and runtime confi
 - Create: `apps/api/src/routes/avatar.ts`
 - Modify: `apps/api/src/index.ts` (register static serving)
 
-- [ ] **Step 1: Create avatar route**
+- [x] **Step 1: Create avatar route**
 
 ```typescript
 // apps/api/src/routes/avatar.ts
@@ -409,7 +409,7 @@ app.post('/upload', async (c) => {
 export default app;
 ```
 
-- [ ] **Step 2: Serve static uploads**
+- [x] **Step 2: Serve static uploads**
 
 In `apps/api/src/index.ts`, add before `app.route` calls:
 
@@ -418,7 +418,7 @@ import { serveStatic } from 'hono/serve-static';
 app.use('/uploads/*', serveStatic({ root: './' }));
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json
@@ -426,7 +426,7 @@ npx tsc --noEmit -p apps/api/tsconfig.json
 
 Expected: clean.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/api/src/routes/avatar.ts apps/api/src/index.ts
@@ -441,7 +441,7 @@ git commit -m "feat: add avatar upload endpoint with local file storage"
 - Create: `apps/web/src/store/settingsStore.ts`
 - Create: `apps/web/src/hooks/useSettings.ts`
 
-- [ ] **Step 1: Create settings store**
+- [x] **Step 1: Create settings store**
 
 ```typescript
 // apps/web/src/store/settingsStore.ts
@@ -483,7 +483,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 }));
 ```
 
-- [ ] **Step 2: Create useSettings hook**
+- [x] **Step 2: Create useSettings hook**
 
 ```typescript
 // apps/web/src/hooks/useSettings.ts
@@ -574,13 +574,13 @@ export function useSettings() {
 }
 ```
 
-- [ ] **Step 3: Verify compilation**
+- [x] **Step 3: Verify compilation**
 
 ```bash
 npx tsc --noEmit -p apps/web/tsconfig.json
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/web/src/store/settingsStore.ts apps/web/src/hooks/useSettings.ts
@@ -594,7 +594,7 @@ git commit -m "feat: add settings store and hook for user prefs + runtime config
 **Files:**
 - Create: `apps/web/src/components/AvatarUpload.tsx`
 
-- [ ] **Step 1: Create component**
+- [x] **Step 1: Create component**
 
 ```tsx
 // apps/web/src/components/AvatarUpload.tsx
@@ -652,13 +652,13 @@ export function AvatarUpload() {
 }
 ```
 
-- [ ] **Step 2: Verify compilation**
+- [x] **Step 2: Verify compilation**
 
 ```bash
 npx tsc --noEmit -p apps/web/tsconfig.json
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/components/AvatarUpload.tsx
@@ -672,7 +672,7 @@ git commit -m "feat: add AvatarUpload component with drag-drop"
 **Files:**
 - Create: `apps/web/src/components/RuntimeConfigForm.tsx`
 
-- [ ] **Step 1: Create admin-only config form**
+- [x] **Step 1: Create admin-only config form**
 
 ```tsx
 // apps/web/src/components/RuntimeConfigForm.tsx
@@ -748,13 +748,13 @@ export function RuntimeConfigForm() {
 }
 ```
 
-- [ ] **Step 2: Verify compilation**
+- [x] **Step 2: Verify compilation**
 
 ```bash
 npx tsc --noEmit -p apps/web/tsconfig.json
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/components/RuntimeConfigForm.tsx
@@ -768,7 +768,7 @@ git commit -m "feat: add admin-only RuntimeConfigForm component"
 **Files:**
 - Create: `apps/web/src/components/SettingsPanel.tsx`
 
-- [ ] **Step 1: Create side panel with tabs**
+- [x] **Step 1: Create side panel with tabs**
 
 ```tsx
 // apps/web/src/components/SettingsPanel.tsx
@@ -847,13 +847,13 @@ export function SettingsPanel({ open, onClose }: Props) {
 }
 ```
 
-- [ ] **Step 2: Verify compilation**
+- [x] **Step 2: Verify compilation**
 
 ```bash
 npx tsc --noEmit -p apps/web/tsconfig.json
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/web/src/components/SettingsPanel.tsx
@@ -868,7 +868,7 @@ git commit -m "feat: add SettingsPanel with profile and agent config tabs"
 - Modify: `apps/web/src/components/ChatView.tsx` (add to session header)
 - Modify: `apps/web/src/pages/ChatPage.tsx` (add to mobile header)
 
-- [ ] **Step 1: Add settings button in ChatView session header (desktop)**
+- [x] **Step 1: Add settings button in ChatView session header (desktop)**
 
 In `apps/web/src/components/ChatView.tsx`, add the import:
 
@@ -903,7 +903,7 @@ And at the bottom of the ChatView JSX (before closing tag), add:
 <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 ```
 
-- [ ] **Step 2: Add settings button in ChatPage mobile header**
+- [x] **Step 2: Add settings button in ChatPage mobile header**
 
 In `apps/web/src/pages/ChatPage.tsx`, add import and state:
 
@@ -929,13 +929,13 @@ And at the bottom of ChatPage (before closing `</div>`), add:
 <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
 ```
 
-- [ ] **Step 3: Verify compilation**
+- [x] **Step 3: Verify compilation**
 
 ```bash
 npx tsc --noEmit -p apps/web/tsconfig.json
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/web/src/components/ChatView.tsx apps/web/src/pages/ChatPage.tsx
@@ -949,7 +949,7 @@ git commit -m "feat: wire settings button in session header (desktop + mobile)"
 **Files:**
 - Create: `apps/api/src/settingsTest.ts`
 
-- [ ] **Step 1: Write integration test**
+- [x] **Step 1: Write integration test**
 
 Test that settings API endpoints work and runtime config changes take effect:
 
@@ -989,7 +989,7 @@ describe('RuntimeConfig', () => {
 });
 ```
 
-- [ ] **Step 2: Run test**
+- [x] **Step 2: Run test**
 
 ```bash
 npx tsx --test apps/api/src/settingsTest.ts
@@ -997,7 +997,7 @@ npx tsx --test apps/api/src/settingsTest.ts
 
 Expected: 3 tests pass.
 
-- [ ] **Step 3: Verify all existing tests still pass**
+- [x] **Step 3: Verify all existing tests still pass**
 
 ```bash
 npx tsx apps/api/src/concurrentAgentTest.ts
@@ -1006,7 +1006,7 @@ npx tsx --test apps/api/src/agent/core.test.ts
 
 Expected: all pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/api/src/settingsTest.ts

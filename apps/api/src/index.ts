@@ -76,11 +76,11 @@ ProviderFactory.init();
 
 const app = new Hono();
 
-// CORS — allow frontend on localhost:5173
+// CORS — allow frontend origin from config
 app.use(
   '*',
   cors({
-    origin: 'http://localhost:5173',
+    origin: config.frontendUrl,
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization'],
     credentials: true,

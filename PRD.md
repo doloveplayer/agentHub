@@ -186,7 +186,7 @@ AgentCoordinator 事件路由：done/error → inbox 通知 Planner
 - [x] **DAG 状态持久化**：PlanExecution Prisma 模型 + PostgreSQL，重启恢复
 - [x] **Agent 故障转移**：Agent 崩溃时排队任务自动转移到同类型 Agent
 - [x] **优先级任务队列**：high/medium/low 优先级排序
-- [ ] **代码冲突检测**：多 Agent 并发修改同一文件时橙色高亮 + 手动裁决
+- [x] **代码冲突检测**：多 Agent 并发修改同一文件时橙色高亮 + 手动裁决
 
 #### 4.3.2 多 Agent 通信闭环（2026-05-27 新增）
 
@@ -210,15 +210,15 @@ AgentCoordinator 事件路由：done/error → inbox 通知 Planner
 - [x] **Provider 抽象接口**：`AbstractProvider` 定义统一生命周期
 - [x] **Claude Code Provider**：完整 REPL 实现
 - [x] **ProviderFactory 注册机制**：插件式注册
-- [ ] **第二平台 Provider**（Codex/OpenCode）
-- [ ] **用户自建 Agent**：API/UI 注册自定义 Agent
+- [x] **第二平台 Provider**（Codex/OpenCode）
+- [x] **用户自建 Agent**：API/UI 注册自定义 Agent
 
 #### 4.3.5 消息增强交互
 
 - [x] **消息状态指示** + **消息复制**
 - [x] **Session inline 重命名**：hover 铅笔图标，回车保存
 - [x] **消息气泡自适应宽度**：短文本 w-fit 收缩
-- [ ] **部署状态卡片**
+- [x] **部署状态卡片**
 - [ ] **上下文管理**：选择性遗忘对话/上下文窗口设置
 
 ---
@@ -252,10 +252,10 @@ AgentCoordinator 事件路由：done/error → inbox 通知 Planner
 
 #### 4.4.2 代码编辑与版本历史
 
-- [ ] 消息气泡中代码块支持 Monaco Editor 内联编辑
-- [ ] 编辑后可重新交给 Agent 处理（"让 Agent 修改这段代码"）
-- [ ] 文件版本历史时间线（每次 Agent 修改为一个版本节点）
-- [ ] 版本间 diff 对比、回退到任意历史版本
+- [x] 消息气泡中代码块支持 Monaco Editor 内联编辑
+- [x] 编辑后可重新交给 Agent 处理（"让 Agent 修改这段代码"）
+- [x] 文件版本历史时间线（每次 Agent 修改为一个版本节点）
+- [x] 版本间 diff 对比、回退到任意历史版本
 
 #### 4.4.3 网页预览
 
@@ -315,23 +315,23 @@ AgentCoordinator 事件路由：done/error → inbox 通知 Planner
 
 #### 4.5.1 用户设置
 
-- [ ] 头像上传（本地文件，支持 PNG/JPG/GIF/WebP，限制 2MB）
-- [ ] 头像存储到服务端 `.uploads/avatars/` 目录，DB 存相对路径
-- [ ] 主题偏好存储到 `UserSettings` 表
-- [ ] 通知开关（是否接收 inbox 通知推送）
+- [x] 头像上传（本地文件，支持 PNG/JPG/GIF/WebP，限制 2MB）
+- [x] 头像存储到服务端 `.uploads/avatars/` 目录，DB 存相对路径
+- [x] 主题偏好存储到 `UserSettings` 表
+- [x] 通知开关（是否接收 inbox 通知推送）
 
 #### 4.5.2 运行时配置
 
-- [ ] `config.ts` 重构：从 frozen const 拆分为 mutable `RuntimeConfig` + immutable `config`
-- [ ] 运行时参数通过 getter 委托，现有代码 `config.agent.maxConcurrent` 无需改动
-- [ ] Admin-only PUT `/api/settings/runtime` 端点，参数范围校验
-- [ ] Runtime config 改变立即生效（下次 `config.agent.maxConcurrent` 读取即新值）
+- [x] `config.ts` 重构：从 frozen const 拆分为 mutable `RuntimeConfig` + immutable `config`
+- [x] 运行时参数通过 getter 委托，现有代码 `config.agent.maxConcurrent` 无需改动
+- [x] Admin-only PUT `/api/settings/runtime` 端点，参数范围校验
+- [x] Runtime config 改变立即生效（下次 `config.agent.maxConcurrent` 读取即新值）
 
 #### 4.5.3 设置入口
 
-- [ ] 顶部导航栏右侧齿轮图标按钮
-- [ ] 点击弹出右侧滑出面板（320px），包含 Profile 和 Agent Config 标签
-- [ ] 点击遮罩或关闭按钮关闭面板
+- [x] 顶部导航栏右侧齿轮图标按钮
+- [x] 点击弹出右侧滑出面板（320px），包含 Profile 和 Agent Config 标签
+- [x] 点击遮罩或关闭按钮关闭面板
 
 #### 4.5.4 数据模型
 
