@@ -181,4 +181,19 @@ export const api = {
       `/sessions/${sessionId}/agents/${agentId}`,
       { method: 'PATCH', body: JSON.stringify({ systemPromptOverride }) }
     ),
+
+  createQuoteReference: (data: {
+    sourceMessageId: string;
+    selectionText: string;
+    sourceType: string;
+    contextMeta?: Record<string, unknown>;
+    sessionId: string;
+  }) =>
+    request<{ id: string }>('/quote-references', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getQuoteReferences: (messageId: string) =>
+    request<{ references: any[] }>(`/quote-references?messageId=${messageId}`),
 };

@@ -13,6 +13,16 @@ interface MentionTag {
   displayName: string;
 }
 
+interface PromptInsertDetail {
+  prompt: string;
+  quoteRef?: {
+    sourceMessageId?: string;
+    selectionText: string;
+    sourceType: string;
+    contextMeta?: Record<string, unknown>;
+  };
+}
+
 interface Props {
   onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential') => void;
   disabled?: boolean;
@@ -41,15 +51,19 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   const [slashQuery, setSlashQuery] = useState('');
   const [showSlash, setShowSlash] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  const pendingQuoteRef = useRef<PromptInsertDetail['quoteRef'] | null>(null);
 
   const matchSource = mentionableAgents ?? agents;
   const matchedAgents = recommendAgents(mentionQuery, matchSource, recentMessages);
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ prompt: string }>).detail;
+      const detail = (event as CustomEvent<PromptInsertDetail>).detail;
       if (!detail?.prompt) return;
       setValue((current) => `${current.trim() ? `${current.trim()}\n\n` : ''}${detail.prompt}`);
+      if (detail.quoteRef) {
+        pendingQuoteRef.current = detail.quoteRef;
+      }
       ref.current?.focus();
     };
     window.addEventListener('agenthub:prompt-insert', handler);
@@ -184,6 +198,20 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
     }
 
     onSend(trimmed, tags, orchestrationMode);
+
+    // Persist quote reference if this was a quote-initiated prompt
+    if (pendingQuoteRef.current && activeSessionId) {
+      const ref_ = pendingQuoteRef.current;
+      api.createQuoteReference({
+        sourceMessageId: ref_.sourceMessageId || '',
+        selectionText: ref_.selectionText,
+        sourceType: ref_.sourceType,
+        contextMeta: ref_.contextMeta,
+        sessionId: activeSessionId,
+      }).catch(() => {}); // fire-and-forget
+      pendingQuoteRef.current = null;
+    }
+
     setValue('');
     setTags([]);
     ref.current?.focus();
