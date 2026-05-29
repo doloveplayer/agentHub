@@ -14,6 +14,7 @@ import { SandboxManager } from './agent/SandboxManager.js';
 import { prisma } from './db/prisma.js';
 import authRoutes, { seedDefaultAdmin } from './routes/auth.js';
 import sessionRoutes from './routes/sessions.js';
+import sessionAgentRoutes from './routes/sessionAgents.js';
 import chatRoutes from './routes/chat.js';
 import agentRoutes from './routes/agents.js';
 import workspaceRoutes from './routes/workspace.js';
@@ -104,6 +105,7 @@ app.route('/api/auth', authRoutes);
 
 // Protected routes (middleware applied inside each router)
 app.route('/api/sessions', sessionRoutes);
+app.route('/api/sessions', sessionAgentRoutes);
 app.route('/api/chat', chatRoutes);
 app.route('/api/agents', agentRoutes);
 app.route('/api/workspace', workspaceRoutes);
