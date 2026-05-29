@@ -148,6 +148,12 @@ export const api = {
       body: JSON.stringify({ agentId }),
     }),
 
+  addSessionAgents: (sessionId: string, agentIds: string[]) =>
+    request<{ added: string[] }>(`/sessions/${sessionId}/agents`, {
+      method: 'POST',
+      body: JSON.stringify({ agentIds }),
+    }),
+
   removeAgentFromSession: (sessionId: string, agentId: string) =>
     request<void>(`/sessions/${sessionId}/agents/${agentId}`, { method: 'DELETE' }),
 
