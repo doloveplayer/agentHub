@@ -100,26 +100,8 @@ sessions.post('/', async (c) => {
     agentIds = [agent.id];
   }
 
-  // Auto-assign agents:
-  // - Group without explicit agentIds → assign ALL active agents
-  // - Solo without explicit agentIds → assign default CodeAgent
-  if ((!agentIds || agentIds.length === 0)) {
-    if (type === 'group') {
-      const allAgents = await prisma.agent.findMany({
-        where: { isActive: true },
-        select: { id: true },
-      });
-      agentIds = allAgents.map((a) => a.id);
-    } else {
-      // Solo: assign the default code-agent for 1-on-1 chat
-      const defaultAgent = await prisma.agent.findFirst({
-        where: { name: 'code-agent', isActive: true },
-        select: { id: true },
-      });
-      if (defaultAgent) agentIds = [defaultAgent.id];
-    }
-  }
-
+  // Validate explicit agentIds BEFORE session creation (auto-assigned agents
+  // are created below and don't need this check)
   if (agentIds && agentIds.length > 0) {
     const activeAgents = await prisma.agent.findMany({
       where: { id: { in: agentIds }, isActive: true },
@@ -132,24 +114,83 @@ sessions.post('/', async (c) => {
     }
   }
 
+  // Create session FIRST without agents so we have session.id for
+  // template-based system agent naming in the auto-assign block below.
   const session = await prisma.session.create({
     data: {
       title: title || (type === 'group' ? 'Group Session' : 'New Session'),
       type,
       userId,
-      agents: agentIds && agentIds.length > 0
-        ? { create: agentIds.map((agentId) => ({ agentId })) }
-        : undefined,
     },
+  });
+
+  // Auto-assign agents using new lifecycle:
+  // - Group without explicit agentIds → create system agents from AgentTemplate
+  // - Solo without explicit agentIds → reuse user's default code-agent or create from template
+  if ((!agentIds || agentIds.length === 0)) {
+    if (type === 'group') {
+      const templates = await prisma.agentTemplate.findMany();
+      agentIds = [];
+      for (const tpl of templates) {
+        const systemAgent = await prisma.agent.create({
+          data: {
+            name: `${tpl.name}-${session.id.slice(0, 8)}`,
+            displayName: tpl.displayName,
+            description: tpl.description,
+            systemPrompt: tpl.systemPrompt,
+            provider: tpl.provider,
+            type: 'system',
+            contextMode: 'isolated',
+          },
+        });
+        agentIds.push(systemAgent.id);
+      }
+    } else {
+      // Solo: reuse existing user code-agent or create from template
+      let defaultAgent = await prisma.agent.findFirst({
+        where: { name: 'code-agent', type: 'user', createdBy: userId, isActive: true },
+      });
+      if (!defaultAgent) {
+        const codeTpl = await prisma.agentTemplate.findUnique({ where: { name: 'code-agent' } });
+        if (codeTpl) {
+          defaultAgent = await prisma.agent.create({
+            data: {
+              name: 'code-agent',
+              displayName: codeTpl.displayName,
+              description: codeTpl.description,
+              systemPrompt: codeTpl.systemPrompt,
+              type: 'user',
+              contextMode: 'shared',
+              createdBy: userId,
+            },
+          });
+        }
+      }
+      agentIds = defaultAgent ? [defaultAgent.id] : [];
+    }
+  }
+
+  // Create SessionAgent associations
+  if (agentIds && agentIds.length > 0) {
+    await prisma.sessionAgent.createMany({
+      data: agentIds.map((agentId) => ({ sessionId: session.id, agentId })),
+    });
+  }
+
+  // Fetch the complete session with agents for the response
+  const fullSession = await prisma.session.findUnique({
+    where: { id: session.id },
     include: {
       agents: { include: { agent: { select: { id: true, name: true, displayName: true } } } },
     },
   });
 
+  if (!fullSession) return c.json({ error: 'Session creation failed' }, 500);
+
   return c.json({
-    ...session,
-    type: session.type,
-    agents: session.agents.map((sa) => ({
+    ...fullSession,
+    type: fullSession.type,
+    agents: fullSession.agents.map((sa) => ({
       agentId: sa.agent.id,
       name: sa.agent.name,
       displayName: sa.agent.displayName,
