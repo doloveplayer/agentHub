@@ -27,10 +27,13 @@ const createSchema = z.object({
   systemPrompt: z.string().min(1),
   provider: z.enum(['claude-code', 'codex']).default('claude-code'),
   providerConfig: z.record(z.unknown()).optional(),
+  type: z.enum(['user', 'system']).optional().default('user'),
+  contextMode: z.enum(['shared', 'isolated']).optional().default('shared'),
 });
 
 // POST / — create custom agent
 agents.post('/', async (c) => {
+  const { userId } = c.get('user');
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
   const parsed = createSchema.safeParse(body);
@@ -39,8 +42,15 @@ agents.post('/', async (c) => {
   try {
     const agent = await prisma.agent.create({
       data: {
-        ...parsed.data,
-        providerConfig: parsed.data.providerConfig as any,
+        name: parsed.data.name,
+        displayName: parsed.data.displayName,
+        description: parsed.data.description,
+        systemPrompt: parsed.data.systemPrompt,
+        provider: parsed.data.provider,
+        providerConfig: (parsed.data.providerConfig ?? {}) as any,
+        type: 'user',
+        contextMode: 'shared',
+        createdBy: userId,
       },
     });
     return c.json(agent, 201);
@@ -204,16 +214,40 @@ agents.put('/:id', async (c) => {
   }
 });
 
-// DELETE /:id — soft-delete (MUST be AFTER fixed-path routes)
+// DELETE /:id — soft-delete with container cleanup
 agents.delete('/:id', async (c) => {
+  const { userId } = c.get('user');
   const id = c.req.param('id');
-  try {
-    await prisma.agent.update({ where: { id }, data: { isActive: false } });
-    return c.body(null, 204);
-  } catch (err: any) {
-    if (err.code === 'P2025') return c.json({ error: 'Agent not found' }, 404);
-    throw err;
+
+  const agent = await prisma.agent.findUnique({ where: { id } });
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+
+  // Only allow deletion of user-created agents
+  if (agent.type !== 'user') return c.json({ error: 'Cannot delete system agents' }, 403);
+  if (agent.createdBy !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  // Destroy container if running
+  if (agent.containerId && agent.containerStatus === 'running') {
+    try {
+      // @ts-expect-error - AgentContainer module may not exist yet
+      const { AgentContainer } = await import('../agent/AgentContainer.js');
+      await AgentContainer.destroy(agent.containerId);
+    } catch { /* best-effort */ }
   }
+
+  // Clean host work dir
+  if (agent.hostWorkDir) {
+    try {
+      // @ts-expect-error - AgentContainer module may not exist yet
+      const { AgentContainer } = await import('../agent/AgentContainer.js');
+      await AgentContainer.destroyHostDir(agent.id);
+    } catch { /* best-effort */ }
+  }
+
+  // Soft-delete the agent (cascades SessionAgent removal via Prisma relation)
+  await prisma.agent.update({ where: { id }, data: { isActive: false } });
+
+  return c.body(null, 204);
 });
 
 export default agents;
