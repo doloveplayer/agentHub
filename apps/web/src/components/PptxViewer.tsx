@@ -11,15 +11,16 @@ interface Props {
 
 export function PptxViewer({ src, isBase64 = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const previewerRef = useRef<any>(null);
+  const previewerRef = useRef<ReturnType<typeof import('pptx-preview').init> | null>(null);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [totalSlides, setTotalSlides] = useState(0);
   const [scale, setScale] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [dragEnd, setDragEnd] = useState<{ x: number; y: number } | null>(null);
-  const [selecting, setSelecting] = useState(false);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const dragEndRef = useRef<{ x: number; y: number } | null>(null);
+  const selectingRef = useRef(false);
+  const [dragRect, setDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   // Load PPTX and initialize previewer
   useEffect(() => {
@@ -113,32 +114,46 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
     setScale((s) => Math.max(0.5, +(s - 0.1).toFixed(1)));
   }, []);
 
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setDragStart({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-    setSelecting(true);
-  };
+    dragStartRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    selectingRef.current = true;
+  }, []);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!selecting) return;
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!selectingRef.current) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    setDragEnd({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  };
+    const end = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    dragEndRef.current = end;
+    if (dragStartRef.current) {
+      setDragRect({
+        x: Math.min(dragStartRef.current.x, end.x),
+        y: Math.min(dragStartRef.current.y, end.y),
+        w: Math.abs(end.x - dragStartRef.current.x),
+        h: Math.abs(end.y - dragStartRef.current.y),
+      });
+    }
+  }, []);
 
-  const handleMouseUp = () => {
-    setSelecting(false);
-    if (!dragStart || !dragEnd || !containerRef.current) return;
+  const handleMouseUp = useCallback(() => {
+    selectingRef.current = false;
+    setDragRect(null);
+    const dStart = dragStartRef.current;
+    const dEnd = dragEndRef.current;
+    dragStartRef.current = null;
+    dragEndRef.current = null;
+    if (!dStart || !dEnd || !containerRef.current) return;
 
     const canvas = containerRef.current.querySelector('canvas');
     if (!canvas) return;
 
-    const x = Math.min(dragStart.x, dragEnd.x) / scale;
-    const y = Math.min(dragStart.y, dragEnd.y) / scale;
-    const w = Math.abs(dragEnd.x - dragStart.x) / scale;
-    const h = Math.abs(dragEnd.y - dragStart.y) / scale;
+    const x = Math.min(dStart.x, dEnd.x) / scale;
+    const y = Math.min(dStart.y, dEnd.y) / scale;
+    const w = Math.abs(dEnd.x - dStart.x) / scale;
+    const h = Math.abs(dEnd.y - dStart.y) / scale;
 
-    if (w < 10 || h < 10) { setDragStart(null); setDragEnd(null); return; }
+    if (w < 10 || h < 10) return;
 
     const cropCanvas = document.createElement('canvas');
     cropCanvas.width = w;
@@ -152,12 +167,19 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
         sourceType: 'ppt',
         contextMeta: { filePath: `slide-${currentSlide + 1}` },
       };
-      const prompt = buildQuotePrompt(payload) + `\n\n截图数据:\n${dataUrl}`;
-      window.dispatchEvent(new CustomEvent('agenthub:prompt-insert', { detail: { prompt } }));
+      const prompt = buildQuotePrompt(payload);
+      window.dispatchEvent(new CustomEvent('agenthub:prompt-insert', {
+        detail: {
+          prompt: `请分析这个PPT截图的视觉内容：\n${dataUrl.slice(0, 200)}...\n\n（完整截图数据已通过文件上传至工作区）\n\n${prompt}`,
+          quoteRef: {
+            selectionText: payload.text,
+            sourceType: 'ppt',
+            contextMeta: { filePath: `slide-${currentSlide + 1}`, scale: `${Math.round(scale * 100)}%` },
+          },
+        },
+      }));
     }
-    setDragStart(null);
-    setDragEnd(null);
-  };
+  }, [scale, currentSlide]);
 
   return (
     <div className="rounded border border-hub bg-hub-input overflow-hidden">
@@ -230,15 +252,15 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
             transformOrigin: 'top left',
           }}
         />
-        {/* Selection overlay */}
-        {dragStart && dragEnd && (
+        {/* Selection overlay using stable dragRect state */}
+        {dragRect && (
           <div
             className="absolute border-2 border-hub-accent bg-hub-accent/10 pointer-events-none"
             style={{
-              left: Math.min(dragStart.x, dragEnd.x),
-              top: Math.min(dragStart.y, dragEnd.y),
-              width: Math.abs(dragEnd.x - dragStart.x),
-              height: Math.abs(dragEnd.y - dragStart.y),
+              left: dragRect.x,
+              top: dragRect.y,
+              width: dragRect.w,
+              height: dragRect.h,
             }}
           />
         )}

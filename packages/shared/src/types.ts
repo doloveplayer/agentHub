@@ -72,6 +72,7 @@ export interface SendRequest {
   sessionId: string;
   content: string;
   mentions?: Mention[];
+  quoteReferenceId?: string | null;
 }
 
 export interface SendResponse {

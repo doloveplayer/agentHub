@@ -126,25 +126,14 @@ class AgentRuntime {
       case 'done':
         broadcast(sessionId, { type: 'stream_end', exitCode: event.exitCode ?? 0, agentMessageId });
         if (agentMessageId) clearRunningAgent(sessionId, agentMessageId);
-        // Backfill QuoteReference with the agent's response message ID
+        // Backfill QuoteReference with the agent's response message ID (exact ID match)
         if (agentMessageId) {
           const backfillInfo = quoteBackfillMap.get(agentMessageId);
           if (backfillInfo) {
             quoteBackfillMap.delete(agentMessageId);
-            prisma.quoteReference.findFirst({
-              where: {
-                sessionId: backfillInfo.sessionId,
-                targetMessageId: null,
-                createdAt: { gte: new Date(Date.now() - 300_000) }, // 5 min window
-              },
-              orderBy: { createdAt: 'desc' },
-            }).then((pendingRef) => {
-              if (pendingRef) {
-                return prisma.quoteReference.update({
-                  where: { id: pendingRef.id },
-                  data: { targetMessageId: agentMessageId, agentId: backfillInfo.agentId || undefined },
-                });
-              }
+            prisma.quoteReference.update({
+              where: { id: backfillInfo.quoteReferenceId },
+              data: { targetMessageId: agentMessageId, agentId: backfillInfo.agentId || undefined },
             }).catch(() => {});
           }
         }

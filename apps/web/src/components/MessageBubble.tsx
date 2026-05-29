@@ -165,7 +165,12 @@ function createMarkdownComponents(messageId?: string, agentName?: string): Compo
                   sourceMessageId: messageId,
                   agentName,
                 };
-                insertPrompt(buildQuotePrompt(payload));
+                insertPrompt(buildQuotePrompt(payload), {
+                  sourceMessageId: messageId,
+                  selectionText: text,
+                  sourceType: 'message',
+                  contextMeta: { agentName },
+                });
               }}
               className="absolute right-0 top-0 hidden h-6 w-6 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover group-hover/paragraph:inline-flex"
               title="引用并交给 Agent"
@@ -225,7 +230,12 @@ function FoldableCodeBlock({ language, code, messageId, agentName }: { language:
                 agentName,
                 contextMeta: { language },
               };
-              insertPrompt(buildQuotePrompt(payload));
+              insertPrompt(buildQuotePrompt(payload), {
+                sourceMessageId: messageId,
+                selectionText: code,
+                sourceType: 'message',
+                contextMeta: { language, agentName },
+              });
             }}
             className="inline-flex h-5 w-5 items-center justify-center rounded text-hub-secondary hover:bg-hub-hover"
             title="让 Agent 修改这段代码"
@@ -263,8 +273,8 @@ function FoldableCodeBlock({ language, code, messageId, agentName }: { language:
   );
 }
 
-function insertPrompt(prompt: string): void {
-  window.dispatchEvent(new CustomEvent('agenthub:prompt-insert', { detail: { prompt } }));
+function insertPrompt(prompt: string, quoteRef?: { sourceMessageId?: string; selectionText: string; sourceType: string; contextMeta?: Record<string, unknown> }): void {
+  window.dispatchEvent(new CustomEvent('agenthub:prompt-insert', { detail: { prompt, quoteRef } }));
 }
 
 function childrenToText(children: unknown): string {

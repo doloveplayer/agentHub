@@ -135,8 +135,8 @@ export const taskModifications = new Map<string, string>();
 /** sessionId:agentName → Claude Code session ID (for --resume across one-shot turns within the same AgentHub session) */
 export const agentClaudeSessions = new Map<string, string>();
 
-/** agentMessageId → { sessionId, agentId } for backfilling QuoteReference on agent completion */
-export const quoteBackfillMap = new Map<string, { sessionId: string; agentId?: string }>();
+/** agentMessageId → { sessionId, agentId, quoteReferenceId } for backfilling QuoteReference on agent completion */
+export const quoteBackfillMap = new Map<string, { sessionId: string; agentId?: string; quoteReferenceId: string }>();
 
 // ---- Conflict detection ----
 
@@ -210,6 +210,11 @@ export function cleanupSessionResources(sessionId: string): void {
   // Clean up Claude session IDs for all agents in this session (both REPL and one-shot)
   for (const key of agentClaudeSessions.keys()) {
     if (key.startsWith(`${sessionId}:`)) agentClaudeSessions.delete(key);
+  }
+
+  // Clean up quote backfill entries for this session
+  for (const [msgId, info] of quoteBackfillMap) {
+    if (info.sessionId === sessionId) quoteBackfillMap.delete(msgId);
   }
 
   const stateMap = agentStates.get(sessionId);

@@ -24,7 +24,7 @@ interface PromptInsertDetail {
 }
 
 interface Props {
-  onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential') => void;
+  onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null) => void;
   disabled?: boolean;
   mentionableAgents?: AgentConfig[];
 }
@@ -169,9 +169,26 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
     setTags((prev) => prev.filter((t) => t.agentId !== agentId));
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
+
+    // Persist QuoteReference before sending, so we have the ID for correlation
+    let quoteReferenceId: string | null = null;
+    if (pendingQuoteRef.current && activeSessionId) {
+      const ref = pendingQuoteRef.current;
+      try {
+        const created = await api.createQuoteReference({
+          sourceMessageId: ref.sourceMessageId || '',
+          selectionText: ref.selectionText,
+          sourceType: ref.sourceType,
+          contextMeta: ref.contextMeta,
+          sessionId: activeSessionId,
+        });
+        quoteReferenceId = (created as any)?.id ?? null;
+      } catch { /* proceed without correlation */ }
+      pendingQuoteRef.current = null;
+    }
 
     // Intercept /deploy command — trigger deployment workflow instead of chat message
     if (trimmed.startsWith('/deploy')) {
@@ -197,20 +214,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
       return;
     }
 
-    onSend(trimmed, tags, orchestrationMode);
-
-    // Persist quote reference if this was a quote-initiated prompt
-    if (pendingQuoteRef.current && activeSessionId) {
-      const ref_ = pendingQuoteRef.current;
-      api.createQuoteReference({
-        sourceMessageId: ref_.sourceMessageId || '',
-        selectionText: ref_.selectionText,
-        sourceType: ref_.sourceType,
-        contextMeta: ref_.contextMeta,
-        sessionId: activeSessionId,
-      }).catch(() => {}); // fire-and-forget
-      pendingQuoteRef.current = null;
-    }
+    onSend(trimmed, tags, orchestrationMode, quoteReferenceId);
 
     setValue('');
     setTags([]);

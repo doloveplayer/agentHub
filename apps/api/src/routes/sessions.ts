@@ -95,6 +95,8 @@ sessions.post('/', async (c) => {
         description: customAgent.description,
         systemPrompt: customAgent.systemPrompt,
         isActive: true,
+        type: 'user',
+        createdBy: userId,
       },
     });
     agentIds = [agent.id];

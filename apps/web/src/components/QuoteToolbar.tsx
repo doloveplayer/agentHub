@@ -22,7 +22,16 @@ export function QuoteToolbar({ selection, onDismiss }: Props) {
       contextMeta: {},
     };
     const prompt = buildQuotePrompt(payload);
-    window.dispatchEvent(new CustomEvent('agenthub:prompt-insert', { detail: { prompt } }));
+    window.dispatchEvent(new CustomEvent('agenthub:prompt-insert', {
+      detail: {
+        prompt,
+        quoteRef: {
+          selectionText: selection.text,
+          sourceType: 'preview',
+          contextMeta: {},
+        },
+      },
+    }));
     onDismiss();
   };
 

@@ -282,7 +282,7 @@ async function startNextSequential(sessionId: string): Promise<void> {
 
 async function handleChatMessage(
   sessionId: string,
-  data: { messageId?: string; content?: string; prompt?: string; agentId?: string; trustMode?: boolean; orchestrationMode?: 'parallel' | 'sequential' | 'auto'; mentions?: { agentId: string; subPrompt: string; messageId: string }[] },
+  data: { messageId?: string; content?: string; prompt?: string; agentId?: string; trustMode?: boolean; orchestrationMode?: 'parallel' | 'sequential' | 'auto'; mentions?: { agentId: string; subPrompt: string; messageId: string }[]; quoteReferenceId?: string | null },
 ): Promise<void> {
   const prompt = data.content || data.prompt;
   if (!prompt) { broadcast(sessionId, { type: 'stream_error', error: 'Missing content or prompt' }); return; }
@@ -407,13 +407,10 @@ async function handleChatMessage(
 
     // Detect quote context in user message and inject structured guidance
     let quoteContextBlock = '';
-    if (mention.subPrompt.includes('引用内容 —')) {
-      const recentQuote = await prisma.quoteReference.findFirst({
-        where: {
-          sessionId,
-          createdAt: { gte: new Date(Date.now() - 30_000) }, // 30s window
-        },
-        orderBy: { createdAt: 'desc' },
+    const quoteReferenceId = data.quoteReferenceId;
+    if (quoteReferenceId && mention.subPrompt.includes('引用内容 —')) {
+      const recentQuote = await prisma.quoteReference.findUnique({
+        where: { id: quoteReferenceId },
       });
       if (recentQuote) {
         quoteContextBlock = `\n## 引用上下文\n用户引用了以下内容要求增量修改。请仅修改引用部分，不要重写无关代码。\n- 来源类型：${recentQuote.sourceType}\n- 选区长度：${recentQuote.selectionText.length} 字符\n`;
@@ -461,8 +458,8 @@ async function handleChatMessage(
     });
 
     // Track for QuoteReference backfill on agent completion
-    if (quoteContextBlock) {
-      quoteBackfillMap.set(mention.messageId, { sessionId, agentId: mention.agentId || undefined });
+    if (quoteContextBlock && quoteReferenceId) {
+      quoteBackfillMap.set(mention.messageId, { sessionId, agentId: mention.agentId || undefined, quoteReferenceId });
     }
 
     console.log(`[ws] AgentRuntime sendPrompt: session=${sessionId} agent=${mention.agentId} msg=${mention.messageId}`);

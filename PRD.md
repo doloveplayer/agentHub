@@ -261,7 +261,7 @@ AgentCoordinator 事件路由：done/error → inbox 通知 Planner
 
 - [x] 沙箱内容器端口映射 + 反向代理，分配预览 URL
 - [x] 右侧面板 Preview 标签页内嵌 iframe 展示预览（无 dev server 时不显示）
-- [ ] Vite HMR WebSocket 通过同一反向代理链路，预览自动刷新（待后续实现）
+- [x] Vite HMR WebSocket 通过同一反向代理链路，预览自动刷新（injectHmrScript + hmrPolyfill + handlePreviewUpgrade WebSocket 代理）
 - [x] 手动截取修改前后页面，以截图对比卡片发送
 
 > **交互方式**：遵循 IM 聊天范式，预览不常驻在聊天区域。Agent 启动 dev server 后用户在右侧面板 Preview 标签页打开预览；端口检测带退避重试。
@@ -287,10 +287,12 @@ AgentCoordinator 事件路由：done/error → inbox 通知 Planner
 
 #### 4.4.6 产物二次交互
 
-- [ ] 用户在预览的产物（网页/文档/PPT/代码）中选中特定内容
-- [ ] "引用并交给 Agent" → 自动构建含上下文引用的 prompt
-- [ ] Agent 只处理引用部分或基于引用部分做增量修改
-- [ ] 交互历史可追溯（哪段内容被哪个 Agent 在何时处理）
+- [x] 消息气泡段落级引用：hover 段落右侧出现引用按钮，点击自动构建含上下文的 prompt（`MessageBubble.tsx` + `agenthub:prompt-insert` 事件）
+- [x] 代码块引用编辑：代码块工具栏"请修改并应用这段代码"按钮，将代码片段注入输入框
+- [ ] 网页预览 iframe 内自由选区引用：用户在 Preview 面板的网页中选中任意内容 → 浮现"引用并交给 Agent"操作栏
+- [ ] PPT/文档预览内选区引用：PPT 内联浏览和文档渲染中选中内容 → 引用操作
+- [ ] Agent 增量处理引用内容：引用 prompt 注入结构化上下文（来源类型、文件路径、选区范围），Agent 基于引用做局部修改而非全量重写
+- [ ] 交互历史可追溯：记录引用操作日志（源消息 ID、选区内容摘要、目标 Agent、处理结果消息 ID），在消息气泡中展示引用链路
 
 ---
 

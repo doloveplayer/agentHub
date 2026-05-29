@@ -494,7 +494,7 @@ export function useChat(sessionId: string) {
     });
   }, [sessionId, token, appendToMessage, setMessageStatus, addAgentEvent, removeStreamingMessage, addToast]);
 
-  const send = useCallback(async (content: string, mentionedAgents: MentionTag[] = [], mode?: 'parallel' | 'sequential') => {
+  const send = useCallback(async (content: string, mentionedAgents: MentionTag[] = [], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null) => {
     const msgId = 'temp-' + Date.now();
     const userMsg: Message = {
       id: msgId,
@@ -546,6 +546,7 @@ export function useChat(sessionId: string) {
           messageId: am.agentMessageId,
           subPrompt: mentions.find((m) => m.agentId === am.agentId)?.subPrompt ?? content,
         })),
+        quoteReferenceId: quoteReferenceId || null,
         trustMode,
         orchestrationMode: mode || orchestrationMode,
       }));
