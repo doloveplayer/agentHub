@@ -16,9 +16,10 @@ interface MentionTag {
 interface Props {
   onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential') => void;
   disabled?: boolean;
+  mentionableAgents?: AgentConfig[];
 }
 
-export function MessageInput({ onSend, disabled }: Props) {
+export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   const agents = useAppStore((s) => s.agents);
   const trustMode = useAppStore((s) => s.trustMode);
   const setTrustMode = useAppStore((s) => s.setTrustMode);
@@ -41,7 +42,8 @@ export function MessageInput({ onSend, disabled }: Props) {
   const [showSlash, setShowSlash] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
 
-  const matchedAgents = recommendAgents(mentionQuery, agents, recentMessages);
+  const matchSource = mentionableAgents ?? agents;
+  const matchedAgents = recommendAgents(mentionQuery, matchSource, recentMessages);
 
   useEffect(() => {
     const handler = (event: Event) => {

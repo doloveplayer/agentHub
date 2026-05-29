@@ -429,7 +429,7 @@ export function ChatView() {
           {reviewReports.map((item) => <ReviewCard key={item.id} report={item.report} />)}
           <div ref={bottomRef} />
         </div>
-        <MessageInput onSend={send} disabled={hasRunningAgent} />
+        <MessageInput onSend={send} disabled={hasRunningAgent} mentionableAgents={mentionableAgents} />
       </div>
 
       {/* Agent status panel — resizable right sidebar */}
