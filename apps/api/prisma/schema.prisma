@@ -58,18 +58,35 @@ model Message {
 }
 
 model Agent {
-  id             String         @id @default(uuid())
-  name           String         @unique
-  displayName    String
-  description    String
-  systemPrompt   String
-  provider       String         @default("claude-code")
-  providerConfig Json?          // merged: model, tools, endpoint, apiKey, skill config, etc.
-  capabilities   Json?          // user-defined agent capability profiles (optional)
-  isActive       Boolean        @default(true)
-  sessionAgents  SessionAgent[]
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  id              String         @id @default(uuid())
+  name            String         @unique
+  displayName     String
+  description     String
+  systemPrompt    String
+  provider        String         @default("claude-code")
+  providerConfig  Json?          // merged: model, tools, endpoint, apiKey, skill config, etc.
+  capabilities    Json?          // user-defined agent capability profiles (optional)
+  isActive        Boolean        @default(true)
+  type            String         @default("user")    // "user" | "system"
+  contextMode     String         @default("shared")  // "shared" | "isolated"
+  containerId     String?
+  containerStatus String         @default("stopped") // "stopped" | "running" | "error"
+  hostWorkDir     String?
+  createdBy       String?
+  sessionAgents   SessionAgent[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model AgentTemplate {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  displayName  String
+  description  String
+  systemPrompt String
+  provider     String   @default("claude-code")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 }
 
 model PlanExecution {
