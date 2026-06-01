@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import { readdirSync, statSync, realpathSync, existsSync } from 'fs';
-import { resolve, relative } from 'path';
+import { resolve } from 'path';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { WorkspaceManager } from '../agent/WorkspaceManager.js';
-import { getWorkspaceRoot, readWorkspaceTextFile, writeWorkspaceTextFile } from './workspaceFileAccess.js';
+import { getWorkspaceRoot, readWorkspaceTextFile, toWorkspacePath, writeWorkspaceTextFile } from './workspaceFileAccess.js';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const archiver: any = require('archiver');
@@ -23,7 +23,13 @@ interface FileNode {
   source?: 'sandbox' | 'workspace'; // which root this file comes from
 }
 
-function readFileTree(dirPath: string, maxDepth = 4, currentDepth = 0, source: 'sandbox' | 'workspace' = 'sandbox'): FileNode[] {
+function readFileTree(
+  workspaceRoot: string,
+  dirPath: string,
+  maxDepth = 4,
+  currentDepth = 0,
+  source: 'sandbox' | 'workspace' = 'sandbox',
+): FileNode[] {
   if (currentDepth >= maxDepth) return [];
   const skipDirs = new Set(['node_modules', '.git', '.claude', '_agent_', '.sandboxes']);
   const skipPrefixes = ['_prompt_', '_env.', '_repl_prompt_', '_inbox_'];
@@ -34,14 +40,14 @@ function readFileTree(dirPath: string, maxDepth = 4, currentDepth = 0, source: '
 
     for (const entry of entries) {
       const fullPath = resolve(dirPath, entry.name);
-      const relPath = '/' + relative('/workspace', fullPath);
+      const relPath = toWorkspacePath(workspaceRoot, fullPath);
 
       if (entry.isDirectory()) {
         if (skipDirs.has(entry.name) || entry.name.startsWith('_agent_')) {
           nodes.push({ name: entry.name, path: relPath, type: 'directory', children: [], source });
           continue;
         }
-        const children = readFileTree(fullPath, maxDepth, currentDepth + 1, source);
+        const children = readFileTree(workspaceRoot, fullPath, maxDepth, currentDepth + 1, source);
         nodes.push({ name: entry.name, path: relPath, type: 'directory', children, source });
       } else {
         if (skipPrefixes.some(p => entry.name.startsWith(p))) continue;
@@ -73,7 +79,7 @@ workspace.get('/:sessionId/tree', async (c) => {
 
   // Always include sandbox tree
   const sandboxDir = resolve(SANDBOX_ROOT, sessionId);
-  const sandboxTree = readFileTree(sandboxDir, 4, 0, 'sandbox');
+  const sandboxTree = readFileTree(sandboxDir, sandboxDir, 4, 0, 'sandbox');
 
   // Merge workspace tree if a custom workspace is configured
   let workspaceTree: FileNode[] = [];
@@ -83,7 +89,7 @@ workspace.get('/:sessionId/tree', async (c) => {
       const real = realpathSync(session.workspacePath);
       if (existsSync(real)) {
         workspacePath = real;
-        workspaceTree = readFileTree(real, 4, 0, 'workspace');
+        workspaceTree = readFileTree(real, real, 4, 0, 'workspace');
       }
     } catch { /* workspace unavailable */ }
   }

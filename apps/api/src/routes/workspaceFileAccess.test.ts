@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
   getWorkspaceRoot,
   resolveWorkspaceFilePath,
+  toWorkspacePath,
   writeWorkspaceTextFile,
 } from './workspaceFileAccess.js';
 
@@ -65,4 +66,10 @@ test('writeWorkspaceTextFile creates missing parent directories inside the sandb
   } finally {
     rmSync(sandboxRoot, { recursive: true, force: true });
   }
+});
+
+test('toWorkspacePath maps host sandbox paths to browser-safe workspace paths', () => {
+  const root = getWorkspaceRoot('session-1', join(tmpdir(), 'agenthub-test-root'));
+  assert.equal(toWorkspacePath(root, join(root, 'docs', 'report.md')), '/workspace/docs/report.md');
+  assert.equal(toWorkspacePath(root, root), '/workspace');
 });

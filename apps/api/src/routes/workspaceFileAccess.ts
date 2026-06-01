@@ -15,6 +15,11 @@ export function getWorkspaceRoot(sessionId: string, baseDir = resolve(process.cw
   return resolve(baseDir, sessionId);
 }
 
+export function toWorkspacePath(workspaceRoot: string, absolutePath: string): string {
+  const normalizedRelative = relative(workspaceRoot, absolutePath).split(sep).join('/');
+  return normalizedRelative ? `/workspace/${normalizedRelative}` : '/workspace';
+}
+
 export function resolveWorkspaceFilePath(workspaceRoot: string, inputPath: string): WorkspacePathResult {
   if (!inputPath || typeof inputPath !== 'string') {
     return { ok: false, status: 400, error: 'Missing path' };
@@ -28,9 +33,7 @@ export function resolveWorkspaceFilePath(workspaceRoot: string, inputPath: strin
     return { ok: false, status: 403, error: 'Path traversal denied' };
   }
 
-  const normalizedRelative = relative(workspaceRoot, absolutePath).split(sep).join('/');
-  const workspacePath = normalizedRelative ? `/workspace/${normalizedRelative}` : '/workspace';
-  return { ok: true, absolutePath, workspacePath };
+  return { ok: true, absolutePath, workspacePath: toWorkspacePath(workspaceRoot, absolutePath) };
 }
 
 export function readWorkspaceTextFile(workspaceRoot: string, inputPath: string): WorkspaceFileMetadata & { content: string } {
