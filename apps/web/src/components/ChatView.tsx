@@ -427,7 +427,7 @@ export function ChatView() {
                 <DiffCard key={card.id} sessionId={activeSessionId} title={card.title} files={card.files} />
               ))}
               {/* Planner task plan: render after the Planner agent's message. Use ref to avoid duplicate panels when multiple planner messages exist. */}
-              {msg.senderType === 'agent' && msg.agentId && agentMap.get(msg.agentId)?.name === 'planner' && msg.status === 'done' && (
+              {msg.senderType === 'agent' && msg.agentId && (agentMap.get(msg.agentId)?.name === 'planner' || agentMap.get(msg.agentId)?.name?.startsWith('planner-')) && msg.status === 'done' && (
                 <PlanRenderer planFromMessage={msg} taskPlans={taskPlans} confirmedPlans={confirmedPlans}
                   setConfirmedPlans={setConfirmedPlans} setTaskPlan={setTaskPlan} confirmPlan={confirmPlan}
                   renderedPlanIds={renderedPlanIds} />

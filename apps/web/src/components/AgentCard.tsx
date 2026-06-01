@@ -57,7 +57,7 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   idle:    { label: '空闲', cls: 'bg-hub-muted/20 text-hub-muted' },
 };
 
-export function AgentCard({ agentId, displayName, status, events, onStop, agentName, collapsed, provider, onConfigure, onAddToGroup }: Props) {
+export function AgentCard({ agentId, displayName, status, events, onStop, agentName, collapsed, provider, onConfigure, onAddToGroup, messages }: Props & { messages?: any[] }) {
   const [activeFace, setActiveFace] = useState(0);
   const [expanded, setExpanded] = useState(true);
   const [fading, setFading] = useState(false);
@@ -76,13 +76,19 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const badge = STATUS_BADGE[status] || STATUS_BADGE.idle;
   const providerInfo = getProviderInfo(provider);
 
-  // Dashboard data
+  // Dashboard data - prioritize real-time events, fallback to persisted data
   const tokenEvents = events.filter((e) => e.type === 'token_update');
   const lastToken = tokenEvents.length > 0 ? tokenEvents[tokenEvents.length - 1].details.tokenUsage : null;
   const toolCount = events.filter((e) => e.type === 'tool_use').length;
-  const inputTokens = lastToken?.input ?? 0;
-  const outputTokens = lastToken?.output ?? 0;
-  const cacheTokens = (lastToken?.cacheRead ?? 0) + (lastToken?.cacheCreate ?? 0);
+
+  // Get persisted token usage from messages (fallback when events are lost)
+  const msgWithTokens = (messages || []).find(m => m.agentId === agentId && (m.inputTokens ?? 0) > 0);
+
+  const inputTokens = lastToken?.input ?? msgWithTokens?.inputTokens ?? 0;
+  const outputTokens = lastToken?.output ?? msgWithTokens?.outputTokens ?? 0;
+  const cacheTokens = lastToken
+    ? ((lastToken.cacheRead ?? 0) + (lastToken.cacheCreate ?? 0))
+    : ((msgWithTokens?.cacheReadTokens ?? 0) + (msgWithTokens?.cacheCreateTokens ?? 0));
   const contextPct = lastToken?.contextPct ?? 0;
 
   // Model and thinking from agent config in store

@@ -387,7 +387,7 @@ async function handleChatMessage(
       const agent = await prisma.agent.findUnique({ where: { id: mention.agentId } });
       if (agent) {
         let sessionMemberBlock = '';
-        if (agent.name === 'planner') {
+        if (agent.name === 'planner' || agent.name.startsWith('planner-')) {
           const members = await prisma.sessionAgent.findMany({
             where: { sessionId },
             include: { agent: { select: { name: true, displayName: true, description: true } } },
@@ -398,7 +398,7 @@ async function handleChatMessage(
           }
         }
         agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostWorkDir) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
-        isPlannerAgent = agent.name === 'planner';
+        isPlannerAgent = agent.name === 'planner' || agent.name.startsWith('planner-');
         if (sandbox) AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null);
       }
     } else {
@@ -463,7 +463,7 @@ async function handleChatMessage(
     }
 
     console.log(`[ws] AgentRuntime sendPrompt: session=${sessionId} agent=${mention.agentId} msg=${mention.messageId}`);
-    agentRuntime.sendPrompt(mention.agentId, sessionId, fullPrompt, mention.messageId).catch((err: any) => {
+    agentRuntime.sendPrompt(mention.agentId, sessionId, fullPrompt, mention.messageId, sandbox).catch((err: any) => {
       console.error(`[ws] AgentRuntime.sendPrompt failed: agent=${mention.agentId} session=${sessionId}`, err.message);
       broadcast(sessionId, {
         type: 'stream_error',

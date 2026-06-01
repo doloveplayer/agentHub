@@ -126,9 +126,28 @@ export function SessionList({ onCloseMobile }: Props) {
     setActiveSession(id);
     clearUnread(id);
     const session = await api.getSession(id);
-    useAppStore.setState((s) => ({
-      messages: { ...s.messages, [id]: session.messages },
-    }));
+    useAppStore.setState((s) => {
+      const existingMsgs = s.messages[id] ?? [];
+      // Build a map of existing messages by ID to preserve streamed content
+      const existingMap = new Map(existingMsgs.map(m => [m.id, m]));
+      // Merge API messages with existing messages:
+      // - Always use API status when it's 'done' or 'error' (authoritative)
+      // - Keep existing content if it's non-empty (streamed content may be more complete)
+      // - Only keep 'streaming' status if API also says 'streaming'
+      const mergedMsgs = session.messages.map((apiMsg: any) => {
+        const existing = existingMap.get(apiMsg.id);
+        if (existing && existing.content) {
+          // Use API status when it's done/error (authoritative), otherwise keep existing
+          const status = (apiMsg.status === 'done' || apiMsg.status === 'error')
+            ? apiMsg.status
+            : existing.status;
+          return { ...apiMsg, content: existing.content, status };
+        }
+        return apiMsg;
+      });
+      // Don't add temp messages - they should have been removed after API call
+      return { messages: { ...s.messages, [id]: mergedMsgs } };
+    });
   };
 
   // --- Session rename ---

@@ -221,8 +221,27 @@ sessions.get('/:id', async (c) => {
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
     include: {
-      messages: { orderBy: { createdAt: 'asc' } },
-      agents: { include: { agent: { select: { id: true, name: true, displayName: true } } } },
+      messages: {
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          sessionId: true,
+          senderType: true,
+          agentId: true,
+          content: true,
+          status: true,
+          createdAt: true,
+          inputTokens: true,
+          outputTokens: true,
+          cacheReadTokens: true,
+          cacheCreateTokens: true,
+        },
+      },
+      agents: {
+        include: {
+          agent: { select: { id: true, name: true, displayName: true } },
+        },
+      },
     },
   });
 
@@ -236,6 +255,12 @@ sessions.get('/:id', async (c) => {
       agentId: sa.agent.id,
       name: sa.agent.name,
       displayName: sa.agent.displayName,
+      // Token usage summary for this agent in this session
+      totalInputTokens: sa.totalInputTokens,
+      totalOutputTokens: sa.totalOutputTokens,
+      totalCacheReadTokens: sa.totalCacheReadTokens,
+      totalCacheCreateTokens: sa.totalCacheCreateTokens,
+      messageCount: sa.messageCount,
     })),
   });
 });

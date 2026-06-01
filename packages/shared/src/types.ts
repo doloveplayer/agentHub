@@ -47,6 +47,21 @@ export interface Message {
   content: string;
   status: 'sending' | 'queued' | 'streaming' | 'done' | 'error';
   createdAt: string;
+  // Token usage (agent responses only)
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreateTokens?: number;
+}
+
+export interface SessionAgentStats {
+  agentId: string;
+  sessionId: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCacheReadTokens: number;
+  totalCacheCreateTokens: number;
+  messageCount: number;
 }
 
 export interface AgentConfig {

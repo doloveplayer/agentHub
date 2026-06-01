@@ -36,26 +36,37 @@ model Session {
 }
 
 model SessionAgent {
-  id                   String  @id @default(uuid())
-  sessionId            String
-  agentId              String
-  systemPromptOverride String? // session-level system prompt override
-  session              Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  agent                Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  id                     String  @id @default(uuid())
+  sessionId              String
+  agentId                String
+  systemPromptOverride   String? // session-level system prompt override
+  // Token usage summary for this agent in this session
+  totalInputTokens       Int     @default(0)
+  totalOutputTokens      Int     @default(0)
+  totalCacheReadTokens   Int     @default(0)
+  totalCacheCreateTokens Int     @default(0)
+  messageCount           Int     @default(0)
+  session                Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  agent                  Agent   @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@unique([sessionId, agentId])
 }
 
 model Message {
-  id         String   @id @default(uuid())
-  sessionId  String
-  senderType String   @default("human")
-  agentId    String?
-  content    String
-  status     String   @default("done")
-  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id               String   @id @default(uuid())
+  sessionId        String
+  senderType       String   @default("human")
+  agentId          String?
+  content          String
+  status           String   @default("done")
+  // Token usage for this message (agent responses only)
+  inputTokens      Int?     @default(0)
+  outputTokens     Int?     @default(0)
+  cacheReadTokens  Int?     @default(0)
+  cacheCreateTokens Int?    @default(0)
+  session          Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model QuoteReference {

@@ -16,6 +16,12 @@ interface QueueItem {
   agentMessageId?: string;
 }
 
+interface SandboxInfo {
+  containerId: string;
+  workDir: string;
+  hostWorkDir: string;
+}
+
 interface AgentEntry {
   provider: AbstractProvider;
   containerId: string;
@@ -23,18 +29,27 @@ interface AgentEntry {
   idleTimer: NodeJS.Timeout | null;
   currentSession: string | null;
   currentMessageId: string | null;
+  currentAgentId: string | null; // agent ID for current message
   queue: QueueItem[];
+  sharedContainer: boolean; // true when using session sandbox (don't destroy on idle)
 }
 
 class AgentRuntime {
   private agents = new Map<string, AgentEntry>();
+  // Track token usage per message for persistence on completion
+  private tokenUsageMap = new Map<string, {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheCreate: number;
+  }>();
 
   /** Send a prompt to an agent. Queues if busy, starts container if stopped. */
-  async sendPrompt(agentId: string, sessionId: string, prompt: string, agentMessageId?: string): Promise<void> {
+  async sendPrompt(agentId: string, sessionId: string, prompt: string, agentMessageId?: string, sandbox?: SandboxInfo): Promise<void> {
     let entry = this.agents.get(agentId);
 
     if (!entry) {
-      entry = await this.ensureRunning(agentId);
+      entry = await this.ensureRunning(agentId, sandbox);
     }
 
     if (entry.currentSession !== null && entry.currentSession !== sessionId) {
@@ -52,47 +67,70 @@ class AgentRuntime {
     // Agent is idle — send directly
     entry.currentSession = sessionId;
     entry.currentMessageId = agentMessageId || null;
+    entry.currentAgentId = agentId;
     this.clearIdleTimer(entry);
     entry.provider.sendPrompt(prompt);
   }
 
   /** Ensure agent container and REPL are running. Lazy-start if stopped. */
-  async ensureRunning(agentId: string): Promise<AgentEntry> {
+  async ensureRunning(agentId: string, sandbox?: SandboxInfo): Promise<AgentEntry> {
     const agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
 
-    if (!agent.containerId || agent.containerStatus === 'stopped') {
-      const info = await AgentContainer.create(agentId, agent.systemPrompt);
-      AgentDirectoryManager.initialize(info.hostWorkDir, agent.name, agent.systemPrompt);
+    // Use session sandbox if provided (solo sessions), otherwise create agent container
+    let containerId: string;
+    let hostWorkDir: string;
+
+    if (sandbox) {
+      // Reuse session sandbox — agent files go to .sandboxes/{sessionId}/
+      containerId = sandbox.containerId;
+      hostWorkDir = sandbox.hostWorkDir;
+      // Initialize agent directory in the session sandbox
+      AgentDirectoryManager.initialize(hostWorkDir, agent.name, agent.systemPrompt);
+      // Update agent record with session sandbox info
       await prisma.agent.update({
         where: { id: agentId },
-        data: { containerId: info.containerId, containerStatus: 'running', hostWorkDir: info.hostWorkDir },
-      });
-      agent.containerId = info.containerId;
-      agent.hostWorkDir = info.hostWorkDir;
+        data: { containerId, containerStatus: 'running', hostWorkDir },
+      }).catch((e) => console.error('[AgentRuntime] Failed to update agent sandbox info:', e));
+    } else {
+      // Fallback: create dedicated agent container
+      if (!agent.containerId || agent.containerStatus === 'stopped') {
+        const info = await AgentContainer.create(agentId, agent.systemPrompt);
+        AgentDirectoryManager.initialize(info.hostWorkDir, agent.name, agent.systemPrompt);
+        await prisma.agent.update({
+          where: { id: agentId },
+          data: { containerId: info.containerId, containerStatus: 'running', hostWorkDir: info.hostWorkDir },
+        });
+        agent.containerId = info.containerId;
+        agent.hostWorkDir = info.hostWorkDir;
+      }
+      containerId = agent.containerId!;
+      hostWorkDir = agent.hostWorkDir!;
     }
 
     const provider = ProviderFactory.create(agent.provider);
     await provider.start(
       'agent-' + agentId,
       'Standby — waiting for tasks',
-      agent.containerId!,
+      containerId,
       '/workspace',
       {
         apiKey: (agent.providerConfig as any)?.apiKey,
         model: (agent.providerConfig as any)?.model,
-        hostWorkDir: agent.hostWorkDir!,
+        hostWorkDir,
         trustMode: true,
       },
     );
 
     const entry: AgentEntry = {
       provider,
-      containerId: agent.containerId!,
-      hostWorkDir: agent.hostWorkDir!,
+      containerId,
+      hostWorkDir,
       idleTimer: null,
       currentSession: null,
       currentMessageId: null,
+      currentAgentId: null,
       queue: [],
+      sharedContainer: !!sandbox,
     };
 
     provider.onEvent((event: UnifiedAgentEvent) => {
@@ -137,14 +175,58 @@ class AgentRuntime {
             }).catch(() => {});
           }
         }
+        // Persist token usage to database
+        if (agentMessageId) {
+          const tokenUsage = this.tokenUsageMap.get(agentMessageId);
+          if (tokenUsage) {
+            // 1. Update Message record with token usage
+            prisma.message.update({
+              where: { id: agentMessageId },
+              data: {
+                inputTokens: tokenUsage.input,
+                outputTokens: tokenUsage.output,
+                cacheReadTokens: tokenUsage.cacheRead,
+                cacheCreateTokens: tokenUsage.cacheCreate,
+              },
+            }).catch((e) => console.error('[AgentRuntime] Failed to persist token usage:', e));
+
+            // 2. Update SessionAgent summary
+            if (entry.currentAgentId) {
+              prisma.sessionAgent.update({
+                where: {
+                  sessionId_agentId: { sessionId, agentId: entry.currentAgentId },
+                },
+                data: {
+                  totalInputTokens: { increment: tokenUsage.input },
+                  totalOutputTokens: { increment: tokenUsage.output },
+                  totalCacheReadTokens: { increment: tokenUsage.cacheRead },
+                  totalCacheCreateTokens: { increment: tokenUsage.cacheCreate },
+                  messageCount: { increment: 1 },
+                },
+              }).catch((e) => console.error('[AgentRuntime] Failed to update session agent stats:', e));
+            }
+
+            this.tokenUsageMap.delete(agentMessageId);
+          }
+        }
         entry.currentSession = null;
         entry.currentMessageId = null;
+        entry.currentAgentId = null;
         this.processNextOrIdle(agentId, entry);
         break;
       case 'error':
         broadcast(sessionId, { type: 'stream_error', error: event.message, agentMessageId });
         break;
       case 'token_usage':
+        // Store token usage in memory for persistence on completion
+        if (agentMessageId) {
+          this.tokenUsageMap.set(agentMessageId, {
+            input: event.inputTokens ?? 0,
+            output: event.outputTokens ?? 0,
+            cacheRead: event.cacheReadTokens ?? 0,
+            cacheCreate: event.cacheCreateTokens ?? 0,
+          });
+        }
         broadcast(sessionId, {
           type: 'token_update',
           agentMessageId,
@@ -152,6 +234,8 @@ class AgentRuntime {
             tokenUsage: {
               input: event.inputTokens ?? 0,
               output: event.outputTokens ?? 0,
+              cacheRead: event.cacheReadTokens ?? 0,
+              cacheCreate: event.cacheCreateTokens ?? 0,
             },
           },
         });
@@ -165,6 +249,7 @@ class AgentRuntime {
     if (next) {
       entry.currentSession = next.sessionId;
       entry.currentMessageId = next.agentMessageId || null;
+      entry.currentAgentId = agentId;
       entry.provider.sendPrompt(next.prompt);
     } else {
       entry.idleTimer = setTimeout(() => {
@@ -180,15 +265,18 @@ class AgentRuntime {
 
     this.clearIdleTimer(entry);
     try { entry.provider.stop(); } catch { /* best effort */ }
-    await AgentContainer.destroy(entry.containerId).catch(() => {});
+
+    // Only destroy dedicated agent containers, NOT shared session sandboxes
+    if (!entry.sharedContainer) {
+      await AgentContainer.destroy(entry.containerId).catch(() => {});
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { containerStatus: 'stopped' },
+      }).catch(() => {});
+    }
+
     this.agents.delete(agentId);
-
-    await prisma.agent.update({
-      where: { id: agentId },
-      data: { containerStatus: 'stopped' },
-    }).catch(() => {});
-
-    console.log(`[AgentRuntime] Agent ${agentId.slice(0, 8)} container stopped (idle timeout)`);
+    console.log(`[AgentRuntime] Agent ${agentId.slice(0, 8)} ${entry.sharedContainer ? 'detached from sandbox' : 'container stopped'} (idle timeout)`);
   }
 
   /** Get queue status for an agent */

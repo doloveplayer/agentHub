@@ -180,11 +180,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   setActiveSession: (id) => {
     const prev = get().activeSessionId;
     if (prev && prev !== id) {
-      // Clear agent events from the previous session
-      const msgIds = new Set((get().messages[prev] ?? []).map(m => m.id));
+      // Keep events but trim to prevent memory bloat
+      // Always preserve token_update events for dashboard display
+      const prevMsgIds = new Set((get().messages[prev] ?? []).map(m => m.id));
       const filtered: Record<string, AgentEvent[]> = {};
       for (const [msgId, evts] of Object.entries(get().agentEvents)) {
-        if (!msgIds.has(msgId)) filtered[msgId] = evts;
+        if (prevMsgIds.has(msgId)) {
+          // Keep last 5 events + all token_update events
+          const recent = evts.slice(-5);
+          const tokenUpdates = evts.filter(e => e.type === 'token_update');
+          const recentIds = new Set(recent.map(e => e.id));
+          const extra = tokenUpdates.filter(e => !recentIds.has(e.id));
+          filtered[msgId] = [...extra, ...recent];
+        } else {
+          filtered[msgId] = evts;
+        }
       }
       set({ activeSessionId: id, agentEvents: filtered });
     } else {

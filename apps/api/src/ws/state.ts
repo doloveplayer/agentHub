@@ -197,7 +197,8 @@ export function cleanupSessionResources(sessionId: string): void {
   if (procMap) {
     for (const [agentName, info] of procMap) {
       if (info.timer) clearTimeout(info.timer);
-      info.provider.stop();
+      // Don't stop the provider - let the agent finish its work
+      // info.provider.stop();
       agentCurrentMessage.delete(agentName);
     }
     agentProcesses.delete(sessionId);
@@ -223,21 +224,26 @@ export function cleanupSessionResources(sessionId: string): void {
       const agentMsgId = pid.split('|::|')[0];
       if (stateMap.has(agentMsgId)) { clearTimeout(timeout); permissionTimeouts.delete(pid); }
     }
+    // Don't kill agent processes - let them finish their work
+    // The AgentRuntime will handle cleanup when agents complete
     for (const [msgId, state] of stateMap) {
       if (state.timer) clearTimeout(state.timer);
-      if (state.process.kill) state.process.kill(); else if (state.process.stop) state.process.stop();
+      // Don't kill the process - let it finish
+      // if (state.process.kill) state.process.kill(); else if (state.process.stop) state.process.stop();
       decRunningAgentCount();
     }
     agentStates.delete(sessionId);
   }
 
+  // Don't destroy the sandbox when the last client leaves
+  // The sandbox should persist until the session is explicitly deleted
+  // This allows agents to continue working even when the user switches sessions
   const sandbox = sandboxes.get(sessionId);
   if (sandbox) {
-    SandboxManager.destroy(sandbox.containerId).catch((err) =>
-      console.error(`[ws] Failed to destroy container: ${err.message}`));
-    SandboxManager.destroyHostDir(sessionId);
+    // Keep the sandbox alive - just remove it from the active map
+    // The sandbox will be cleaned up when the session is deleted via API
     sandboxes.delete(sessionId);
-    console.log(`[ws] Sandbox cleaned: session=${sessionId}`);
+    console.log(`[ws] Session ${sessionId.slice(0, 8)} disconnected, sandbox preserved`);
   }
 
   // Clean up persisted plan executions

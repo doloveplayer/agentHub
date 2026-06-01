@@ -79,11 +79,9 @@ export function useChat(sessionId: string) {
               {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
                 appendToMessage(targetSessionId, data.agentMessageId, safeContent(data.content));
-                // Increment unread only for user-initiated conversations (has active streaming messages)
-                // This prevents pre-activated group agents from triggering false unread badges
+                // Increment unread only when the user is viewing a DIFFERENT session
                 const store = useAppStore.getState();
-                const hasActiveStreaming = (store.streamingMessages[targetSessionId]?.length ?? 0) > 0;
-                if (store.activeSessionId !== targetSessionId && hasActiveStreaming) {
+                if (store.activeSessionId !== targetSessionId) {
                   incrementUnread(targetSessionId);
                 }
               }
@@ -185,6 +183,24 @@ export function useChat(sessionId: string) {
               }
               break;
             }
+            case 'token_update':
+              if (data.agentMessageId) {
+                addAgentEvent(data.agentMessageId, {
+                  id: 'tu-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                  type: 'token_update',
+                  timestamp: data.timestamp || Date.now(),
+                  details: {
+                    tokenUsage: {
+                      input: data.details?.tokenUsage?.input ?? 0,
+                      output: data.details?.tokenUsage?.output ?? 0,
+                      cacheRead: data.details?.tokenUsage?.cacheRead ?? 0,
+                      cacheCreate: data.details?.tokenUsage?.cacheCreate ?? 0,
+                      contextPct: data.details?.tokenUsage?.contextPct ?? 0,
+                    },
+                  },
+                });
+              }
+              break;
             case 'plan_result':
               if (data.planId && data.tasks) {
                 setTaskPlan(data.planId, data.tasks);
@@ -521,7 +537,21 @@ export function useChat(sessionId: string) {
 
     try {
       const result = await api.sendMessage(sessionId, content, mentions.length > 0 ? mentions : undefined);
-      setMessageStatus(sessionId, msgId, 'done');
+
+      // Remove temp message from store (don't call API delete for temp messages)
+      useAppStore.getState().deleteMessage(sessionId, msgId);
+
+      // Add the real user message from API response
+      if (result.userMessageId) {
+        addMessage(sessionId, {
+          id: result.userMessageId,
+          sessionId,
+          senderType: 'human',
+          content,
+          status: 'done',
+          createdAt: new Date().toISOString(),
+        });
+      }
 
       for (const am of result.agentMessages) {
         const agentMsg: Message = {

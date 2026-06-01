@@ -57,11 +57,13 @@ export function selectDefaultAgent(
   if (available.length === 0) return null;
 
   if (sessionType === 'group') {
-    const planner = available.find((agent) => agent.name === 'planner');
+    // System agents created from templates have names like 'planner-abc12345'
+    // Match by prefix to handle both seeded and template-created agents
+    const planner = available.find((agent) => agent.name === 'planner' || agent.name.startsWith('planner-'));
     return toTarget(planner || available[0]);
   }
 
-  const codeAgent = available.find((agent) => agent.name === 'code-agent');
+  const codeAgent = available.find((agent) => agent.name === 'code-agent' || agent.name.startsWith('code-agent-'));
   return toTarget(codeAgent || available[0]);
 }
 
