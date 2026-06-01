@@ -5,9 +5,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { WorkspaceManager } from '../agent/WorkspaceManager.js';
 import { getWorkspaceRoot, readWorkspaceTextFile, toWorkspacePath, writeWorkspaceTextFile } from './workspaceFileAccess.js';
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const archiver: any = require('archiver');
+import { buildWorkspaceZip, collectArchiveFiles, workspaceDownloadName } from './workspaceArchive.js';
 
 const workspace = new Hono();
 workspace.use('*', authMiddleware);
@@ -148,6 +146,33 @@ workspace.put('/:sessionId/file', async (c) => {
   }
 });
 
+// GET /api/workspace/:sessionId/download?path=/workspace/docs
+workspace.get('/:sessionId/download', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('sessionId');
+  const filePath = c.req.query('path');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+  if (!filePath) return c.json({ error: 'Missing path query param' }, 400);
+
+  const workDir = getWorkspaceRoot(sessionId);
+  try {
+    const files = collectArchiveFiles(workDir, filePath);
+    const isDirectory = files.length !== 1 || files[0].archivePath !== workspaceDownloadName(filePath, false);
+    const body = isDirectory ? buildWorkspaceZip(files) : files[0].content;
+    const downloadName = workspaceDownloadName(filePath, isDirectory);
+    c.header('Content-Disposition', `attachment; filename="${downloadName}"`);
+    c.header('Content-Type', isDirectory ? 'application/zip' : 'application/octet-stream');
+    const arrayBuffer = body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength) as ArrayBuffer;
+    return c.body(arrayBuffer);
+  } catch (err: any) {
+    const status = typeof err.status === 'number' ? err.status : 404;
+    const message = status === 400 || status === 403 ? err.message : 'Failed to download path';
+    return c.json({ error: message }, status as any);
+  }
+});
+
 // GET /api/workspace/:sessionId/changes
 workspace.get('/:sessionId/changes', async (c) => {
   const { userId } = c.get('user');
@@ -202,35 +227,6 @@ workspace.get('/browse', async (c) => {
   } catch (err: any) {
     return c.json({ error: `Failed to read directory: ${err.message}` }, 500);
   }
-});
-
-// GET /api/workspace/:sessionId/download — zip entire sandbox
-workspace.get('/:sessionId/download', async (c) => {
-  const { userId } = c.get('user');
-  const sessionId = c.req.param('sessionId');
-
-  const session = await prisma.session.findUnique({ where: { id: sessionId } });
-  if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
-
-  const sandboxDir = resolve(SANDBOX_ROOT, sessionId);
-  if (!existsSync(sandboxDir)) return c.json({ error: 'Sandbox not found' }, 404);
-
-  const archive = archiver('zip', { zlib: { level: 6 } });
-  archive.on('error', (err: Error) => {
-    console.error(`[workspace] Zip error for session ${sessionId.slice(0, 8)}:`, err.message);
-  });
-
-  archive.glob('**/*', {
-    cwd: sandboxDir,
-    ignore: ['_agent_*/**', '.git/**', '_inbox_*.jsonl', '_prompt_*.txt', 'plan.json'],
-    dot: false,
-  });
-
-  archive.finalize();
-
-  c.header('Content-Type', 'application/zip');
-  c.header('Content-Disposition', `attachment; filename="sandbox-${sessionId.slice(0, 8)}.zip"`);
-  return c.body(archive as any);
 });
 
 export default workspace;

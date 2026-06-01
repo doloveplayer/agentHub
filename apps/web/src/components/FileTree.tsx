@@ -14,6 +14,8 @@ interface FileNode {
 interface Props {
   sessionId: string;
   onSelectFile?: (path: string) => void;
+  onOpenFile?: (path: string) => void;
+  onDownloadPath?: (path: string, type: 'file' | 'directory') => void;
 }
 
 function formatSize(bytes: number): string {
@@ -22,10 +24,21 @@ function formatSize(bytes: number): string {
   return `${(bytes / 1048576).toFixed(1)}MB`;
 }
 
-function TreeNode({ node, depth, onSelect }: { node: FileNode; depth: number; onSelect?: (path: string) => void }) {
+function TreeNode({
+  node,
+  depth,
+  onSelect,
+  onOpen,
+  onDownload,
+}: {
+  node: FileNode;
+  depth: number;
+  onSelect?: (path: string) => void;
+  onOpen?: (path: string) => void;
+  onDownload?: (path: string, type: 'file' | 'directory') => void;
+}) {
   const [expanded, setExpanded] = useState(depth < 1);
   const hasChildren = node.type === 'directory' && (node.children?.length ?? 0) > 0;
-
   const isWorkspace = node.source === 'workspace';
   const folderColor = isWorkspace ? 'text-blue-400' : 'text-yellow-500';
   const textColor = isWorkspace ? 'text-blue-300' : 'text-hub-secondary';
@@ -33,11 +46,14 @@ function TreeNode({ node, depth, onSelect }: { node: FileNode; depth: number; on
   return (
     <div>
       <div
-        className="flex items-center gap-1 px-2 py-0.5 hover:bg-hub-hover/50 cursor-pointer text-xs"
+        className="group flex items-center gap-1 px-2 py-0.5 hover:bg-hub-hover/50 cursor-pointer text-xs"
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
         onClick={() => {
           if (node.type === 'directory') setExpanded(!expanded);
           else onSelect?.(node.path);
+        }}
+        onDoubleClick={() => {
+          if (node.type === 'file') onOpen?.(node.path);
         }}
       >
         {node.type === 'directory' ? (
@@ -50,25 +66,43 @@ function TreeNode({ node, depth, onSelect }: { node: FileNode; depth: number; on
         ) : (
           <File size={12} className={`${textColor} shrink-0 opacity-60`} />
         )}
-        <span className={`truncate ${textColor}`}>{node.name}</span>
+        <span className={`min-w-0 flex-1 truncate ${textColor}`}>{node.name}</span>
         {node.size !== undefined && (
-          <span className="text-hub-muted ml-auto shrink-0">{formatSize(node.size)}</span>
+          <span className="text-hub-muted shrink-0">{formatSize(node.size)}</span>
+        )}
+        {onDownload && (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              onDownload(node.path, node.type);
+            }}
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-hub-muted opacity-0 hover:bg-hub-hover hover:text-hub-secondary group-hover:opacity-100 focus:opacity-100"
+            title={node.type === 'directory' ? 'Download folder' : 'Download file'}
+          >
+            <Download size={11} />
+          </button>
         )}
       </div>
       {expanded && hasChildren && node.children!.map((child, i) => (
-        <TreeNode key={child.path || i} node={child} depth={depth + 1} onSelect={onSelect} />
+        <TreeNode
+          key={child.path || i}
+          node={child}
+          depth={depth + 1}
+          onSelect={onSelect}
+          onOpen={onOpen}
+          onDownload={onDownload}
+        />
       ))}
     </div>
   );
 }
 
-export function FileTree({ sessionId, onSelectFile }: Props) {
+export function FileTree({ sessionId, onSelectFile, onOpenFile, onDownloadPath }: Props) {
   const [sandboxTree, setSandboxTree] = useState<FileNode[]>([]);
   const [workspaceTree, setWorkspaceTree] = useState<FileNode[]>([]);
   const [workspaceDir, setWorkspaceDir] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
 
   const fetchTree = async () => {
     setLoading(true);
@@ -89,28 +123,6 @@ export function FileTree({ sessionId, onSelectFile }: Props) {
     if (sessionId) fetchTree();
   }, [sessionId]);
 
-  const handleDownload = async () => {
-    setDownloading(true);
-    try {
-      const token = localStorage.getItem('agenthub_token');
-      const resp = await fetch(`/api/workspace/${sessionId}/download`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!resp.ok) throw new Error('Download failed');
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sandbox-${sessionId.slice(0, 8)}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Download failed:', err);
-    } finally {
-      setDownloading(false);
-    }
-  };
-
   const isEmpty = sandboxTree.length === 0 && workspaceTree.length === 0;
 
   return (
@@ -122,17 +134,16 @@ export function FileTree({ sessionId, onSelectFile }: Props) {
             <RefreshCw size={12} className={loading ? 'animate-spin text-green-400' : 'text-hub-muted'} />
           </button>
           <button
-            onClick={handleDownload}
-            disabled={downloading || isEmpty}
+            onClick={() => onDownloadPath?.('/workspace', 'directory')}
+            disabled={!onDownloadPath || isEmpty}
             className="p-1 hover:bg-hub-hover rounded disabled:opacity-30"
-            title={isEmpty ? 'No files to download' : 'Download as ZIP'}
+            title={isEmpty ? 'No files to download' : 'Download workspace'}
           >
-            <Download size={12} className={downloading ? 'animate-pulse text-hub-accent' : 'text-hub-muted'} />
+            <Download size={12} className="text-hub-muted" />
           </button>
         </div>
       </div>
 
-      {/* Legend */}
       {!isEmpty && (
         <div className="flex items-center gap-3 px-3 py-1.5 border-b border-hub bg-hub-surface/50 text-[10px] text-hub-tertiary">
           <span className="flex items-center gap-1">
@@ -157,23 +168,35 @@ export function FileTree({ sessionId, onSelectFile }: Props) {
           <div className="text-xs text-hub-muted px-3 py-2">No files yet</div>
         )}
 
-        {/* Sandbox section */}
         {sandboxTree.length > 0 && (
           <div>
             {sandboxTree.map((node, i) => (
-              <TreeNode key={node.path || `s-${i}`} node={node} depth={0} onSelect={onSelectFile} />
+              <TreeNode
+                key={node.path || `s-${i}`}
+                node={node}
+                depth={0}
+                onSelect={onSelectFile}
+                onOpen={onOpenFile}
+                onDownload={onDownloadPath}
+              />
             ))}
           </div>
         )}
 
-        {/* Workspace section — with subtle separator */}
         {workspaceTree.length > 0 && (
           <div>
             {sandboxTree.length > 0 && (
               <div className="border-t border-hub-border/30 my-1 mx-2" />
             )}
             {workspaceTree.map((node, i) => (
-              <TreeNode key={node.path || `w-${i}`} node={node} depth={0} onSelect={onSelectFile} />
+              <TreeNode
+                key={node.path || `w-${i}`}
+                node={node}
+                depth={0}
+                onSelect={onSelectFile}
+                onOpen={onOpenFile}
+                onDownload={onDownloadPath}
+              />
             ))}
           </div>
         )}

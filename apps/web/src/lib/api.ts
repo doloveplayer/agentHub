@@ -87,6 +87,25 @@ export const api = {
       body: JSON.stringify({ path, content }),
     }),
 
+  downloadWorkspacePath: async (sessionId: string, path: string) => {
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${BASE_URL}/workspace/${sessionId}/download?path=${encodeURIComponent(path)}`, { headers });
+    if (!res.ok) {
+      if (res.status === 401) {
+        localStorage.removeItem('agenthub_token');
+        window.location.href = '/login';
+        throw new Error('Session expired — redirecting to login');
+      }
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error ?? 'Download failed');
+    }
+    const disposition = res.headers.get('content-disposition') || '';
+    const name = disposition.match(/filename="([^"]+)"/)?.[1];
+    return { blob: await res.blob(), filename: name };
+  },
+
   getWorkspaceChanges: (sessionId: string) => request<{ changes: string[] }>(`/workspace/${sessionId}/changes`),
 
   // Workspace configuration

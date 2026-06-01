@@ -22,10 +22,34 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
   log: 'plaintext',
 };
 
+const NON_EDITABLE_EXTENSIONS = new Set([
+  'ppt',
+  'pptx',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'pdf',
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'zip',
+  'gz',
+  'tar',
+]);
+
 export function inferWorkspaceLanguage(path: string): string {
   const match = path.toLowerCase().match(/\.([a-z0-9]+)$/);
   if (!match) return 'plaintext';
   return LANGUAGE_BY_EXTENSION[match[1]] || 'plaintext';
+}
+
+export function isEditableWorkspaceFile(path: string): boolean {
+  const match = path.toLowerCase().match(/\.([a-z0-9]+)$/);
+  if (!match) return true;
+  return !NON_EDITABLE_EXTENSIONS.has(match[1]);
 }
 
 export function safeDownloadName(path: string): string {
@@ -33,6 +57,14 @@ export function safeDownloadName(path: string): string {
   const name = path.split('/').filter(Boolean).pop() || '';
   const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^_+|_+$/g, '');
   return safe || 'artifact.txt';
+}
+
+export function workspaceDownloadName(path: string, type: 'file' | 'directory'): string {
+  if (type === 'file') return safeDownloadName(path);
+  const clean = path.replace(/^\/workspace\/?/, '').replace(/\/+$/, '');
+  const name = clean.split('/').filter(Boolean).pop() || 'workspace';
+  const safe = name.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^_+|_+$/g, '');
+  return `${safe || 'workspace'}.zip`;
 }
 
 export function displayWorkspacePath(path: string): string {

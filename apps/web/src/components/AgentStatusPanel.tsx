@@ -6,6 +6,8 @@ import { FileTree } from './FileTree';
 import { VersionTimeline } from './VersionTimeline';
 import { PreviewFrame } from './PreviewFrame';
 import { WorkspaceFileEditor } from './WorkspaceFileEditor';
+import { api } from '../lib/api';
+import { workspaceDownloadName } from '../lib/workspaceFile';
 import type { AgentConfig, Message } from '@agenthub/shared';
 import type { AgentEvent } from '../store/appStore';
 
@@ -27,7 +29,9 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
   const [activeTab, setActiveTab] = useState<PanelTab>('Agents');
   const [viewMode, setViewMode] = useState<ViewMode>('detailed');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+  const [fullscreenFilePath, setFullscreenFilePath] = useState<string | null>(null);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const addToast = useAppStore((s) => s.addToast);
   const agentEvents = useAppStore((s) => s.agentEvents);
   const messages = useAppStore((s) => {
     const sessionId = s.activeSessionId;
@@ -83,6 +87,23 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
     { key: 'aggregated', label: '聚合' },
     { key: 'errors', label: '异常' },
   ];
+
+  const downloadWorkspacePath = async (path: string, type: 'file' | 'directory') => {
+    if (!activeSessionId) return;
+    try {
+      const result = await api.downloadWorkspacePath(activeSessionId, path);
+      const url = URL.createObjectURL(result.blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = result.filename || workspaceDownloadName(path, type);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      addToast(err?.message || 'Download failed', 'error');
+    }
+  };
 
   return (
     <div className="w-full border-l border-hub flex flex-col h-full">
@@ -162,12 +183,32 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
         )}
         {activeTab === 'Files' && activeSessionId && (
           <div className="space-y-4">
-            <FileTree sessionId={activeSessionId} onSelectFile={setSelectedFilePath} />
+            <FileTree
+              sessionId={activeSessionId}
+              onSelectFile={setSelectedFilePath}
+              onOpenFile={(path) => {
+                setSelectedFilePath(path);
+                setFullscreenFilePath(path);
+              }}
+              onDownloadPath={downloadWorkspacePath}
+            />
             {selectedFilePath && (
               <WorkspaceFileEditor
                 sessionId={activeSessionId}
                 path={selectedFilePath}
                 onClose={() => setSelectedFilePath(null)}
+                onToggleFullscreen={() => setFullscreenFilePath(selectedFilePath)}
+                onDownloadOriginal={(path) => downloadWorkspacePath(path, 'file')}
+              />
+            )}
+            {fullscreenFilePath && (
+              <WorkspaceFileEditor
+                sessionId={activeSessionId}
+                path={fullscreenFilePath}
+                fullscreen
+                onClose={() => setFullscreenFilePath(null)}
+                onToggleFullscreen={() => setFullscreenFilePath(null)}
+                onDownloadOriginal={(path) => downloadWorkspacePath(path, 'file')}
               />
             )}
             <VersionTimeline sessionId={activeSessionId} />

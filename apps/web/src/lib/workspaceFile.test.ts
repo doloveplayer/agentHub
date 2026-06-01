@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   displayWorkspacePath,
   inferWorkspaceLanguage,
+  isEditableWorkspaceFile,
   safeDownloadName,
+  workspaceDownloadName,
 } from './workspaceFile.js';
 
 test('inferWorkspaceLanguage maps common agent artifact extensions', () => {
@@ -26,4 +28,17 @@ test('safeDownloadName uses basename and removes unsafe characters', () => {
 test('displayWorkspacePath strips workspace prefix for compact labels', () => {
   assert.equal(displayWorkspacePath('/workspace/docs/report.md'), 'docs/report.md');
   assert.equal(displayWorkspacePath('/notes.md'), 'notes.md');
+});
+
+test('isEditableWorkspaceFile rejects binary office artifacts', () => {
+  assert.equal(isEditableWorkspaceFile('/workspace/deck.pptx'), false);
+  assert.equal(isEditableWorkspaceFile('/workspace/legacy.ppt'), false);
+  assert.equal(isEditableWorkspaceFile('/workspace/spec.docx'), false);
+  assert.equal(isEditableWorkspaceFile('/workspace/docs/report.md'), true);
+});
+
+test('workspaceDownloadName returns zip names for directories', () => {
+  assert.equal(workspaceDownloadName('/workspace/docs', 'directory'), 'docs.zip');
+  assert.equal(workspaceDownloadName('/workspace', 'directory'), 'workspace.zip');
+  assert.equal(workspaceDownloadName('/workspace/deck.pptx', 'file'), 'deck.pptx');
 });
