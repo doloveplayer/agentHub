@@ -315,7 +315,7 @@ export function ChatView() {
   const renderedPlanIds = useRef(new Set<string>());
 
   // Workspace PPTX file detection for inline preview cards
-  const [pptxFiles, setPptxFiles] = useState<{ path: string; name: string }[]>([]);
+  const [pptxFiles, setPptxFiles] = useState<{ path: string; name: string; modifiedAt: number }[]>([]);
 
   const scanWorkspacePptx = useCallback(async () => {
     if (!activeSessionId) return;
@@ -325,12 +325,16 @@ export function ChatView() {
         ...(result?.tree ?? []),
         ...(result?.workspaceTree ?? []),
       ];
-      const pptxList: { path: string; name: string }[] = [];
+      const pptxList: { path: string; name: string; modifiedAt: number }[] = [];
 
       const walk = (nodes: any[]) => {
         for (const node of nodes) {
-          if (node.type === 'file' && /\.pptx?$/i.test(node.name)) {
-            pptxList.push({ path: node.path, name: node.name });
+          if (node.type === 'file' && /\.pptx$/i.test(node.name)) {
+            pptxList.push({
+              path: node.path,
+              name: node.name,
+              modifiedAt: node.modifiedAt ?? 0,
+            });
           }
           if (node.type === 'directory' && node.children?.length) {
             walk(node.children);
@@ -338,15 +342,19 @@ export function ChatView() {
         }
       };
       walk(roots);
+      pptxList.sort((a, b) => b.modifiedAt - a.modifiedAt);
       setPptxFiles(pptxList);
     } catch {
       // Workspace tree may not exist until the sandbox is created.
     }
   }, [activeSessionId]);
 
+  // Poll workspace tree every 3s so PPTX cards appear as soon as files are created
   useEffect(() => {
     scanWorkspacePptx();
-  }, [scanWorkspacePptx, messages.length]);
+    const interval = setInterval(scanWorkspacePptx, 3000);
+    return () => clearInterval(interval);
+  }, [scanWorkspacePptx]);
 
   // Memoize agentMap — only rebuild when agents array changes
   const agentMap = useMemo(() => {

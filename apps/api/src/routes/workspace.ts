@@ -1,7 +1,5 @@
 import { Hono } from 'hono';
-import { execFileSync } from 'child_process';
-import { readdirSync, statSync, realpathSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
+import { readdirSync, statSync, realpathSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
@@ -19,6 +17,7 @@ interface FileNode {
   path: string;
   type: 'file' | 'directory';
   size?: number;
+  modifiedAt?: number;
   children?: FileNode[];
   source?: 'sandbox' | 'workspace'; // which root this file comes from
 }
@@ -53,7 +52,7 @@ function readFileTree(
         if (skipPrefixes.some(p => entry.name.startsWith(p))) continue;
         try {
           const stat = statSync(fullPath);
-          nodes.push({ name: entry.name, path: relPath, type: 'file', size: stat.size, source });
+          nodes.push({ name: entry.name, path: relPath, type: 'file', size: stat.size, modifiedAt: stat.mtimeMs, source });
         } catch {
           nodes.push({ name: entry.name, path: relPath, type: 'file', source });
         }
@@ -227,58 +226,6 @@ workspace.get('/browse', async (c) => {
     return c.json({ path: real, dirs });
   } catch (err: any) {
     return c.json({ error: `Failed to read directory: ${err.message}` }, 500);
-  }
-});
-
-// POST /api/workspace/:sessionId/convert-ppt — convert legacy .ppt to .pptx via LibreOffice
-workspace.post('/:sessionId/convert-ppt', async (c) => {
-  const { userId } = c.get('user');
-  const sessionId = c.req.param('sessionId');
-  const body = await c.req.json().catch(() => null);
-  const filePath = body?.path as string | undefined;
-
-  const session = await prisma.session.findUnique({ where: { id: sessionId } });
-  if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
-  if (!filePath) return c.json({ error: 'Missing path' }, 400);
-  if (!/\.ppt$/i.test(filePath)) return c.json({ error: 'Only .ppt files can be converted' }, 400);
-
-  const workDir = getWorkspaceRoot(sessionId);
-  const resolvedPath = resolve(workDir, filePath.replace(/^\/workspace\/?/, ''));
-  if (!resolvedPath.startsWith(resolve(workDir)) || !resolvedPath.endsWith('.ppt')) {
-    return c.json({ error: 'Invalid path' }, 403);
-  }
-
-  let tmpDir = '';
-  try {
-    const inputContent = readFileSync(resolvedPath);
-    // Basic .ppt header check (OLE2 compound document)
-    if (inputContent.length < 8) return c.json({ error: 'File too small to be a valid .ppt' }, 400);
-
-    tmpDir = mkdtempSync(resolve(tmpdir(), 'agenthub-ppt-'));
-    execFileSync('libreoffice', [
-      '--headless',
-      '--convert-to', 'pptx',
-      '--outdir', tmpDir,
-      resolvedPath,
-    ], { timeout: 30000, maxBuffer: 10 * 1024 * 1024 });
-
-    // LibreOffice names output as {basename}.pptx
-    const baseName = filePath.split('/').pop()!.replace(/\.ppt$/i, '');
-    const outputPath = resolve(tmpDir, `${baseName}.pptx`);
-    const converted = readFileSync(outputPath);
-
-    c.header('Content-Type', 'application/vnd.openxmlformats-officedocument.presentationml.presentation');
-    c.header('Content-Disposition', `inline; filename="${baseName}.pptx"`);
-    return c.body(converted.buffer.slice(converted.byteOffset, converted.byteOffset + converted.byteLength) as ArrayBuffer);
-  } catch (err: any) {
-    if (err.code === 'ENOENT' || err.message?.includes('ENOENT')) {
-      return c.json({ error: 'LibreOffice not available for conversion' }, 500);
-    }
-    return c.json({ error: err?.message || 'Conversion failed' }, 500);
-  } finally {
-    if (tmpDir) {
-      try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* cleanup best-effort */ }
-    }
   }
 });
 

@@ -56,15 +56,6 @@ export function isPptxWorkspaceFile(path: string): boolean {
   return /\.pptx$/i.test(path);
 }
 
-/** Both .ppt (legacy binary) and .pptx (XML) are previewable */
-export function isPptPreviewableFile(path: string): boolean {
-  return /\.pptx?$/i.test(path);
-}
-
-export function isLegacyPptFile(path: string): boolean {
-  return /\.ppt$/i.test(path) && !/\.pptx$/i.test(path);
-}
-
 export function safeDownloadName(path: string): string {
   if (path.endsWith('/')) return 'artifact.txt';
   const name = path.split('/').filter(Boolean).pop() || '';

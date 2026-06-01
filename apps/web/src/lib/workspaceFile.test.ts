@@ -5,8 +5,6 @@ import {
   inferWorkspaceLanguage,
   isEditableWorkspaceFile,
   isPptxWorkspaceFile,
-  isPptPreviewableFile,
-  isLegacyPptFile,
   safeDownloadName,
   workspaceDownloadName,
 } from './workspaceFile.js';
@@ -45,23 +43,6 @@ test('isPptxWorkspaceFile identifies previewable pptx files only', () => {
   assert.equal(isPptxWorkspaceFile('/workspace/DECK.PPTX'), true);
   assert.equal(isPptxWorkspaceFile('/workspace/legacy.ppt'), false);
   assert.equal(isPptxWorkspaceFile('/workspace/report.md'), false);
-});
-
-test('isPptPreviewableFile matches both .ppt and .pptx', () => {
-  assert.equal(isPptPreviewableFile('/workspace/deck.pptx'), true);
-  assert.equal(isPptPreviewableFile('/workspace/legacy.ppt'), true);
-  assert.equal(isPptPreviewableFile('/workspace/Legacy.PPT'), true);
-  assert.equal(isPptPreviewableFile('/workspace/report.md'), false);
-  assert.equal(isPptPreviewableFile('/workspace/data.xlsx'), false);
-});
-
-test('isLegacyPptFile identifies only .ppt (not .pptx)', () => {
-  assert.equal(isLegacyPptFile('/workspace/legacy.ppt'), true);
-  assert.equal(isLegacyPptFile('/workspace/LEGACY.PPT'), true);
-  assert.equal(isLegacyPptFile('/workspace/modern.pptx'), false);
-  assert.equal(isLegacyPptFile('/workspace/report.md'), false);
-  // Edge: file with both extensions
-  assert.equal(isLegacyPptFile('/workspace/weird.ppt.pptx'), false);
 });
 
 test('workspaceDownloadName returns zip names for directories', () => {

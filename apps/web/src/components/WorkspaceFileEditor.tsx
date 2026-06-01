@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { Download, FileText, Maximize2, Minimize2, RefreshCw, Save, X } from 'lucide-react';
 import { api } from '../lib/api';
-import { displayWorkspacePath, inferWorkspaceLanguage, isEditableWorkspaceFile, isPptPreviewableFile, isLegacyPptFile, safeDownloadName } from '../lib/workspaceFile';
+import { displayWorkspacePath, inferWorkspaceLanguage, isEditableWorkspaceFile, isPptxWorkspaceFile, safeDownloadName } from '../lib/workspaceFile';
 import { PptxViewer } from './PptxViewer';
 
 interface Props {
@@ -45,8 +45,7 @@ export function WorkspaceFileEditor({
   const pptxUrlRef = useRef<string | null>(null);
   const language = useMemo(() => inferWorkspaceLanguage(path), [path]);
   const editable = useMemo(() => isEditableWorkspaceFile(path), [path]);
-  const previewablePptx = useMemo(() => isPptPreviewableFile(path), [path]);
-  const needsConversion = useMemo(() => isLegacyPptFile(path), [path]);
+  const previewablePptx = useMemo(() => isPptxWorkspaceFile(path), [path]);
   const dirty = loaded !== null && content !== loaded.content;
 
   const setPreviewUrl = (url: string | null) => {
@@ -85,15 +84,8 @@ export function WorkspaceFileEditor({
     setError(null);
     setPreviewUrl(null);
     try {
-      if (needsConversion) {
-        // Legacy .ppt — convert via server first
-        const converted = await api.convertPptToPptx(sessionId, path);
-        setPreviewUrl(URL.createObjectURL(converted.blob));
-      } else {
-        // Modern .pptx — download directly
-        const result = await api.downloadWorkspacePath(sessionId, path);
-        setPreviewUrl(URL.createObjectURL(result.blob));
-      }
+      const result = await api.downloadWorkspacePath(sessionId, path);
+      setPreviewUrl(URL.createObjectURL(result.blob));
     } catch (err: any) {
       setError(err?.message || 'Failed to load PPTX preview');
     } finally {
@@ -220,7 +212,7 @@ export function WorkspaceFileEditor({
         <div data-testid="pptx-preview-panel" className="min-h-0 flex-1 overflow-auto bg-hub-root p-3">
           {loading && (
             <div className="flex min-h-[260px] items-center justify-center text-xs text-hub-muted">
-              {needsConversion ? 'Converting .ppt to .pptx...' : 'Loading PPTX preview...'}
+              Loading PPTX preview...
             </div>
           )}
           {!loading && pptxUrl && <PptxViewer src={pptxUrl} />}
@@ -230,9 +222,7 @@ export function WorkspaceFileEditor({
             </div>
           )}
           <div className="mt-2 text-[11px] text-hub-muted">
-            {needsConversion
-              ? 'Legacy .ppt format — converted for preview. Use Download to save the original file.'
-              : 'PPTX preview is read-only. Use Download to save the original file.'}
+            PPTX preview is read-only. Use Download to save the original file.
           </div>
         </div>
       ) : editable ? (
