@@ -20,6 +20,7 @@ import { DeployCard } from './DeployCard';
 import { TestReportCard } from './TestReportCard';
 import { ReviewCard } from './ReviewCard';
 import { WorkspaceSelector } from './WorkspaceSelector';
+import { PptxCard } from './PptxCard';
 import type { Message, AgentConfig } from '@agenthub/shared';
 import { safeContent, formatTokens } from '../lib/text';
 
@@ -313,6 +314,40 @@ export function ChatView() {
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
   const renderedPlanIds = useRef(new Set<string>());
 
+  // Workspace PPTX file detection for inline preview cards
+  const [pptxFiles, setPptxFiles] = useState<{ path: string; name: string }[]>([]);
+
+  const scanWorkspacePptx = useCallback(async () => {
+    if (!activeSessionId) return;
+    try {
+      const result = await api.getWorkspaceTree(activeSessionId);
+      const roots: any[] = [
+        ...(result?.tree ?? []),
+        ...(result?.workspaceTree ?? []),
+      ];
+      const pptxList: { path: string; name: string }[] = [];
+
+      const walk = (nodes: any[]) => {
+        for (const node of nodes) {
+          if (node.type === 'file' && /\.pptx$/i.test(node.name)) {
+            pptxList.push({ path: node.path, name: node.name });
+          }
+          if (node.type === 'directory' && node.children?.length) {
+            walk(node.children);
+          }
+        }
+      };
+      walk(roots);
+      setPptxFiles(pptxList);
+    } catch {
+      // Workspace tree may not exist until the sandbox is created.
+    }
+  }, [activeSessionId]);
+
+  useEffect(() => {
+    scanWorkspacePptx();
+  }, [scanWorkspacePptx, messages.length]);
+
   // Memoize agentMap — only rebuild when agents array changes
   const agentMap = useMemo(() => {
     const map = new Map<string, AgentConfig>();
@@ -507,6 +542,14 @@ export function ChatView() {
             </React.Fragment>
           ))}
           <ArtifactFeed sessionId={activeSessionId!} />
+          {pptxFiles.map((file) => (
+            <PptxCard
+              key={file.path}
+              sessionId={activeSessionId}
+              filePath={file.path}
+              fileName={file.name}
+            />
+          ))}
           <div ref={bottomRef} />
         </div>
         <MessageInput onSend={send} disabled={hasRunningAgent} mentionableAgents={mentionableAgents} />
