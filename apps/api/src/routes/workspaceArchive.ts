@@ -8,6 +8,9 @@ export interface ArchiveFile {
   content: Buffer;
 }
 
+const SKIP_DIRS = new Set(['node_modules', '.git', '.claude', '.sandboxes']);
+const SKIP_FILE_PREFIXES = ['_prompt_', '_env.', '_repl_prompt_', '_inbox_'];
+
 const CRC_TABLE = new Uint32Array(256);
 for (let n = 0; n < 256; n++) {
   let c = n;
@@ -105,6 +108,7 @@ export function buildWorkspaceZip(files: ArchiveFile[]): Buffer {
 function collectDirectory(workspaceRoot: string, dirPath: string, files: ArchiveFile[]): void {
   const entries = readdirSync(dirPath, { withFileTypes: true });
   for (const entry of entries) {
+    if (shouldSkipArchiveEntry(entry.name)) continue;
     const absolutePath = resolve(dirPath, entry.name);
     if (!isInsideWorkspace(workspaceRoot, absolutePath)) continue;
     if (entry.isDirectory()) {
@@ -117,6 +121,12 @@ function collectDirectory(workspaceRoot: string, dirPath: string, files: Archive
       });
     }
   }
+}
+
+function shouldSkipArchiveEntry(name: string): boolean {
+  return SKIP_DIRS.has(name)
+    || name.startsWith('_agent_')
+    || SKIP_FILE_PREFIXES.some((prefix) => name.startsWith(prefix));
 }
 
 function isInsideWorkspace(workspaceRoot: string, absolutePath: string): boolean {

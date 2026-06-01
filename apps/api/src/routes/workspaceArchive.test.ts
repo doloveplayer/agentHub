@@ -39,6 +39,23 @@ test('collectArchiveFiles rejects traversal outside the workspace', () => {
   });
 });
 
+test('collectArchiveFiles skips internal agent and prompt files', () => {
+  withTempWorkspace((root) => {
+    mkdirSync(join(root, 'docs'), { recursive: true });
+    mkdirSync(join(root, '_agent_code-agent'), { recursive: true });
+    mkdirSync(join(root, '.claude'), { recursive: true });
+    writeFileSync(join(root, 'docs', 'visible.md'), 'visible');
+    writeFileSync(join(root, '_agent_code-agent', 'memory.md'), 'internal');
+    writeFileSync(join(root, '.claude', 'settings.json'), '{}');
+    writeFileSync(join(root, '_prompt_secret.txt'), 'prompt');
+    writeFileSync(join(root, '_env.secret'), 'env');
+
+    const files = collectArchiveFiles(root, '/workspace');
+
+    assert.deepEqual(files.map((file) => file.archivePath), ['docs/visible.md']);
+  });
+});
+
 test('buildWorkspaceZip emits a zip file with central directory entries', () => {
   const zip = buildWorkspaceZip([
     { archivePath: 'docs/a.md', absolutePath: '/unused/a.md', content: Buffer.from('A') },
