@@ -430,8 +430,17 @@ export function ChatView() {
           <button onClick={() => setSettingsOpen(true)} className="p-1.5 rounded hover:bg-hub-hover text-hub-tertiary transition shrink-0" title="Settings">
             <Settings className="w-3.5 h-3.5" />
           </button>
-          {/* Workspace button */}
-          <button onClick={() => setShowWorkspaceSelector(true)} className="p-1.5 rounded hover:bg-hub-hover text-hub-tertiary transition shrink-0" title="Set Workspace Directory">
+          {/* Workspace button — disabled after sandbox is created (first message sent) */}
+          <button
+            onClick={() => !(messages.length > 0) && setShowWorkspaceSelector(true)}
+            className={`p-1.5 rounded transition shrink-0 ${
+              messages.length > 0
+                ? 'text-hub-muted/30 cursor-not-allowed'
+                : 'hover:bg-hub-hover text-hub-tertiary'
+            }`}
+            title={messages.length > 0 ? 'Workspace locked — session already started' : 'Set Workspace Directory'}
+            disabled={messages.length > 0}
+          >
             <FolderOpen className="w-3.5 h-3.5" />
           </button>
         </div>
