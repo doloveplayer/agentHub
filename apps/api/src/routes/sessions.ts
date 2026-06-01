@@ -4,6 +4,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { SandboxManager } from '../agent/SandboxManager.js';
 import { broadcast, sandboxes, realWorkspacePaths, workspaceModes } from '../ws/state.js';
+import { stopPlanWatcher } from '../ws/planWatcher.js';
 import { InboxManager } from '../agent/InboxManager.js';
 import { buildGroupContext } from '../agent/groupContext.js';
 import { config } from '../config.js';
@@ -275,9 +276,15 @@ sessions.delete('/:id', async (c) => {
   if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
 
   if (session.sandboxContainerId) {
-    SandboxManager.destroy(session.sandboxContainerId).catch((err) =>
-      console.error(`[api] Failed to destroy sandbox for session ${sessionId}: ${err.message}`),
-    );
+    // Stop PlanWatcher before destroying the sandbox
+    stopPlanWatcher(sessionId);
+    // Stop and remove Docker container first, then clean up host dir.
+    // Container must be stopped before rmSync can release the bind mount.
+    try {
+      await SandboxManager.destroy(session.sandboxContainerId);
+    } catch (err: any) {
+      console.error(`[api] Failed to destroy sandbox for session ${sessionId}: ${err.message}`);
+    }
     SandboxManager.destroyHostDir(sessionId);
   }
 
