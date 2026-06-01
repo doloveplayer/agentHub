@@ -52,6 +52,10 @@ export function isEditableWorkspaceFile(path: string): boolean {
   return !NON_EDITABLE_EXTENSIONS.has(match[1]);
 }
 
+export function isPptxWorkspaceFile(path: string): boolean {
+  return /\.pptx$/i.test(path);
+}
+
 export function safeDownloadName(path: string): string {
   if (path.endsWith('/')) return 'artifact.txt';
   const name = path.split('/').filter(Boolean).pop() || '';

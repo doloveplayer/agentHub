@@ -4,6 +4,7 @@ import {
   displayWorkspacePath,
   inferWorkspaceLanguage,
   isEditableWorkspaceFile,
+  isPptxWorkspaceFile,
   safeDownloadName,
   workspaceDownloadName,
 } from './workspaceFile.js';
@@ -35,6 +36,13 @@ test('isEditableWorkspaceFile rejects binary office artifacts', () => {
   assert.equal(isEditableWorkspaceFile('/workspace/legacy.ppt'), false);
   assert.equal(isEditableWorkspaceFile('/workspace/spec.docx'), false);
   assert.equal(isEditableWorkspaceFile('/workspace/docs/report.md'), true);
+});
+
+test('isPptxWorkspaceFile identifies previewable pptx files only', () => {
+  assert.equal(isPptxWorkspaceFile('/workspace/deck.pptx'), true);
+  assert.equal(isPptxWorkspaceFile('/workspace/DECK.PPTX'), true);
+  assert.equal(isPptxWorkspaceFile('/workspace/legacy.ppt'), false);
+  assert.equal(isPptxWorkspaceFile('/workspace/report.md'), false);
 });
 
 test('workspaceDownloadName returns zip names for directories', () => {

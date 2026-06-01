@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { Download, FileText, Maximize2, Minimize2, RefreshCw, Save, X } from 'lucide-react';
 import { api } from '../lib/api';
-import { displayWorkspacePath, inferWorkspaceLanguage, isEditableWorkspaceFile, safeDownloadName } from '../lib/workspaceFile';
+import { displayWorkspacePath, inferWorkspaceLanguage, isEditableWorkspaceFile, isPptxWorkspaceFile, safeDownloadName } from '../lib/workspaceFile';
+import { PptxViewer } from './PptxViewer';
 
 interface Props {
   sessionId: string;
@@ -40,12 +41,21 @@ export function WorkspaceFileEditor({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pptxUrl, setPptxUrl] = useState<string | null>(null);
+  const pptxUrlRef = useRef<string | null>(null);
   const language = useMemo(() => inferWorkspaceLanguage(path), [path]);
   const editable = useMemo(() => isEditableWorkspaceFile(path), [path]);
+  const previewablePptx = useMemo(() => isPptxWorkspaceFile(path), [path]);
   const dirty = loaded !== null && content !== loaded.content;
 
+  const setPreviewUrl = (url: string | null) => {
+    if (pptxUrlRef.current) URL.revokeObjectURL(pptxUrlRef.current);
+    pptxUrlRef.current = url;
+    setPptxUrl(url);
+  };
+
   const loadFile = async () => {
-    if (!editable) {
+    if (!editable || previewablePptx) {
       setLoaded(null);
       setContent('');
       setError(null);
@@ -69,11 +79,29 @@ export function WorkspaceFileEditor({
     }
   };
 
+  const loadPptxPreview = async () => {
+    setLoading(true);
+    setError(null);
+    setPreviewUrl(null);
+    try {
+      const result = await api.downloadWorkspacePath(sessionId, path);
+      setPreviewUrl(URL.createObjectURL(result.blob));
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load PPTX preview');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     setLoaded(null);
     setContent('');
-    loadFile();
-  }, [sessionId, path, editable]);
+    if (previewablePptx) loadPptxPreview();
+    else loadFile();
+    return () => {
+      setPreviewUrl(null);
+    };
+  }, [sessionId, path, editable, previewablePptx]);
 
   const save = async () => {
     if (!editable) return;
@@ -91,7 +119,7 @@ export function WorkspaceFileEditor({
   };
 
   const download = () => {
-    if (!editable) {
+    if (!editable || previewablePptx) {
       onDownloadOriginal?.(path);
       return;
     }
@@ -126,7 +154,7 @@ export function WorkspaceFileEditor({
           </span>
         )}
         <button
-          onClick={loadFile}
+          onClick={previewablePptx ? loadPptxPreview : loadFile}
           disabled={loading || saving}
           className="inline-flex h-7 w-7 items-center justify-center rounded text-hub-tertiary hover:bg-hub-hover disabled:opacity-50"
           title="Refresh"
@@ -135,7 +163,7 @@ export function WorkspaceFileEditor({
         </button>
         <button
           onClick={save}
-          disabled={loading || saving || !dirty || !editable}
+          disabled={loading || saving || !dirty || !editable || previewablePptx}
           className="inline-flex h-7 w-7 items-center justify-center rounded text-hub-success hover:bg-hub-hover disabled:opacity-40"
           title="Save"
         >
@@ -180,7 +208,24 @@ export function WorkspaceFileEditor({
         </div>
       )}
 
-      {editable ? (
+      {previewablePptx ? (
+        <div data-testid="pptx-preview-panel" className="min-h-0 flex-1 overflow-auto bg-hub-root p-3">
+          {loading && (
+            <div className="flex min-h-[260px] items-center justify-center text-xs text-hub-muted">
+              Loading PPTX preview...
+            </div>
+          )}
+          {!loading && pptxUrl && <PptxViewer src={pptxUrl} />}
+          {!loading && !pptxUrl && !error && (
+            <div className="flex min-h-[260px] items-center justify-center text-xs text-hub-muted">
+              No preview available
+            </div>
+          )}
+          <div className="mt-2 text-[11px] text-hub-muted">
+            PPTX preview is read-only. Use Download to save the original file.
+          </div>
+        </div>
+      ) : editable ? (
         <div className="min-h-0 flex-1">
           <Editor
             height={editorHeight}
