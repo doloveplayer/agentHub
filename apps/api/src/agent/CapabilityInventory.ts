@@ -7,7 +7,7 @@ export class CapabilityInventory {
    * Generate cap-inventory.md skill for all agents in a session.
    * Writes to every Planner agent's .claude/skills/ directory.
    */
-  static async generate(sessionId: string): Promise<void> {
+  static async generate(sessionId: string, knownHostWorkDir?: string): Promise<void> {
     const sessionAgents = await prisma.sessionAgent.findMany({
       where: { sessionId },
       include: {
@@ -31,12 +31,14 @@ export class CapabilityInventory {
       const isPlanner = sa.agent.name === 'planner' || sa.agent.name.startsWith('planner-');
       if (!isPlanner) continue;
 
-      const agent = await prisma.agent.findUnique({
+      // Prefer explicit hostWorkDir (set when Planner is first initialized and DB
+      // hasn't been updated yet), then fall back to the Agent table record
+      const dbAgent = await prisma.agent.findUnique({
         where: { id: sa.agentId },
         select: { hostWorkDir: true, name: true },
       });
-      const hostWorkDir = agent?.hostWorkDir;
-      const agentName = agent?.name || sa.agent.name;
+      const hostWorkDir = knownHostWorkDir || dbAgent?.hostWorkDir;
+      const agentName = dbAgent?.name || sa.agent.name;
       if (!hostWorkDir) continue;
 
       const skillsDir = resolve(hostWorkDir, `_agent_${agentName}`, '.claude', 'skills');
@@ -62,8 +64,8 @@ export class CapabilityInventory {
     }
   }
 
-  static async regenerate(sessionId: string): Promise<void> {
-    return CapabilityInventory.generate(sessionId);
+  static async regenerate(sessionId: string, knownHostWorkDir?: string): Promise<void> {
+    return CapabilityInventory.generate(sessionId, knownHostWorkDir);
   }
 }
 

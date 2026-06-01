@@ -62,14 +62,13 @@ ${systemPrompt}
       writeFileSync(resolve(claudeConfigDir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf-8');
     }
 
-    // Regenerate capability inventory for Planner agents when any agent is added
+    // Regenerate capability inventory for Planner agents when any agent is added.
+    // Also generate immediately when the Planner itself is initialized (hostWorkDir
+    // passed explicitly since the DB may not have it yet).
     if (sessionId) {
-      const isPlanner = agentName === 'planner' || agentName.startsWith('planner-');
-      if (!isPlanner) {
-        CapabilityInventory.regenerate(sessionId).catch((err) =>
-          console.error(`[AgentDirectory] Failed to regenerate cap-inventory:`, err.message)
-        );
-      }
+      CapabilityInventory.regenerate(sessionId, hostWorkDir).catch((err) =>
+        console.error(`[AgentDirectory] Failed to regenerate cap-inventory:`, err.message)
+      );
     }
 
     return agentDir;
