@@ -338,14 +338,12 @@ export async function dispatchTasksToAgents(
         });
       } else {
         missingTypes.add(task.agentType);
+        const availableAgentTypes = [...new Set(sessionAgents.map(sa => sa.agent.name))];
         broadcast(sessionId, {
           type: 'agent_missing', planId, taskId: task.id,
           agentType: task.agentType, taskTitle: task.title,
-          suggestedAgent: {
-            name: task.agentType,
-            displayName: task.agentType,
-            description: `Auto-suggested ${task.agentType} for task: ${task.title}`,
-          },
+          availableAgentTypes,
+          message: `No agent matches "${task.agentType}". Available in session: ${availableAgentTypes.join(', ')}`,
         });
         continue;
       }
