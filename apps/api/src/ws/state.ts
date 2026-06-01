@@ -202,17 +202,36 @@ export async function getOrCreateSandbox(sessionId: string, sessionType?: string
       filters: { name: [containerName] },
     });
 
+    const defaultWorkDir = resolve(config.sandbox.root, sessionId);
+    const desiredWorkDir = customWorkDir || defaultWorkDir;
+
     if (existingContainers.length > 0) {
-      // Reuse existing container
-      const hostWorkDir = customWorkDir || resolve(config.sandbox.root, sessionId);
-      sandbox = {
-        containerId: existingContainers[0].Id,
-        workDir: '/workspace',
-        hostWorkDir,
-      };
-      // Start the container if it's not running
-      if (existingContainers[0].State !== 'running') {
-        await docker.getContainer(existingContainers[0].Id).start().catch(() => {});
+      // Check if the existing container's bind mount matches the desired workspace.
+      // Docker bind mounts are immutable — if they differ we must recreate.
+      const existingId = existingContainers[0].Id;
+      let existingBind = '';
+      try {
+        const inspect = await docker.getContainer(existingId).inspect();
+        const mounts: Array<{ Source: string; Destination: string }> = inspect.Mounts || [];
+        const wsMount = mounts.find(m => m.Destination === '/workspace');
+        existingBind = wsMount?.Source || '';
+      } catch { /* inspect failed, recreate to be safe */ }
+
+      if (customWorkDir && existingBind && existingBind !== customWorkDir) {
+        console.log(`[sandbox] Bind mismatch (existing=${existingBind}, desired=${customWorkDir}), recreating container`);
+        await docker.getContainer(existingId).stop({ t: 5 }).catch(() => {});
+        await docker.getContainer(existingId).remove({ force: true }).catch(() => {});
+        sandbox = await SandboxManager.create(sessionId, memoryMb, customWorkDir);
+      } else {
+        // Reuse existing container
+        sandbox = {
+          containerId: existingId,
+          workDir: '/workspace',
+          hostWorkDir: desiredWorkDir,
+        };
+        if (existingContainers[0].State !== 'running') {
+          await docker.getContainer(existingId).start().catch(() => {});
+        }
       }
     } else {
       // Create new container with custom or default workspace
