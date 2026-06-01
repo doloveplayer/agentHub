@@ -377,10 +377,15 @@ export async function dispatchTasksToAgents(
 
   const agentsByType = new Map<string, typeof sessionAgents[number]['agent'][]>();
   for (const sa of sessionAgents) {
-    const key = sa.agent.name.toLowerCase();
-    const list = agentsByType.get(key) || [];
-    list.push(sa.agent);
-    agentsByType.set(key, list);
+    const name = sa.agent.name.toLowerCase();
+    // Register both the full name ("review-agent-8fbd5f38") and the base name
+    // ("review-agent") so that normalized plan agentType values match correctly.
+    const baseName = name.replace(/-\w{6,}$/, '');
+    for (const key of [name, baseName]) {
+      const list = agentsByType.get(key) || [];
+      list.push(sa.agent);
+      agentsByType.set(key, list);
+    }
   }
 
   const loadByAgent = new Map<string, number>();
