@@ -136,6 +136,23 @@ export interface TaskPlan {
   tasks: TaskNode[];
 }
 
+/** Skill-driven plan types — single source of truth for plan.json schema */
+export interface PlanTask {
+  id: string;
+  title: string;
+  description: string;
+  agentType: string;       // matches cap-inventory values, not enum-constrained
+  dependsOn: string[];
+  expectedOutput: string;
+  risk: "low" | "high";
+}
+
+export interface Plan {
+  planTitle: string;
+  summary: string;
+  tasks: PlanTask[];
+}
+
 export interface TaskPlanResult {
   planId: string;
   userId: string;
