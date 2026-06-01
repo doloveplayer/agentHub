@@ -130,6 +130,8 @@ export function SessionList({ onCloseMobile }: Props) {
       const existingMsgs = s.messages[id] ?? [];
       // Build a map of existing messages by ID to preserve streamed content
       const existingMap = new Map(existingMsgs.map(m => [m.id, m]));
+      // Build a set of API message IDs for quick lookup
+      const apiMsgIds = new Set(session.messages.map((m: any) => m.id));
       // Merge API messages with existing messages:
       // - Always use API status when it's 'done' or 'error' (authoritative)
       // - Keep existing content if it's non-empty (streamed content may be more complete)
@@ -145,7 +147,12 @@ export function SessionList({ onCloseMobile }: Props) {
         }
         return apiMsg;
       });
-      // Don't add temp messages - they should have been removed after API call
+      // Append local messages that are not in API response (e.g., temp messages, streaming messages)
+      for (const localMsg of existingMsgs) {
+        if (!apiMsgIds.has(localMsg.id)) {
+          mergedMsgs.push(localMsg);
+        }
+      }
       return { messages: { ...s.messages, [id]: mergedMsgs } };
     });
   };

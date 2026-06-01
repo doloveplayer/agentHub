@@ -83,6 +83,16 @@ export const api = {
 
   getWorkspaceChanges: (sessionId: string) => request<{ changes: string[] }>(`/workspace/${sessionId}/changes`),
 
+  // Workspace configuration
+  getSessionWorkspace: (sessionId: string) =>
+    request<{ path: string | null; mode: string; writePermission: string }>(`/sessions/${sessionId}/workspace`),
+
+  setSessionWorkspace: (sessionId: string, config: { path: string; mode?: string; writePermission?: string }) =>
+    request<{ success: boolean; path: string; mode: string; writePermission: string }>(`/sessions/${sessionId}/workspace`, {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
+
   getDiffFiles: (sessionId: string, baseVersionId?: string) =>
     request<{ files: any[] }>(`/diff/${sessionId}/files${baseVersionId ? `?baseVersionId=${encodeURIComponent(baseVersionId)}` : ''}`),
 

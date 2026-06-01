@@ -18,7 +18,14 @@ export interface AgentProviderConfig {
   [key: string]: unknown;
 }
 
-export type WorkspaceMode = 'read_only_default' | 'full_access';
+export type WorkspaceMode = 'read_only_default' | 'full_access' | 'sandbox' | 'custom';
+export type WritePermission = 'ask' | 'auto';
+
+export interface WorkspaceConfig {
+  path: string | null;
+  mode: WorkspaceMode;
+  writePermission: WritePermission;
+}
 
 export interface Session {
   id: string;
@@ -27,6 +34,9 @@ export interface Session {
   userId: string;
   sandboxContainerId?: string;
   permissionMode?: PermissionMode;
+  workspacePath?: string | null;
+  workspaceMode?: WorkspaceMode;
+  writePermission?: WritePermission;
   agents?: SessionAgentInfo[];
   lastMessage?: { id: string; content: string; senderType: string; createdAt: string } | null;
   createdAt: string;

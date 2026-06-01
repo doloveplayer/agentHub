@@ -538,11 +538,10 @@ export function useChat(sessionId: string) {
     try {
       const result = await api.sendMessage(sessionId, content, mentions.length > 0 ? mentions : undefined);
 
-      // Remove temp message from store (don't call API delete for temp messages)
-      useAppStore.getState().deleteMessage(sessionId, msgId);
-
-      // Add the real user message from API response
+      // Replace temp message with real message from API response
       if (result.userMessageId) {
+        // Remove temp message and add the real one
+        useAppStore.getState().deleteMessage(sessionId, msgId);
         addMessage(sessionId, {
           id: result.userMessageId,
           sessionId,
@@ -551,6 +550,9 @@ export function useChat(sessionId: string) {
           status: 'done',
           createdAt: new Date().toISOString(),
         });
+      } else {
+        // Fallback: keep the temp message but mark it as done
+        setMessageStatus(sessionId, msgId, 'done');
       }
 
       for (const am of result.agentMessages) {

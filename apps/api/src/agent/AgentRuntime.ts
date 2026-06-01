@@ -6,6 +6,7 @@ import { ProviderFactory } from './providers/factory.js';
 import type { AbstractProvider, UnifiedAgentEvent } from './providers/base.js';
 import { AgentContainer } from './AgentContainer.js';
 import { AgentDirectoryManager } from './AgentDirectoryManager.js';
+import { extractAndValidate } from './PlanValidator.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
 import { broadcast, clearRunningAgent, quoteBackfillMap } from '../ws/state.js';
@@ -32,6 +33,8 @@ interface AgentEntry {
   currentAgentId: string | null; // agent ID for current message
   queue: QueueItem[];
   sharedContainer: boolean; // true when using session sandbox (don't destroy on idle)
+  isPlanner: boolean; // true if this agent is a planner
+  accumulatedOutput: string; // accumulate output for planner agents
 }
 
 class AgentRuntime {
@@ -68,6 +71,7 @@ class AgentRuntime {
     entry.currentSession = sessionId;
     entry.currentMessageId = agentMessageId || null;
     entry.currentAgentId = agentId;
+    entry.accumulatedOutput = ''; // Reset accumulated output for new task
     this.clearIdleTimer(entry);
     entry.provider.sendPrompt(prompt);
   }
@@ -121,6 +125,7 @@ class AgentRuntime {
       },
     );
 
+    const isPlanner = agent.name === 'planner' || agent.name.startsWith('planner-');
     const entry: AgentEntry = {
       provider,
       containerId,
@@ -131,6 +136,8 @@ class AgentRuntime {
       currentAgentId: null,
       queue: [],
       sharedContainer: !!sandbox,
+      isPlanner,
+      accumulatedOutput: '',
     };
 
     provider.onEvent((event: UnifiedAgentEvent) => {
@@ -150,6 +157,10 @@ class AgentRuntime {
     switch (event.type) {
       case 'thinking':
         if (event.content) {
+          // Accumulate output for planner agents
+          if (entry.isPlanner) {
+            entry.accumulatedOutput += event.content;
+          }
           broadcast(sessionId, { type: 'stream_chunk', content: event.content, agentMessageId });
         }
         break;
@@ -164,6 +175,37 @@ class AgentRuntime {
       case 'done':
         broadcast(sessionId, { type: 'stream_end', exitCode: event.exitCode ?? 0, agentMessageId });
         if (agentMessageId) clearRunningAgent(sessionId, agentMessageId);
+
+        // Parse planner output and broadcast plan_result
+        if (entry.isPlanner && entry.accumulatedOutput) {
+          const plan = extractAndValidate(entry.accumulatedOutput);
+          if (plan) {
+            const planId = `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            broadcast(sessionId, {
+              type: 'plan_result',
+              planId,
+              planTitle: plan.planTitle,
+              summary: plan.summary,
+              tasks: plan.tasks.map((t) => ({
+                taskId: t.id,
+                planId,
+                title: t.title,
+                description: t.description,
+                agentType: t.agentType,
+                dependsOn: t.dependsOn,
+                expectedOutput: t.expectedOutput,
+                priority: t.priority,
+                status: 'waiting',
+              })),
+              missingAgents: plan.missingAgents,
+            });
+            console.log(`[AgentRuntime] Plan parsed and broadcast: planId=${planId} tasks=${plan.tasks.length}`);
+          } else {
+            console.warn(`[AgentRuntime] Failed to parse planner output for agent ${agentId}`);
+          }
+          entry.accumulatedOutput = '';
+        }
+
         // Backfill QuoteReference with the agent's response message ID (exact ID match)
         if (agentMessageId) {
           const backfillInfo = quoteBackfillMap.get(agentMessageId);
@@ -216,6 +258,20 @@ class AgentRuntime {
         break;
       case 'error':
         broadcast(sessionId, { type: 'stream_error', error: event.message, agentMessageId });
+        // Clean up agent state on error (same as done case)
+        if (agentMessageId) {
+          clearRunningAgent(sessionId, agentMessageId);
+          // Clean up token usage map
+          this.tokenUsageMap.delete(agentMessageId);
+        }
+        // Reset planner accumulated output
+        if (entry.isPlanner) {
+          entry.accumulatedOutput = '';
+        }
+        entry.currentSession = null;
+        entry.currentMessageId = null;
+        entry.currentAgentId = null;
+        this.processNextOrIdle(agentId, entry);
         break;
       case 'token_usage':
         // Store token usage in memory for persistence on completion

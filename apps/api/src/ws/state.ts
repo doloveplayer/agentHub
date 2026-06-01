@@ -2,6 +2,7 @@
 // Extracted from handler.ts to keep modules focused.
 
 import { WebSocket } from 'ws';
+import { resolve } from 'path';
 import { SandboxManager } from '../agent/SandboxManager.js';
 import { config } from '../config.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
@@ -172,8 +173,35 @@ export function generateId(): string {
 export async function getOrCreateSandbox(sessionId: string, sessionType?: string | null) {
   let sandbox = sandboxes.get(sessionId);
   if (!sandbox) {
+    // Check for custom workspace path
+    const customWorkDir = realWorkspacePaths.get(sessionId);
     const memoryMb = sessionType === 'group' ? config.sandbox.groupMemoryMb : config.sandbox.soloMemoryMb;
-    sandbox = await SandboxManager.create(sessionId, memoryMb);
+
+    // Check if a container already exists for this session (prevents orphan containers)
+    const containerName = `agenthub-sandbox-${sessionId}`;
+    const Docker = (await import('dockerode')).default;
+    const docker = new Docker({ socketPath: config.sandbox.hostDockerSocket });
+    const existingContainers = await docker.listContainers({
+      all: true,
+      filters: { name: [containerName] },
+    });
+
+    if (existingContainers.length > 0) {
+      // Reuse existing container
+      const hostWorkDir = customWorkDir || resolve(config.sandbox.root, sessionId);
+      sandbox = {
+        containerId: existingContainers[0].Id,
+        workDir: '/workspace',
+        hostWorkDir,
+      };
+      // Start the container if it's not running
+      if (existingContainers[0].State !== 'running') {
+        await docker.getContainer(existingContainers[0].Id).start().catch(() => {});
+      }
+    } else {
+      // Create new container with custom or default workspace
+      sandbox = await SandboxManager.create(sessionId, memoryMb, customWorkDir);
+    }
     sandboxes.set(sessionId, sandbox);
   }
   return sandbox;
@@ -197,8 +225,11 @@ export function cleanupSessionResources(sessionId: string): void {
   if (procMap) {
     for (const [agentName, info] of procMap) {
       if (info.timer) clearTimeout(info.timer);
-      // Don't stop the provider - let the agent finish its work
-      // info.provider.stop();
+      // Stop providers for task-dispatched agents (not managed by AgentRuntime)
+      // AgentRuntime manages its own agents with shared containers
+      if (info.provider && typeof info.provider.stop === 'function') {
+        info.provider.stop();
+      }
       agentCurrentMessage.delete(agentName);
     }
     agentProcesses.delete(sessionId);
@@ -224,13 +255,13 @@ export function cleanupSessionResources(sessionId: string): void {
       const agentMsgId = pid.split('|::|')[0];
       if (stateMap.has(agentMsgId)) { clearTimeout(timeout); permissionTimeouts.delete(pid); }
     }
-    // Don't kill agent processes - let them finish their work
-    // The AgentRuntime will handle cleanup when agents complete
+    // Clean up agent states and properly handle running count
     for (const [msgId, state] of stateMap) {
       if (state.timer) clearTimeout(state.timer);
-      // Don't kill the process - let it finish
-      // if (state.process.kill) state.process.kill(); else if (state.process.stop) state.process.stop();
-      decRunningAgentCount();
+      // Only decrement if the agent was actually running (had a process)
+      if (state.process) {
+        decRunningAgentCount();
+      }
     }
     agentStates.delete(sessionId);
   }

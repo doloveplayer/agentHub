@@ -27,6 +27,7 @@ import {
   trackFileMod, detectConflicts, clearFileMods,
   generateId, getOrCreateSandbox, broadcast, sendTo,
   cleanupSessionResources, cleanupSessionClient, clearRunningAgent,
+  realWorkspacePaths, workspaceModes,
   type AgentTaskQueue, type TaskDispatchNode,
 } from './state.js';
 
@@ -105,7 +106,16 @@ async function handleConnection(ws: WebSocket, request: any) {
 
   try {
     const session = await prisma.session.findUnique({
-      where: { id: sessionId }, select: { id: true, userId: true, permissionMode: true, type: true },
+      where: { id: sessionId },
+      select: {
+        id: true,
+        userId: true,
+        permissionMode: true,
+        type: true,
+        workspacePath: true,
+        workspaceMode: true,
+        writePermission: true,
+      },
     });
     if (!session || session.userId !== userId) {
       sendTo(ws, { type: 'error', message: 'Session not found or access denied' });
@@ -115,6 +125,12 @@ async function handleConnection(ws: WebSocket, request: any) {
     sessionPermissionModes.set(sessionId, session.permissionMode || 'ask');
     sessionTypes.set(sessionId, session.type);
     sessionType = session.type;
+
+    // Load workspace configuration from database
+    if (session.workspacePath) {
+      realWorkspacePaths.set(sessionId, session.workspacePath);
+      workspaceModes.set(sessionId, (session.workspaceMode as any) || 'custom');
+    }
   } catch {
     sendTo(ws, { type: 'error', message: 'Failed to verify session' });
     ws.close(4000, 'Internal error');

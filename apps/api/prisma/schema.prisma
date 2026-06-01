@@ -27,6 +27,10 @@ model Session {
   permissionMode     String         @default("ask")
   userId             String
   sandboxContainerId String?
+  // Workspace configuration
+  workspacePath      String?        // Custom workspace path on host (null = use default sandbox)
+  workspaceMode      String         @default("sandbox") // "sandbox" | "custom"
+  writePermission    String         @default("ask")     // "ask" | "auto"
   user               User           @relation(fields: [userId], references: [id])
   messages           Message[]
   agents             SessionAgent[]

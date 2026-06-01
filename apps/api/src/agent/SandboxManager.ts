@@ -25,10 +25,18 @@ export interface PortForwardInfo {
 const portForwards = new Map<string, { server: http.Server; info: PortForwardInfo }>();
 
 export class SandboxManager {
-  static async create(sessionId: string, memoryMb?: number): Promise<SandboxInfo> {
-    const hostWorkDir = resolve(SANDBOXES_ROOT, sessionId);
-    if (!existsSync(hostWorkDir)) {
+  static async create(sessionId: string, memoryMb?: number, customHostWorkDir?: string): Promise<SandboxInfo> {
+    // Use custom path if provided, otherwise use default sandbox path
+    const hostWorkDir = customHostWorkDir || resolve(SANDBOXES_ROOT, sessionId);
+
+    // Only create directory if using default sandbox path
+    if (!customHostWorkDir && !existsSync(hostWorkDir)) {
       mkdirSync(hostWorkDir, { recursive: true });
+    }
+
+    // Validate that custom directory exists
+    if (customHostWorkDir && !existsSync(customHostWorkDir)) {
+      throw new Error(`Custom workspace directory does not exist: ${customHostWorkDir}`);
     }
 
     const containerName = `agenthub-sandbox-${sessionId}`;

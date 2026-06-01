@@ -356,7 +356,7 @@ sessions.patch('/:id', async (c) => {
   });
 });
 
-// POST /:id/workspace — set real workspace path
+// POST /:id/workspace — set workspace path
 sessions.post('/:id/workspace', async (c) => {
   const { userId } = c.get('user');
   const sessionId = c.req.param('id');
@@ -365,7 +365,7 @@ sessions.post('/:id/workspace', async (c) => {
   if (!session) return c.json({ error: 'Session not found' }, 404);
   if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
 
-  let body: { path: string; mode?: 'read_only_default' | 'full_access' };
+  let body: { path: string; mode?: 'sandbox' | 'custom'; writePermission?: 'ask' | 'auto' };
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
 
   if (!body.path) return c.json({ error: 'path is required' }, 400);
@@ -383,18 +383,35 @@ sessions.post('/:id/workspace', async (c) => {
   const allowed = roots.some((root) => real.startsWith(path.resolve(root)));
   if (!allowed) return c.json({ error: `Path not allowed. Must be under: ${roots.join(', ')}` }, 403);
 
+  // Persist to database
+  await prisma.session.update({
+    where: { id: sessionId },
+    data: {
+      workspacePath: real,
+      workspaceMode: body.mode || 'custom',
+      writePermission: body.writePermission || 'ask',
+    },
+  });
+
+  // Update in-memory maps for backward compatibility
   realWorkspacePaths.set(sessionId, real);
-  workspaceModes.set(sessionId, body.mode || 'read_only_default');
+  workspaceModes.set(sessionId, body.mode || 'custom');
 
   broadcast(sessionId, {
     type: 'workspace_changed',
     sessionId,
     path: real,
-    mode: body.mode || 'read_only_default',
+    mode: body.mode || 'custom',
+    writePermission: body.writePermission || 'ask',
     timestamp: Date.now(),
   });
 
-  return c.json({ success: true, path: real, mode: body.mode || 'read_only_default' });
+  return c.json({
+    success: true,
+    path: real,
+    mode: body.mode || 'custom',
+    writePermission: body.writePermission || 'ask',
+  });
 });
 
 // GET /:id/workspace — get current workspace config
@@ -402,13 +419,16 @@ sessions.get('/:id/workspace', async (c) => {
   const { userId } = c.get('user');
   const sessionId = c.req.param('id');
 
-  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  const session = await prisma.session.findUnique({
+    where: { id: sessionId },
+    select: { workspacePath: true, workspaceMode: true, writePermission: true },
+  });
   if (!session) return c.json({ error: 'Session not found' }, 404);
-  if (session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
 
   return c.json({
-    path: realWorkspacePaths.get(sessionId) || null,
-    mode: workspaceModes.get(sessionId) || 'read_only_default',
+    path: session.workspacePath || null,
+    mode: session.workspaceMode || 'sandbox',
+    writePermission: session.writePermission || 'ask',
   });
 });
 

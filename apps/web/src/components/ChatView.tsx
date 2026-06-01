@@ -9,7 +9,7 @@ import { MessageActions } from './MessageActions';
 import { AgentStatusPanel } from './AgentStatusPanel';
 import { QuoteToolbar } from './QuoteToolbar';
 import { agentColor } from './AgentMentionPopup';
-import { Shield, AlertTriangle, ChevronDown, Lock, Eye, Sparkles, Zap, Settings, Plus, Minus } from 'lucide-react';
+import { Shield, AlertTriangle, ChevronDown, Lock, Eye, Sparkles, Zap, Settings, Plus, Minus, FolderOpen } from 'lucide-react';
 import { ConfirmationPanel } from './ConfirmationPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { AddAgentModal } from './AddAgentModal';
@@ -18,6 +18,7 @@ import { DiffCard } from './DiffCard';
 import { DeployCard } from './DeployCard';
 import { TestReportCard } from './TestReportCard';
 import { ReviewCard } from './ReviewCard';
+import { WorkspaceSelector } from './WorkspaceSelector';
 import type { Message, AgentConfig } from '@agenthub/shared';
 import { safeContent, formatTokens } from '../lib/text';
 
@@ -218,6 +219,7 @@ export function ChatView() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showAddAgents, setShowAddAgents] = useState(false);
   const [showRemoveAgents, setShowRemoveAgents] = useState(false);
+  const [showWorkspaceSelector, setShowWorkspaceSelector] = useState(false);
   const [previewSelection, setPreviewSelection] = useState<{
     text: string;
     rect: { top: number; left: number; width: number; height: number };
@@ -395,6 +397,10 @@ export function ChatView() {
           <button onClick={() => setSettingsOpen(true)} className="p-1.5 rounded hover:bg-hub-hover text-hub-tertiary transition shrink-0" title="Settings">
             <Settings className="w-3.5 h-3.5" />
           </button>
+          {/* Workspace button */}
+          <button onClick={() => setShowWorkspaceSelector(true)} className="p-1.5 rounded hover:bg-hub-hover text-hub-tertiary transition shrink-0" title="Set Workspace Directory">
+            <FolderOpen className="w-3.5 h-3.5" />
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto chat-scroll">
           {messages.map((msg: any) => (
@@ -506,6 +512,15 @@ export function ChatView() {
           <AddAgentModal sessionId={activeSessionId} open={showAddAgents} onClose={() => setShowAddAgents(false)} />
           <RemoveAgentModal sessionId={activeSessionId} open={showRemoveAgents} onClose={() => setShowRemoveAgents(false)} />
         </>
+      )}
+      {showWorkspaceSelector && activeSessionId && (
+        <WorkspaceSelector
+          sessionId={activeSessionId}
+          onClose={() => setShowWorkspaceSelector(false)}
+          onWorkspaceChanged={(path) => {
+            console.log('Workspace changed to:', path);
+          }}
+        />
       )}
     </div>
   );
