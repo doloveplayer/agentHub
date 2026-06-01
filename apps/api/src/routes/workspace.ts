@@ -1,9 +1,10 @@
 import { Hono } from 'hono';
-import { readdirSync, readFileSync, statSync, realpathSync, existsSync } from 'fs';
+import { readdirSync, statSync, realpathSync, existsSync } from 'fs';
 import { resolve, relative } from 'path';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { WorkspaceManager } from '../agent/WorkspaceManager.js';
+import { getWorkspaceRoot, readWorkspaceTextFile, writeWorkspaceTextFile } from './workspaceFileAccess.js';
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 const archiver: any = require('archiver');
@@ -105,17 +106,39 @@ workspace.get('/:sessionId/file', async (c) => {
   if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
   if (!filePath) return c.json({ error: 'Missing path query param' }, 400);
 
-  // Security: only allow paths under workspace
-  const workDir = resolve(process.cwd(), '..', '..', '.sandboxes', sessionId);
-  const resolved = resolve(workDir, filePath.replace(/^\/workspace\/?/, ''));
-  if (!resolved.startsWith(workDir)) return c.json({ error: 'Path traversal denied' }, 403);
-
+  const workDir = getWorkspaceRoot(sessionId);
   try {
-    const content = readFileSync(resolved, 'utf-8');
-    const stat = statSync(resolved);
-    return c.json({ path: filePath, content, size: stat.size, modifiedAt: stat.mtime.toISOString() });
+    return c.json(readWorkspaceTextFile(workDir, filePath));
   } catch (err: any) {
-    return c.json({ error: `Failed to read file: ${err.message}` }, 404);
+    const status = typeof err.status === 'number' ? err.status : 404;
+    const message = status === 400 || status === 403 ? err.message : 'Failed to read file';
+    return c.json({ error: message }, status as any);
+  }
+});
+
+// PUT /api/workspace/:sessionId/file
+workspace.put('/:sessionId/file', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('sessionId');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body.path !== 'string' || !body.path) {
+    return c.json({ error: 'Missing path' }, 400);
+  }
+  if (typeof body.content !== 'string') {
+    return c.json({ error: 'content must be a string' }, 400);
+  }
+
+  const workDir = getWorkspaceRoot(sessionId);
+  try {
+    return c.json(writeWorkspaceTextFile(workDir, body.path, body.content));
+  } catch (err: any) {
+    const status = typeof err.status === 'number' ? err.status : 500;
+    const message = status === 400 || status === 403 ? err.message : 'Failed to write file';
+    return c.json({ error: message }, status as any);
   }
 });
 
@@ -127,7 +150,7 @@ workspace.get('/:sessionId/changes', async (c) => {
   const session = await prisma.session.findUnique({ where: { id: sessionId } });
   if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
 
-  const workDir = resolve(process.cwd(), '..', '..', '.sandboxes', sessionId);
+  const workDir = getWorkspaceRoot(sessionId);
   const changes = WorkspaceManager.getChanges(workDir);
   return c.json({ changes });
 });
