@@ -17,6 +17,12 @@ import * as fs from 'fs';
 import { createSDKAgentProcess, createOneShotAgentProcess } from '../agent/processFactory.js';
 
 
+function calcContextPct(inputTokens: number): number {
+  if (!inputTokens || inputTokens <= 0) return 0;
+  // Default 200K context window for Claude models
+  return Math.round((inputTokens / 200000) * 100);
+}
+
 /** Resolve trustMode boolean from session's permission mode. */
 function resolveTrustMode(sessionId: string): boolean {
   const mode = sessionPermissionModes.get(sessionId) || 'ask';
@@ -232,7 +238,7 @@ async function startReplForTask(
             cacheRead: (event as any).cacheReadTokens || 0,
             cacheCreate: (event as any).cacheCreateTokens || 0,
           });
-          broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input: (event as any).inputTokens || 0, output: (event as any).outputTokens || 0, cacheRead: (event as any).cacheReadTokens || 0, cacheCreate: (event as any).cacheCreateTokens || 0, contextPct: 0 } }, agentMessageId: taskMsgId, timestamp: Date.now() });
+          broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input: (event as any).inputTokens || 0, output: (event as any).outputTokens || 0, cacheRead: (event as any).cacheReadTokens || 0, cacheCreate: (event as any).cacheCreateTokens || 0, contextPct: calcContextPct((event as any).inputTokens || 0) } }, agentMessageId: taskMsgId, timestamp: Date.now() });
           break;
         case 'done':
           broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent: output, exitCode: event.exitCode ?? 0 });

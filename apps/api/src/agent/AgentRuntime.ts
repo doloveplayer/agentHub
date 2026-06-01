@@ -36,6 +36,29 @@ interface AgentEntry {
   sharedContainer: boolean; // true when using session sandbox (don't destroy on idle)
   isPlanner: boolean; // true if this agent is a planner
   accumulatedOutput: string; // accumulate output for planner agents
+  model: string; // model name for context window calculation
+}
+
+/** Estimated context window sizes per model. Default 200K for Claude models. */
+const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  'claude-sonnet-4-6': 200000,
+  'claude-opus-4-7': 200000,
+  'claude-haiku-4-5': 200000,
+  'claude-sonnet-4-5': 200000,
+  'claude-opus-4-5': 200000,
+  'claude-opus-4': 200000,
+  'claude-sonnet-4': 200000,
+  'claude-3.5-sonnet': 200000,
+  'claude-3.5-haiku': 200000,
+  'gemini-2.5-pro': 1048576,
+  'gemini-2.5-flash': 1048576,
+  'gpt-4o': 128000,
+  'gpt-4-turbo': 128000,
+};
+
+function calcContextPct(inputTokens: number, model: string): number {
+  const window = MODEL_CONTEXT_WINDOWS[model] || 200000;
+  return Math.round((inputTokens / window) * 100);
 }
 
 class AgentRuntime {
@@ -127,6 +150,7 @@ class AgentRuntime {
     );
 
     const isPlanner = agent.name === 'planner' || agent.name.startsWith('planner-');
+    const model = (agent.providerConfig as any)?.model || 'claude-sonnet-4-6';
     const entry: AgentEntry = {
       provider,
       containerId,
@@ -139,6 +163,7 @@ class AgentRuntime {
       sharedContainer: !!sandbox,
       isPlanner,
       accumulatedOutput: '',
+      model,
     };
 
     provider.onEvent((event: UnifiedAgentEvent) => {
@@ -309,6 +334,7 @@ class AgentRuntime {
               output: event.outputTokens ?? 0,
               cacheRead: event.cacheReadTokens ?? 0,
               cacheCreate: event.cacheCreateTokens ?? 0,
+              contextPct: calcContextPct(event.inputTokens ?? 0, entry.model),
             },
           },
         });
