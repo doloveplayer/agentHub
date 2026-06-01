@@ -81,6 +81,12 @@ export const api = {
 
   getWorkspaceFile: (sessionId: string, path: string) => request<any>(`/workspace/${sessionId}/file?path=${encodeURIComponent(path)}`),
 
+  updateWorkspaceFile: (sessionId: string, path: string, content: string) =>
+    request<{ path: string; size: number; modifiedAt: string }>(`/workspace/${sessionId}/file`, {
+      method: 'PUT',
+      body: JSON.stringify({ path, content }),
+    }),
+
   getWorkspaceChanges: (sessionId: string) => request<{ changes: string[] }>(`/workspace/${sessionId}/changes`),
 
   // Workspace configuration

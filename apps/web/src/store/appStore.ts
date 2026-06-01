@@ -3,7 +3,7 @@ import type { Session, Message, AgentConfig } from '@agenthub/shared';
 
 export interface AgentEvent {
   id: string;
-  type: 'thinking' | 'tool_use' | 'tool_result' | 'subagent_start' | 'subagent_result' | 'permission_request' | 'token_update';
+  type: 'thinking' | 'tool_use' | 'tool_result' | 'subagent_start' | 'subagent_result' | 'permission_request' | 'token_update' | 'file_produced' | 'phase_complete';
   timestamp: number;
   agentId?: string;
   details: {

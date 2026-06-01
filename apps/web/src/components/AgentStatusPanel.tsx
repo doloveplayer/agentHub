@@ -5,6 +5,7 @@ import { TaskCard } from './TaskCard';
 import { FileTree } from './FileTree';
 import { VersionTimeline } from './VersionTimeline';
 import { PreviewFrame } from './PreviewFrame';
+import { WorkspaceFileEditor } from './WorkspaceFileEditor';
 import type { AgentConfig, Message } from '@agenthub/shared';
 import type { AgentEvent } from '../store/appStore';
 
@@ -25,6 +26,7 @@ type ViewMode = 'detailed' | 'aggregated' | 'errors';
 export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onPreviewSelection, onForceComplete, onForceFail }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>('Agents');
   const [viewMode, setViewMode] = useState<ViewMode>('detailed');
+  const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const agentEvents = useAppStore((s) => s.agentEvents);
   const messages = useAppStore((s) => {
@@ -160,7 +162,14 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
         )}
         {activeTab === 'Files' && activeSessionId && (
           <div className="space-y-4">
-            <FileTree sessionId={activeSessionId} />
+            <FileTree sessionId={activeSessionId} onSelectFile={setSelectedFilePath} />
+            {selectedFilePath && (
+              <WorkspaceFileEditor
+                sessionId={activeSessionId}
+                path={selectedFilePath}
+                onClose={() => setSelectedFilePath(null)}
+              />
+            )}
             <VersionTimeline sessionId={activeSessionId} />
           </div>
         )}
