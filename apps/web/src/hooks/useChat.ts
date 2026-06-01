@@ -645,6 +645,35 @@ export function useChat(sessionId: string) {
     }
   }, [ensureConnection, addToast]);
 
+  const forceCompleteTask = useCallback(async (planId: string, taskId: string) => {
+    try {
+      const ws = await ensureConnection();
+      ws.send(JSON.stringify({
+        type: 'force_complete_task',
+        planId,
+        taskId,
+      }));
+    } catch (err) {
+      console.error('[WS] Failed to force-complete task:', err);
+      addToast('Failed to force-complete task', 'error');
+    }
+  }, [ensureConnection, addToast]);
+
+  const forceFailTask = useCallback(async (planId: string, taskId: string) => {
+    try {
+      const ws = await ensureConnection();
+      ws.send(JSON.stringify({
+        type: 'force_fail_task',
+        planId,
+        taskId,
+        reason: 'Manually failed by user',
+      }));
+    } catch (err) {
+      console.error('[WS] Failed to force-fail task:', err);
+      addToast('Failed to force-fail task', 'error');
+    }
+  }, [ensureConnection, addToast]);
+
   const confirmPlan = useCallback(async (planId: string) => {
     try {
       const ws = await ensureConnection();
@@ -685,5 +714,5 @@ export function useChat(sessionId: string) {
     if (sessionId) connect();
   }, [sessionId, connect]);
 
-  return { send, connect, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan };
+  return { send, connect, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan, forceCompleteTask, forceFailTask };
 }

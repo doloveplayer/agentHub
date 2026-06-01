@@ -15,12 +15,14 @@ interface Props {
   onStopAgent?: (agentMessageId: string) => void;
   onReplanTask?: (planId: string, taskId: string) => void;
   onPreviewSelection?: (selection: { text: string; rect: { top: number; left: number; width: number; height: number }; url: string } | null) => void;
+  onForceComplete?: (planId: string, taskId: string) => void;
+  onForceFail?: (planId: string, taskId: string) => void;
 }
 
 type PanelTab = 'Files' | 'Agents' | 'Tasks' | 'Preview';
 type ViewMode = 'detailed' | 'aggregated' | 'errors';
 
-export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onPreviewSelection }: Props) {
+export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onPreviewSelection, onForceComplete, onForceFail }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>('Agents');
   const [viewMode, setViewMode] = useState<ViewMode>('detailed');
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -163,7 +165,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
           </div>
         )}
         {activeTab === 'Tasks' && (
-          <ActivePlanView onReplanTask={onReplanTask} />
+          <ActivePlanView onReplanTask={onReplanTask} onForceComplete={onForceComplete} onForceFail={onForceFail} />
         )}
         {activeTab === 'Preview' && activeSessionId && (
           <PreviewFrame sessionId={activeSessionId} onSelection={onPreviewSelection} />
@@ -174,7 +176,11 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
 }
 
 /** Shows the active task plan from the store in the Tasks tab */
-function ActivePlanView({ onReplanTask }: { onReplanTask?: (planId: string, taskId: string) => void }) {
+function ActivePlanView({ onReplanTask, onForceComplete, onForceFail }: {
+  onReplanTask?: (planId: string, taskId: string) => void;
+  onForceComplete?: (planId: string, taskId: string) => void;
+  onForceFail?: (planId: string, taskId: string) => void;
+}) {
   const taskPlans = useAppStore((s) => s.taskPlans);
   const planSummaries = useAppStore((s) => s.planSummaries);
   const plans = Object.entries(taskPlans);
@@ -187,7 +193,9 @@ function ActivePlanView({ onReplanTask }: { onReplanTask?: (planId: string, task
         <div key={planId}>
           <TaskCard planId={planId}
             planTitle="Active Plan" summary={`${tasks.length} tasks`} tasks={tasks}
-            onReplan={onReplanTask ? (taskId: string) => onReplanTask(planId, taskId) : undefined} />
+            onReplan={onReplanTask ? (taskId: string) => onReplanTask(planId, taskId) : undefined}
+            onForceComplete={onForceComplete ? (taskId: string) => onForceComplete(planId, taskId) : undefined}
+            onForceFail={onForceFail ? (taskId: string) => onForceFail(planId, taskId) : undefined} />
           {planSummaries[planId] && (
             <div className="mt-1 px-3 py-2 rounded-md bg-hub-surface text-caption">
               <div className="text-hub-secondary font-medium mb-1">Plan Summary</div>

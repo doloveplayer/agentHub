@@ -10,13 +10,16 @@ interface Props {
   onRetry?: (taskId: string) => void;
   onReplan?: (taskId: string) => void;
   onPause?: () => void;
+  onForceComplete?: (taskId: string) => void;
+  onForceFail?: (taskId: string) => void;
 }
 
-export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry, onReplan, onPause }: Props) {
+export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry, onReplan, onPause, onForceComplete, onForceFail }: Props) {
   const done = tasks.filter(t => t.status === 'done').length;
   const failed = tasks.filter(t => t.status === 'failed').length;
   const running = tasks.filter(t => t.status === 'running').length;
   const waiting = tasks.filter(t => t.status === 'waiting').length;
+  const stuck = tasks.filter(t => t.status === 'running');
 
   return (
     <div className="mx-4 my-3 bg-hub-surface border border-hub rounded-hub-xl overflow-hidden">
@@ -60,6 +63,25 @@ export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry
             <button key={'replan-' + t.taskId} onClick={() => onReplan(t.taskId)}
               className="px-3 py-1.5 bg-hub-accent hover:bg-hub-accent/80 text-white text-xs rounded-md font-medium transition">
               让 Main Agent 重新规划 {t.title}
+            </button>
+          ))
+        )}
+        {/* Manual recovery for stuck/running tasks */}
+        {stuck.length > 0 && onForceComplete && (
+          stuck.map(t => (
+            <button key={'force-done-' + t.taskId} onClick={() => onForceComplete(t.taskId)}
+              className="px-3 py-1.5 bg-hub-success/80 hover:bg-hub-success text-white text-xs rounded-md font-medium transition"
+              title="Force mark as completed — use when task work is done but status stuck">
+              ✅ {t.title}
+            </button>
+          ))
+        )}
+        {stuck.length > 0 && onForceFail && (
+          stuck.map(t => (
+            <button key={'force-fail-' + t.taskId} onClick={() => onForceFail(t.taskId)}
+              className="px-3 py-1.5 bg-hub-warning/80 hover:bg-hub-warning text-white text-xs rounded-md font-medium transition"
+              title="Force mark as failed — use when task is stuck and needs retry">
+              ❌ {t.title}
             </button>
           ))
         )}

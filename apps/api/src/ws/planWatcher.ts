@@ -102,7 +102,37 @@ async function handlePlanFile(
     return;
   }
 
-  processedHashes.set(sessionId, hash);
+  // Check if this plan matches an existing DAG execution (by planTitle).
+  // If so, reconcile Planner's status updates → DAG state instead of re-dispatching.
+  const { reconcilePlanWithDag } = await import('./taskDispatcher.js');
+  const reconciled = reconcilePlanWithDag(sessionId, plan.planTitle, plan.tasks.map((t) => ({
+    id: t.id,
+    status: t.risk, // not used — the plan.json tasks may have their own status field
+  })), sandbox);
+
+  // Also check the raw parsed JSON for task-level status fields
+  const planTasks = (parsed.tasks as Array<Record<string, unknown>>) || [];
+  const reconciled2 = reconcilePlanWithDag(sessionId, plan.planTitle, planTasks.map((t: Record<string, unknown>) => ({
+    id: String(t.id || t.taskId || t.task_id || ''),
+    status: String(t.status || ''),
+  })), sandbox);
+
+  if (reconciled > 0 || reconciled2 > 0) {
+    console.log(`[PlanWatcher] Reconciled ${reconciled + reconciled2} tasks for session ${sessionId.slice(0, 8)}`);
+    processedHashes.set(sessionId, hash);
+    broadcast(sessionId, {
+      type: 'plan_reconciled',
+      planTitle: plan.planTitle,
+      reconciled: reconciled + reconciled2,
+    });
+    return;
+  }
+
+  // If hash didn't change, skip re-dispatch (duplicate file write)
+  if (processedHashes.get(sessionId) === hash) {
+    console.log(`[PlanWatcher] Duplicate plan for ${sessionId.slice(0, 8)}, skipping`);
+    return;
+  }
 
   const risk = assessRisk(plan);
   const planId = `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

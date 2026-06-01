@@ -7,6 +7,7 @@ import { SandboxManager } from '../agent/SandboxManager.js';
 import { config } from '../config.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import { stopPlanWatcher } from './planWatcher.js';
+import { stopStaleTaskChecker } from './taskDispatcher.js';
 import type { AbstractProvider } from '../agent/providers/base.js';
 import type { WorkspaceMode } from '@agenthub/shared';
 
@@ -238,6 +239,7 @@ export function cleanupSessionResources(sessionId: string): void {
 
   MilestoneBroadcaster.clear(sessionId);
   stopPlanWatcher(sessionId);
+  stopStaleTaskChecker(sessionId);
   sessionsWithMilestones.delete(sessionId);
   clearFileMods(sessionId);
 

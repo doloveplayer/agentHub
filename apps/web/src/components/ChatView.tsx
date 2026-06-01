@@ -105,7 +105,7 @@ export function ChatView() {
   const testReports = useAppStore((s) => activeSessionId ? (s.testReports[activeSessionId] ?? EMPTY_TEST_REPORTS) : EMPTY_TEST_REPORTS);
   const reviewReports = useAppStore((s) => activeSessionId ? (s.reviewReports[activeSessionId] ?? EMPTY_REVIEW_REPORTS) : EMPTY_REVIEW_REPORTS);
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
-  const { send, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan } = useChat(activeSessionId ?? '');
+  const { send, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan, forceCompleteTask, forceFailTask } = useChat(activeSessionId ?? '');
   const addToast = useAppStore((s) => s.addToast);
   const [resolvedPermissions, setResolvedPermissions] = useState<Set<string>>(() => new Set());
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
@@ -462,7 +462,7 @@ export function ChatView() {
             <div className="w-4 h-full -ml-1.5" />
           </div>
           <div className="flex-1 min-w-0">
-            <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} onReplanTask={sendReplan} onPreviewSelection={setPreviewSelection} />
+            <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} onReplanTask={sendReplan} onPreviewSelection={setPreviewSelection} onForceComplete={forceCompleteTask} onForceFail={forceFailTask} />
           </div>
         </div>
       )}

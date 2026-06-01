@@ -10,6 +10,7 @@ import { agentCoordinator } from '../agent/AgentCoordinator.js';
 import { getManagerLoop } from '../agent/ManagerLoop.js';
 import { getApprovalGate } from '../agent/ApprovalGate.js';
 import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDetection.js';
+import { forceTaskDone, forceTaskFailed, touchTask, checkStaleTasks } from './dagExecution.js';
 import { execSync } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -219,6 +220,11 @@ async function startReplForTask(
 
     let output = '';
     provider.onEvent((event) => {
+      // Touch task activity on every event to prevent timeout
+      if (task && queue.planId) {
+        const execution = planExecutions.get(planKey(sessionId, queue.planId));
+        if (execution) touchTask(execution, task.id);
+      }
       switch (event.type) {
         case 'thinking':
           output += event.content || '';
@@ -917,5 +923,185 @@ export async function reassignQueuedTasks(
         await processNextInQueue(sessionId, reassignedTo, newQueue);
       }
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Manual recovery: force-complete or force-fail a stuck task
+// ---------------------------------------------------------------------------
+
+/**
+ * Force a task to 'done' and unblock dependents. Used for manual recovery
+ * when a task completed its work but the agent didn't emit done.
+ */
+export async function handleForceCompleteTask(
+  sessionId: string,
+  planId: string,
+  taskId: string,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+): Promise<void> {
+  const execution = planExecutions.get(planKey(sessionId, planId));
+  if (!execution) {
+    broadcast(sessionId, { type: 'stream_error', error: `Plan ${planId} not found` });
+    return;
+  }
+
+  const item = execution.tasks.get(taskId);
+  if (!item) {
+    broadcast(sessionId, { type: 'stream_error', error: `Task ${taskId} not found in plan ${planId}` });
+    return;
+  }
+
+  console.log(`[taskDispatcher] Force-completing task ${taskId} in plan ${planId}`);
+  const ready = forceTaskDone(execution, taskId);
+  execution.summaryBroadcasted = false;
+
+  broadcast(sessionId, {
+    type: 'task_completed', planId, taskId,
+    agentName: item.agentName, output: '[Force completed by user]',
+  });
+
+  // Persist
+  DagPersistence.updateTaskStatus(sessionId, planId, taskId, 'done').catch(() => {});
+
+  // Dispatch newly unblocked tasks
+  if (ready.length > 0) {
+    await enqueueTaskAssignments(sessionId, planId, ready, sandbox);
+  }
+}
+
+/**
+ * Force a task to 'failed'. Used for manual recovery when a task is stuck.
+ */
+export async function handleForceFailTask(
+  sessionId: string,
+  planId: string,
+  taskId: string,
+  reason: string,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+): Promise<void> {
+  const execution = planExecutions.get(planKey(sessionId, planId));
+  if (!execution) {
+    broadcast(sessionId, { type: 'stream_error', error: `Plan ${planId} not found` });
+    return;
+  }
+
+  console.log(`[taskDispatcher] Force-failing task ${taskId} in plan ${planId}: ${reason}`);
+  forceTaskFailed(execution, taskId, reason);
+  execution.summaryBroadcasted = false;
+
+  broadcast(sessionId, {
+    type: 'task_failed', planId, taskId,
+    agentName: execution.tasks.get(taskId)?.agentName || 'unknown',
+    output: `Force failed: ${reason}`,
+  });
+
+  DagPersistence.updateTaskStatus(sessionId, planId, taskId, 'failed').catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Plan reconciliation: sync plan.json status → DAG execution state
+// ---------------------------------------------------------------------------
+
+/**
+ * Compare plan.json task statuses with DAG execution state and advance
+ * any tasks that Planner marked as completed but DAG still shows as running.
+ * Returns count of reconciled tasks.
+ */
+export function reconcilePlanWithDag(
+  sessionId: string,
+  planTitle: string,
+  planTasks: Array<{ id: string; status?: string }>,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+): number {
+  // Find matching DAG execution by plan title (plan.json → planId mapping is loose)
+  let matchedExecution: DagExecutionState | null = null;
+  for (const [key, execution] of planExecutions) {
+    if (!key.startsWith(sessionId)) continue;
+    if (execution.planTitle === planTitle || execution.planTitle && planTitle.includes(execution.planTitle)) {
+      matchedExecution = execution;
+      break;
+    }
+  }
+
+  if (!matchedExecution) return 0;
+
+  let reconciled = 0;
+  for (const pt of planTasks) {
+    if (pt.status !== 'completed') continue;
+
+    const dagItem = matchedExecution.tasks.get(pt.id);
+    if (!dagItem) continue;
+
+    // Only reconcile tasks stuck in non-terminal states
+    if (dagItem.status === 'done' || dagItem.status === 'failed') continue;
+
+    console.log(`[reconcile] Plan "${planTitle}" task ${pt.id}: planner says completed, DAG says ${dagItem.status} → forcing done`);
+    const ready = forceTaskDone(matchedExecution, pt.id);
+    reconciled++;
+
+    // Dispatch newly unblocked tasks
+    if (ready.length > 0) {
+      const planId = matchedExecution.planId;
+      enqueueTaskAssignments(sessionId, planId, ready, sandbox).catch((err) =>
+        console.error(`[reconcile] Failed to enqueue unblocked tasks:`, err.message)
+      );
+    }
+  }
+
+  if (reconciled > 0) {
+    matchedExecution.summaryBroadcasted = false;
+  }
+
+  return reconciled;
+}
+
+// ---------------------------------------------------------------------------
+// Stale task checker
+// ---------------------------------------------------------------------------
+
+const STALE_CHECK_INTERVAL_MS = 30_000;
+const STALE_TASK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const staleCheckIntervals = new Map<string, NodeJS.Timeout>();
+
+export function startStaleTaskChecker(
+  sessionId: string,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+): void {
+  if (staleCheckIntervals.has(sessionId)) return;
+
+  const interval = setInterval(() => {
+    for (const [key, execution] of planExecutions) {
+      if (!key.startsWith(sessionId)) continue;
+
+      const staleTaskIds = checkStaleTasks(execution, STALE_TASK_TIMEOUT_MS);
+      for (const taskId of staleTaskIds) {
+        const item = execution.tasks.get(taskId);
+        console.log(`[stale-check] Task ${taskId} in plan ${execution.planId} is stale (no activity for ${STALE_TASK_TIMEOUT_MS}ms)`);
+        forceTaskFailed(execution, taskId, 'Task timed out — no activity for 10 minutes');
+        execution.summaryBroadcasted = false;
+
+        broadcast(sessionId, {
+          type: 'task_failed',
+          planId: execution.planId,
+          taskId,
+          agentName: item?.agentName || 'unknown',
+          output: 'Task timed out — agent may have crashed or stalled',
+        });
+
+        DagPersistence.updateTaskStatus(sessionId, execution.planId, taskId, 'failed').catch(() => {});
+      }
+    }
+  }, STALE_CHECK_INTERVAL_MS);
+
+  staleCheckIntervals.set(sessionId, interval);
+  console.log(`[stale-check] Started stale task checker for session ${sessionId.slice(0, 8)}`);
+}
+
+export function stopStaleTaskChecker(sessionId: string): void {
+  const interval = staleCheckIntervals.get(sessionId);
+  if (interval) {
+    clearInterval(interval);
+    staleCheckIntervals.delete(sessionId);
   }
 }

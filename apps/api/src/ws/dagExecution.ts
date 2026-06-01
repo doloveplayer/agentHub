@@ -13,6 +13,10 @@ export interface DagExecutionItem extends DagTaskAssignment {
   dependents: string[];
   retryCount: number;
   lastError?: string;
+  /** Timestamp when this task last transitioned to 'running' */
+  startedAt?: number;
+  /** Timestamp of the last event (tool_use, token_update, etc.) for this task */
+  lastEventAt?: number;
 }
 
 export interface DagExecutionState {
@@ -67,7 +71,58 @@ export function consumeReadyTasks(state: DagExecutionState): DagTaskAssignment[]
 export function markTaskRunning(state: DagExecutionState, taskId: string): void {
   const item = state.tasks.get(taskId);
   if (!item) return;
-  if (item.status === 'waiting' || item.status === 'queued') item.status = 'running';
+  if (item.status === 'waiting' || item.status === 'queued') {
+    item.status = 'running';
+    item.startedAt = Date.now();
+    item.lastEventAt = Date.now();
+  }
+}
+
+/** Record activity on a running task to prevent timeout. */
+export function touchTask(state: DagExecutionState, taskId: string): void {
+  const item = state.tasks.get(taskId);
+  if (!item || item.status !== 'running') return;
+  item.lastEventAt = Date.now();
+}
+
+/**
+ * Find tasks that have been running longer than `timeoutMs` without any activity.
+ * Returns task IDs that should be considered stale.
+ */
+export function checkStaleTasks(state: DagExecutionState, timeoutMs: number): string[] {
+  const now = Date.now();
+  const stale: string[] = [];
+  for (const item of state.tasks.values()) {
+    if (item.status !== 'running') continue;
+    const lastActivity = item.lastEventAt || item.startedAt || 0;
+    if (lastActivity > 0 && (now - lastActivity) > timeoutMs) {
+      stale.push(item.task.id);
+    }
+  }
+  return stale;
+}
+
+/**
+ * Force a task to 'done' status, then consume ready dependents.
+ * Used for manual recovery and plan.json reconciliation.
+ */
+export function forceTaskDone(state: DagExecutionState, taskId: string): DagTaskAssignment[] {
+  const item = state.tasks.get(taskId);
+  if (!item) return [];
+  item.status = 'done';
+  return consumeReadyTasks(state);
+}
+
+/**
+ * Force a task to 'failed' status, blocking dependents.
+ * Used for manual recovery.
+ */
+export function forceTaskFailed(state: DagExecutionState, taskId: string, reason: string): DagTaskAssignment[] {
+  const item = state.tasks.get(taskId);
+  if (!item) return [];
+  item.status = 'failed';
+  item.lastError = reason;
+  return markTaskFailed(state, taskId);
 }
 
 export function markTaskDone(state: DagExecutionState, taskId: string): DagTaskAssignment[] {

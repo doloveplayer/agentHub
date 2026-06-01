@@ -36,6 +36,9 @@ import {
   processNextInQueue,
   prepareDispatchedTaskRetry,
   handleReplanFailedTask,
+  handleForceCompleteTask,
+  handleForceFailTask,
+  startStaleTaskChecker,
 } from './taskDispatcher.js';
 import {
   recordMessageBeforeVersion,
@@ -156,6 +159,8 @@ async function handleConnection(ws: WebSocket, request: any) {
     }).catch((err) => {
       console.error('[ws] Failed to start plan watcher:', err.message);
     });
+    // Start stale task checker for plan executions
+    startStaleTaskChecker(sessionId, sb);
   } catch (err: any) {
     console.error(`[ws] Sandbox creation failed: session=${sessionId} error=${err.message}`);
     sendTo(ws, { type: 'error', message: `Sandbox creation failed: ${err.message}` });
@@ -231,6 +236,8 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'modify_task': handleModifyTask(sessionId, data); break;
     case 'retry_task': handleRetryTask(sessionId, data); break;
     case 'replan_failed_task': handleReplanRequest(sessionId, data); break;
+    case 'force_complete_task': handleForceCompleteTaskMsg(sessionId, data); break;
+    case 'force_fail_task': handleForceFailTaskMsg(sessionId, data); break;
     case 'approval_approve': handleApprovalApprove(sessionId, ws, data); break;
     case 'approval_reject': handleApprovalReject(sessionId, ws, data); break;
     case 'approval_reply': handleApprovalReply(sessionId, ws, data); break;
@@ -754,6 +761,40 @@ function handleReplanRequest(sessionId: string, data: { planId: string; taskId: 
   console.log(`[ws] Replan request: planId=${data.planId} taskId=${data.taskId}`);
   handleReplanFailedTask(sessionId, data.planId, data.taskId).catch((err: any) => {
     broadcast(sessionId, { type: 'stream_error', error: `Re-plan failed: ${err.message}` });
+  });
+}
+
+// ---- Manual task recovery handlers ----
+
+async function handleForceCompleteTaskMsg(
+  sessionId: string,
+  data: { planId: string; taskId: string },
+): Promise<void> {
+  const sandbox = sandboxes.get(sessionId);
+  if (!sandbox) {
+    broadcast(sessionId, { type: 'stream_error', error: 'No active sandbox' });
+    return;
+  }
+  await handleForceCompleteTask(sessionId, data.planId, data.taskId, {
+    containerId: sandbox.containerId,
+    workDir: sandbox.workDir,
+    hostWorkDir: sandbox.hostWorkDir,
+  });
+}
+
+async function handleForceFailTaskMsg(
+  sessionId: string,
+  data: { planId: string; taskId: string; reason?: string },
+): Promise<void> {
+  const sandbox = sandboxes.get(sessionId);
+  if (!sandbox) {
+    broadcast(sessionId, { type: 'stream_error', error: 'No active sandbox' });
+    return;
+  }
+  await handleForceFailTask(sessionId, data.planId, data.taskId, data.reason || 'Manually failed by user', {
+    containerId: sandbox.containerId,
+    workDir: sandbox.workDir,
+    hostWorkDir: sandbox.hostWorkDir,
   });
 }
 
