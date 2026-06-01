@@ -329,7 +329,7 @@ export function ChatView() {
 
       const walk = (nodes: any[]) => {
         for (const node of nodes) {
-          if (node.type === 'file' && /\.pptx$/i.test(node.name)) {
+          if (node.type === 'file' && /\.pptx?$/i.test(node.name)) {
             pptxList.push({ path: node.path, name: node.name });
           }
           if (node.type === 'directory' && node.children?.length) {

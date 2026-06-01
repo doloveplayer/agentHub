@@ -106,6 +106,24 @@ export const api = {
     return { blob: await res.blob(), filename: name };
   },
 
+  convertPptToPptx: async (sessionId: string, path: string) => {
+    const token = getToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const res = await fetch(`${BASE_URL}/workspace/${sessionId}/convert-ppt`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ path }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error ?? 'PPT conversion failed');
+    }
+    const disposition = res.headers.get('content-disposition') || '';
+    const name = disposition.match(/filename="([^"]+)"/)?.[1];
+    return { blob: await res.blob(), filename: name };
+  },
+
   getWorkspaceChanges: (sessionId: string) => request<{ changes: string[] }>(`/workspace/${sessionId}/changes`),
 
   // Workspace configuration
