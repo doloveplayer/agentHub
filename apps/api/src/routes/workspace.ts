@@ -1,12 +1,15 @@
 import { Hono } from 'hono';
-import { readdirSync, readFileSync, statSync, realpathSync } from 'fs';
+import { readdirSync, readFileSync, statSync, realpathSync, existsSync } from 'fs';
 import { resolve, relative } from 'path';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { WorkspaceManager } from '../agent/WorkspaceManager.js';
+import archiver from 'archiver';
 
 const workspace = new Hono();
 workspace.use('*', authMiddleware);
+
+const SANDBOX_ROOT = resolve(process.cwd(), '..', '..', '.sandboxes');
 
 interface FileNode {
   name: string;
@@ -14,9 +17,10 @@ interface FileNode {
   type: 'file' | 'directory';
   size?: number;
   children?: FileNode[];
+  source?: 'sandbox' | 'workspace'; // which root this file comes from
 }
 
-function readFileTree(dirPath: string, maxDepth = 4, currentDepth = 0): FileNode[] {
+function readFileTree(dirPath: string, maxDepth = 4, currentDepth = 0, source: 'sandbox' | 'workspace' = 'sandbox'): FileNode[] {
   if (currentDepth >= maxDepth) return [];
   const skipDirs = new Set(['node_modules', '.git', '.claude', '_agent_', '.sandboxes']);
   const skipPrefixes = ['_prompt_', '_env.', '_repl_prompt_', '_inbox_'];
@@ -31,19 +35,18 @@ function readFileTree(dirPath: string, maxDepth = 4, currentDepth = 0): FileNode
 
       if (entry.isDirectory()) {
         if (skipDirs.has(entry.name) || entry.name.startsWith('_agent_')) {
-          // Still show as a directory but don't recurse into internal files
-          nodes.push({ name: entry.name, path: relPath, type: 'directory', children: [] });
+          nodes.push({ name: entry.name, path: relPath, type: 'directory', children: [], source });
           continue;
         }
-        const children = readFileTree(fullPath, maxDepth, currentDepth + 1);
-        nodes.push({ name: entry.name, path: relPath, type: 'directory', children });
+        const children = readFileTree(fullPath, maxDepth, currentDepth + 1, source);
+        nodes.push({ name: entry.name, path: relPath, type: 'directory', children, source });
       } else {
         if (skipPrefixes.some(p => entry.name.startsWith(p))) continue;
         try {
           const stat = statSync(fullPath);
-          nodes.push({ name: entry.name, path: relPath, type: 'file', size: stat.size });
+          nodes.push({ name: entry.name, path: relPath, type: 'file', size: stat.size, source });
         } catch {
-          nodes.push({ name: entry.name, path: relPath, type: 'file' });
+          nodes.push({ name: entry.name, path: relPath, type: 'file', source });
         }
       }
     }
@@ -57,7 +60,7 @@ function readFileTree(dirPath: string, maxDepth = 4, currentDepth = 0): FileNode
   }
 }
 
-// GET /api/workspace/:sessionId/tree
+// GET /api/workspace/:sessionId/tree — merged sandbox + workspace tree
 workspace.get('/:sessionId/tree', async (c) => {
   const { userId } = c.get('user');
   const sessionId = c.req.param('sessionId');
@@ -65,9 +68,29 @@ workspace.get('/:sessionId/tree', async (c) => {
   const session = await prisma.session.findUnique({ where: { id: sessionId } });
   if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
 
-  const workDir = resolve(process.cwd(), '..', '..', '.sandboxes', sessionId);
-  const tree = readFileTree(workDir);
-  return c.json({ tree, workDir: `/workspace` });
+  // Always include sandbox tree
+  const sandboxDir = resolve(SANDBOX_ROOT, sessionId);
+  const sandboxTree = readFileTree(sandboxDir, 4, 0, 'sandbox');
+
+  // Merge workspace tree if a custom workspace is configured
+  let workspaceTree: FileNode[] = [];
+  let workspacePath: string | null = null;
+  if (session.workspacePath) {
+    try {
+      const real = realpathSync(session.workspacePath);
+      if (existsSync(real)) {
+        workspacePath = real;
+        workspaceTree = readFileTree(real, 4, 0, 'workspace');
+      }
+    } catch { /* workspace unavailable */ }
+  }
+
+  return c.json({
+    tree: sandboxTree,
+    workspaceTree,
+    sandboxDir: '/workspace',
+    workspaceDir: workspacePath,
+  });
 });
 
 // GET /api/workspace/:sessionId/file?path=/workspace/src/index.ts
@@ -148,6 +171,35 @@ workspace.get('/browse', async (c) => {
   } catch (err: any) {
     return c.json({ error: `Failed to read directory: ${err.message}` }, 500);
   }
+});
+
+// GET /api/workspace/:sessionId/download — zip entire sandbox
+workspace.get('/:sessionId/download', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('sessionId');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  const sandboxDir = resolve(SANDBOX_ROOT, sessionId);
+  if (!existsSync(sandboxDir)) return c.json({ error: 'Sandbox not found' }, 404);
+
+  const archive = archiver('zip', { zlib: { level: 6 } });
+  archive.on('error', (err: Error) => {
+    console.error(`[workspace] Zip error for session ${sessionId.slice(0, 8)}:`, err.message);
+  });
+
+  archive.glob('**/*', {
+    cwd: sandboxDir,
+    ignore: ['_agent_*/**', '.git/**', '_inbox_*.jsonl', '_prompt_*.txt', 'plan.json'],
+    dot: false,
+  });
+
+  archive.finalize();
+
+  c.header('Content-Type', 'application/zip');
+  c.header('Content-Disposition', `attachment; filename="sandbox-${sessionId.slice(0, 8)}.zip"`);
+  return c.body(archive as any);
 });
 
 export default workspace;

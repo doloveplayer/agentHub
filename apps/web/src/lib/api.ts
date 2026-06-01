@@ -77,7 +77,7 @@ export const api = {
   saveProviderConfigs: (configs: Record<string, { apiKey?: string; endpoint?: string }>) =>
     request<{ success: boolean }>('/agents/provider-configs', { method: 'PUT', body: JSON.stringify(configs) }),
 
-  getWorkspaceTree: (sessionId: string) => request<{ tree: any[] }>(`/workspace/${sessionId}/tree`),
+  getWorkspaceTree: (sessionId: string) => request<{ tree: any[]; workspaceTree: any[]; sandboxDir: string; workspaceDir: string | null }>(`/workspace/${sessionId}/tree`),
 
   getWorkspaceFile: (sessionId: string, path: string) => request<any>(`/workspace/${sessionId}/file?path=${encodeURIComponent(path)}`),
 
