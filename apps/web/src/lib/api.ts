@@ -93,6 +93,9 @@ export const api = {
       body: JSON.stringify(config),
     }),
 
+  browseDirectory: (dirPath: string) =>
+    request<{ path: string; dirs: { name: string; path: string }[] }>(`/workspace/browse?path=${encodeURIComponent(dirPath)}`),
+
   getDiffFiles: (sessionId: string, baseVersionId?: string) =>
     request<{ files: any[] }>(`/diff/${sessionId}/files${baseVersionId ? `?baseVersionId=${encodeURIComponent(baseVersionId)}` : ''}`),
 

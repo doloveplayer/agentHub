@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { readdirSync, readFileSync, statSync } from 'fs';
+import { readdirSync, readFileSync, statSync, realpathSync } from 'fs';
 import { resolve, relative } from 'path';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
@@ -105,6 +105,49 @@ workspace.get('/:sessionId/changes', async (c) => {
   const workDir = resolve(process.cwd(), '..', '..', '.sandboxes', sessionId);
   const changes = WorkspaceManager.getChanges(workDir);
   return c.json({ changes });
+});
+
+// GET /api/workspace/browse?path=/home/user — list child directories for directory picker
+workspace.get('/browse', async (c) => {
+  const { userId } = c.get('user');
+  const dirPath = c.req.query('path');
+
+  if (!dirPath) return c.json({ error: 'Missing path query param' }, 400);
+
+  // Resolve and validate
+  const resolved = resolve(dirPath);
+  let real: string;
+  try { real = realpathSync(resolved); } catch {
+    return c.json({ error: 'Path does not exist' }, 400);
+  }
+  if (!statSync(real).isDirectory()) return c.json({ error: 'Not a directory' }, 400);
+
+  // Path traversal check
+  if (!real.startsWith('/')) return c.json({ error: 'Absolute path required' }, 400);
+
+  // List child directories (sorted, skip hidden)
+  try {
+    const entries = readdirSync(real, { withFileTypes: true });
+    const dirs: { name: string; path: string }[] = [];
+    // Always include parent directory for navigation
+    const parent = resolve(real, '..');
+    if (parent !== real) {
+      dirs.push({ name: '..', path: parent });
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith('.')) continue; // skip hidden
+      dirs.push({ name: entry.name, path: resolve(real, entry.name) });
+    }
+    dirs.sort((a, b) => {
+      if (a.name === '..') return -1;
+      if (b.name === '..') return 1;
+      return a.name.localeCompare(b.name);
+    });
+    return c.json({ path: real, dirs });
+  } catch (err: any) {
+    return c.json({ error: `Failed to read directory: ${err.message}` }, 500);
+  }
 });
 
 export default workspace;
