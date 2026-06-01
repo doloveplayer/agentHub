@@ -314,8 +314,9 @@ export function ChatView() {
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
   const renderedPlanIds = useRef(new Set<string>());
 
-  // Workspace PPTX file detection for inline preview cards
-  const [pptxFiles, setPptxFiles] = useState<{ path: string; name: string; modifiedAt: number }[]>([]);
+  // Workspace PPTX detection — only show the single newest file
+  const [latestPptx, setLatestPptx] = useState<{ path: string; name: string } | null>(null);
+  const [dismissedPptxPath, setDismissedPptxPath] = useState<string | null>(null);
 
   const scanWorkspacePptx = useCallback(async () => {
     if (!activeSessionId) return;
@@ -325,31 +326,43 @@ export function ChatView() {
         ...(result?.tree ?? []),
         ...(result?.workspaceTree ?? []),
       ];
-      const pptxList: { path: string; name: string; modifiedAt: number }[] = [];
 
-      const walk = (nodes: any[]) => {
+      const collectPptx = (nodes: any[]): { path: string; name: string; modifiedAt: number }[] => {
+        const out: { path: string; name: string; modifiedAt: number }[] = [];
         for (const node of nodes) {
           if (node.type === 'file' && /\.pptx$/i.test(node.name)) {
-            pptxList.push({
-              path: node.path,
-              name: node.name,
-              modifiedAt: node.modifiedAt ?? 0,
-            });
+            out.push({ path: node.path, name: node.name, modifiedAt: node.modifiedAt ?? 0 });
           }
           if (node.type === 'directory' && node.children?.length) {
-            walk(node.children);
+            out.push(...collectPptx(node.children));
           }
         }
+        return out;
       };
-      walk(roots);
+
+      const pptxList = collectPptx(roots);
       pptxList.sort((a, b) => b.modifiedAt - a.modifiedAt);
-      setPptxFiles(pptxList);
+      const newest = pptxList[0] ?? null;
+
+      if (newest && newest.path !== dismissedPptxPath) {
+        setLatestPptx({ path: newest.path, name: newest.name });
+      } else if (!newest) {
+        setLatestPptx(null);
+      }
     } catch {
       // Workspace tree may not exist until the sandbox is created.
     }
-  }, [activeSessionId]);
+  }, [activeSessionId, dismissedPptxPath]);
 
-  // Poll workspace tree every 3s so PPTX cards appear as soon as files are created
+  const dismissPptxCard = useCallback(() => {
+    const current = latestPptx;
+    if (current) {
+      setDismissedPptxPath(current.path);
+      setLatestPptx(null);
+    }
+  }, [latestPptx]);
+
+  // Poll workspace tree every 3s so PPTX card appears as soon as file is created
   useEffect(() => {
     scanWorkspacePptx();
     const interval = setInterval(scanWorkspacePptx, 3000);
@@ -550,14 +563,16 @@ export function ChatView() {
             </React.Fragment>
           ))}
           <ArtifactFeed sessionId={activeSessionId!} />
-          {pptxFiles.map((file) => (
+          {/* Inline PPTX preview card — only the newest workspace .pptx file */}
+          {latestPptx && (
             <PptxCard
-              key={file.path}
+              key={latestPptx.path}
               sessionId={activeSessionId}
-              filePath={file.path}
-              fileName={file.name}
+              filePath={latestPptx.path}
+              fileName={latestPptx.name}
+              onDismiss={dismissPptxCard}
             />
-          ))}
+          )}
           <div ref={bottomRef} />
         </div>
         <MessageInput onSend={send} disabled={hasRunningAgent} mentionableAgents={mentionableAgents} />

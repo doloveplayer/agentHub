@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { FileText, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { PptxViewer } from './PptxViewer';
 
@@ -7,13 +7,14 @@ interface Props {
   sessionId: string;
   filePath: string;
   fileName?: string;
+  onDismiss?: () => void;
 }
 
 /**
  * Inline PPTX preview card shown in the chat message area.
  * Downloads the PPTX from workspace and renders an embedded PptxViewer.
  */
-export function PptxCard({ sessionId, filePath, fileName }: Props) {
+export function PptxCard({ sessionId, filePath, fileName, onDismiss }: Props) {
   const [pptxUrl, setPptxUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +73,18 @@ export function PptxCard({ sessionId, filePath, fileName }: Props) {
         <span className="text-[10px] text-hub-muted shrink-0">
           {expanded ? 'Collapse' : 'Preview'}
         </span>
+        {onDismiss && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDismiss();
+            }}
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-hub-tertiary hover:bg-hub-hover hover:text-hub-secondary shrink-0"
+            title="Close"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
       </button>
 
       {/* Card body — expandable PPTX preview */}
