@@ -334,7 +334,7 @@ async function startReplForTask(
 
     console.log(`[ws] Task REPL started: agent=${agentName} task=${task.id}`);
     await provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
-      agentName, hostWorkDir: sandbox.hostWorkDir, trustMode: true,
+      agentName, hostWorkDir: sandbox.hostWorkDir, hostSandboxDir: sandbox.hostSandboxDir, trustMode: true,
     });
   } catch (err: any) {
     console.error(`[ws] Task REPL start failed: ${err.message}`);

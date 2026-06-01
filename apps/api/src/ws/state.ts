@@ -41,7 +41,7 @@ export const agentProcesses = new Map<string, Map<string, {
 }>>();
 
 /** sessionId → sandbox info */
-export const sandboxes = new Map<string, { containerId: string; workDir: string; hostWorkDir: string }>();
+export const sandboxes = new Map<string, { containerId: string; workDir: string; hostWorkDir: string; sandboxDir: string; hostSandboxDir: string }>();
 
 /** Count of currently executing agents */
 export let runningAgentCount = 0;
@@ -228,6 +228,8 @@ export async function getOrCreateSandbox(sessionId: string, sessionType?: string
           containerId: existingId,
           workDir: '/workspace',
           hostWorkDir: desiredWorkDir,
+          sandboxDir: '/sandbox',
+          hostSandboxDir: defaultWorkDir,
         };
         if (existingContainers[0].State !== 'running') {
           await docker.getContainer(existingId).start().catch(() => {});

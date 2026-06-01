@@ -404,6 +404,10 @@ sessions.post('/:id/workspace', async (c) => {
   realWorkspacePaths.set(sessionId, real);
   workspaceModes.set(sessionId, body.mode || 'custom');
 
+  // Invalidate cached sandbox so the next getOrCreateSandbox() recreates it
+  // with the new workspace bind mount
+  sandboxes.delete(sessionId);
+
   broadcast(sessionId, {
     type: 'workspace_changed',
     sessionId,

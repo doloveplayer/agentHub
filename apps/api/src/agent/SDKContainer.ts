@@ -6,6 +6,7 @@ export interface SDKContainerOptions {
   containerId: string;
   prompt: string;
   hostWorkDir: string;
+  hostSandboxDir: string;  // host path to sandbox dir (agent config + runtime files)
   agentTag: string;
   agentConfigTag?: string;
   permissionMode: string;
@@ -26,8 +27,9 @@ export interface SDKContainerOptions {
 export function spawnSDKInDocker(
   opts: SDKContainerOptions,
 ): { proc: ChildProcess; promptFile: string; cleanup: () => void } {
+  // Write prompt file to sandbox dir (not user workspace)
   const promptFile = `_prompt_${opts.agentTag}.txt`;
-  const promptPath = resolve(opts.hostWorkDir, promptFile);
+  const promptPath = resolve(opts.hostSandboxDir, promptFile);
   writeFileSync(promptPath, opts.prompt, 'utf-8');
 
   // Mirror auth env vars into the container. Only pass the essential ones.
@@ -56,7 +58,7 @@ export function spawnSDKInDocker(
     envVars['AGENTHUB_THINKING_BUDGET'] = envVars['ANTHROPIC_THINKING_BUDGET'];
   }
 
-  envVars['AGENTHUB_PROMPT_FILE'] = `/workspace/${promptFile}`;
+  envVars['AGENTHUB_PROMPT_FILE'] = `/sandbox/${promptFile}`;
   envVars['AGENTHUB_PERMISSION_MODE'] = opts.permissionMode;
   envVars['AGENTHUB_ALLOWED_TOOLS'] = JSON.stringify(opts.allowedTools);
 
@@ -69,15 +71,15 @@ export function spawnSDKInDocker(
     dockerArgs.push('-e', `${k}=${v}`);
   }
 
-  // Per-agent config isolation (settings.json, memory, skills)
+  // Per-agent config isolation (settings.json, memory, skills) — stored in sandbox dir
   if (opts.agentConfigTag) {
-    const configDir = resolve(opts.hostWorkDir, `_agent_${opts.agentConfigTag}`, '.claude');
+    const configDir = resolve(opts.hostSandboxDir, `_agent_${opts.agentConfigTag}`, '.claude');
     if (!existsSync(configDir)) {
       mkdirSync(configDir, { recursive: true });
     }
     dockerArgs.push(
       '-e',
-      `CLAUDE_CONFIG_DIR=/workspace/_agent_${opts.agentConfigTag}/.claude`,
+      `CLAUDE_CONFIG_DIR=/sandbox/_agent_${opts.agentConfigTag}/.claude`,
     );
   }
 

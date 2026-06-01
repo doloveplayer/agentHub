@@ -12,47 +12,72 @@ interface SandboxInfo {
   containerId: string;
   workDir: string;
   hostWorkDir: string;
+  sandboxDir: string;
+  hostSandboxDir: string;
 }
 
-export function startPlanWatcher(sessionId: string, hostWorkDir: string, sandbox: SandboxInfo): void {
+/**
+ * Start watching for plan.json in both the sandbox dir and the user workspace.
+ * The planner agent may write to either location depending on whether it uses
+ * an absolute path (/sandbox/plan.json) or a relative path (plan.json from CWD=/workspace).
+ */
+export function startPlanWatcher(sessionId: string, hostSandboxDir: string, sandbox: SandboxInfo): void {
   if (watchers.has(sessionId)) {
     console.warn(`[PlanWatcher] Already watching session ${sessionId.slice(0, 8)}`);
     return;
   }
 
-  const planPath = resolve(hostWorkDir, 'plan.json');
+  // Possible plan.json locations: sandbox dir (intended) and user workspace (agent CWD fallback)
+  const watchDirs = [hostSandboxDir];
+  if (sandbox.hostWorkDir !== hostSandboxDir) {
+    watchDirs.push(sandbox.hostWorkDir);
+  }
 
   let debounceTimer: NodeJS.Timeout | null = null;
 
-  console.log(`[PlanWatcher] Starting watcher for session ${sessionId.slice(0, 8)} at ${hostWorkDir}`);
+  const handlePlan = () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = null;
+      // Check both locations — first found wins
+      for (const dir of watchDirs) {
+        const planPath = resolve(dir, 'plan.json');
+        if (existsSync(planPath)) {
+          handlePlanFile(sessionId, planPath, sandbox).catch((err) => {
+            console.error(`[PlanWatcher] Error handling plan for ${sessionId.slice(0, 8)}:`, err.message);
+          });
+          return;
+        }
+      }
+    }, 200);
+  };
 
-  try {
-    const watcher = watch(hostWorkDir, (_eventType, filename) => {
-      if (filename !== 'plan.json' && filename !== 'plan.json.tmp') return;
+  console.log(`[PlanWatcher] Starting watcher for session ${sessionId.slice(0, 8)} at ${watchDirs.join(', ')}`);
 
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        handlePlanFile(sessionId, planPath, sandbox).catch((err) => {
-          console.error(`[PlanWatcher] Error handling plan for ${sessionId.slice(0, 8)}:`, err.message);
-        });
-      }, 200);
-    });
-
-    watchers.set(sessionId, watcher);
-  } catch (err: any) {
-    console.warn(`[PlanWatcher] fs.watch failed for ${sessionId.slice(0, 8)}, falling back to polling:`, err.message);
-    startPolling(sessionId, planPath, sandbox);
+  // Watch all directories (dedup in handlePlanFile by hash prevents double-dispatch)
+  for (const dir of watchDirs) {
+    try {
+      const watcher = watch(dir, (_eventType, filename) => {
+        if (filename !== 'plan.json' && filename !== 'plan.json.tmp') return;
+        handlePlan();
+      });
+      watchers.set(`${sessionId}:${dir}`, watcher);
+    } catch (err: any) {
+      console.warn(`[PlanWatcher] fs.watch failed for ${dir}, falling back to polling:`, err.message);
+      startPolling(sessionId, resolve(dir, 'plan.json'), sandbox);
+    }
   }
 }
 
 export function stopPlanWatcher(sessionId: string): void {
-  const watcher = watchers.get(sessionId);
-  if (watcher) {
-    watcher.close();
-    watchers.delete(sessionId);
-    console.log(`[PlanWatcher] Stopped watcher for session ${sessionId.slice(0, 8)}`);
+  // Close all watchers for this session (may have multiple dirs)
+  for (const [key, watcher] of watchers) {
+    if (key === sessionId || key.startsWith(`${sessionId}:`)) {
+      watcher.close();
+      watchers.delete(key);
+    }
   }
+  console.log(`[PlanWatcher] Stopped watcher(s) for session ${sessionId.slice(0, 8)}`);
 
   const interval = pollingIntervals.get(sessionId);
   if (interval) {

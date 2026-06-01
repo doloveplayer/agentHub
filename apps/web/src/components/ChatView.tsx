@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import { useShallow } from 'zustand/react/shallow';
 import { api } from '../lib/api';
 import { useChat } from '../hooks/useChat';
 import { useResizablePanel } from '../hooks/useResizablePanel';
@@ -9,7 +10,7 @@ import { MessageActions } from './MessageActions';
 import { AgentStatusPanel } from './AgentStatusPanel';
 import { QuoteToolbar } from './QuoteToolbar';
 import { agentColor } from './AgentMentionPopup';
-import { Shield, AlertTriangle, ChevronDown, Lock, Eye, Sparkles, Zap, Settings, Plus, Minus, FolderOpen } from 'lucide-react';
+import { Shield, AlertTriangle, ChevronDown, Lock, Sparkles, Zap, Settings, Plus, Minus, FolderOpen } from 'lucide-react';
 import { ConfirmationPanel } from './ConfirmationPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { AddAgentModal } from './AddAgentModal';
@@ -86,59 +87,253 @@ function PlanRenderer({
   );
 }
 
+// --- Extracted sub-components for render isolation ---
+
+/** Session header: permission mode, participants, settings. Only re-renders on session metadata changes. */
+const SessionHeader = React.memo(function SessionHeader({
+  activeSessionId, activeSession, sessionAgents, permissionMode, onPermissionChange, onSettingsOpen,
+  onAddAgents, onRemoveAgents, onWorkspaceOpen, hasMessages,
+}: {
+  activeSessionId: string; activeSession: any; sessionAgents: AgentConfig[];
+  permissionMode: string; onPermissionChange: (mode: string) => void;
+  onSettingsOpen: () => void; onAddAgents: () => void; onRemoveAgents: () => void;
+  onWorkspaceOpen: () => void; hasMessages: boolean;
+}) {
+  const [showPermDropdown, setShowPermDropdown] = useState(false);
+  const permLabels: Record<string, { label: string; icon: JSX.Element; color: string }> = {
+    read_only: { label: 'Read Only', icon: <Lock className="w-3.5 h-3.5" />, color: 'text-hub-tertiary' },
+    ask: { label: 'Ask', icon: <Shield className="w-3.5 h-3.5" />, color: 'text-hub-warning' },
+    smart: { label: 'Smart', icon: <Sparkles className="w-3.5 h-3.5" />, color: 'text-hub-accent' },
+    trust: { label: 'Trust', icon: <Zap className="w-3.5 h-3.5" />, color: 'text-hub-success' },
+  };
+  const currentPerm = permLabels[permissionMode] ?? permLabels.ask;
+
+  return (
+    <div className="px-4 py-2 border-b border-hub flex items-center gap-2 bg-hub-surface relative z-10">
+      {activeSession?.type === 'group' && (
+        <>
+          <button onClick={onAddAgents}
+            className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-hub-accent/30 text-hub-accent hover:bg-hub-accent/10 transition shrink-0"
+            title="Add agent to group"
+          >
+            <Plus className="w-3 h-3" /> Add
+          </button>
+          <button onClick={onRemoveAgents}
+            className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-hub-danger/30 text-hub-danger hover:bg-hub-danger/10 transition shrink-0"
+            title="Remove agent from group"
+          >
+            <Minus className="w-3 h-3" /> Rmv
+          </button>
+        </>
+      )}
+      <span className="text-xs text-hub-secondary font-medium truncate flex-1 min-w-0">
+        {activeSession?.title ?? 'Session'}
+      </span>
+      {sessionAgents.length > 0 && (
+        <>
+          <span className="text-[11px] text-hub-tertiary font-medium">Participants</span>
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-hub-accent/10 border border-hub-accent/30 text-hub-accent font-medium">You</span>
+          {sessionAgents.map((a) => (
+            <span key={a.id}
+              className="text-xs px-2 py-0.5 rounded-full border text-hub-secondary"
+              style={{ borderColor: agentColor(a.name), backgroundColor: agentColor(a.name) + '20' }}
+            >
+              {a.displayName}
+            </span>
+          ))}
+        </>
+      )}
+      <div className="relative shrink-0">
+        <button
+          onClick={() => setShowPermDropdown(!showPermDropdown)}
+          className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition hover:bg-hub-hover ${currentPerm.color}`}
+          title="Permission mode"
+        >
+          {currentPerm.icon}
+          <span>{currentPerm.label}</span>
+          <ChevronDown className="w-3 h-3" />
+        </button>
+        {showPermDropdown && (
+          <div className="absolute top-full right-0 mt-1 bg-hub-raised border border-hub rounded-hub-lg shadow-xl z-50 w-36 overflow-hidden">
+            {Object.entries(permLabels).map(([key, { label, icon, color }]) => (
+              <button
+                key={key}
+                onClick={() => { setShowPermDropdown(false); onPermissionChange(key); }}
+                className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition ${
+                  permissionMode === key ? 'bg-hub-active font-semibold' : 'hover:bg-hub-hover'
+                } ${color}`}
+              >
+                {icon} {label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <button onClick={onSettingsOpen} className="p-1.5 rounded hover:bg-hub-hover text-hub-tertiary transition shrink-0" title="Settings">
+        <Settings className="w-3.5 h-3.5" />
+      </button>
+      <button
+        onClick={() => !hasMessages && onWorkspaceOpen()}
+        className={`p-1.5 rounded transition shrink-0 ${
+          hasMessages ? 'text-hub-muted/30 cursor-not-allowed' : 'hover:bg-hub-hover text-hub-tertiary'
+        }`}
+        title={hasMessages ? 'Workspace locked — session already started' : 'Set Workspace Directory'}
+        disabled={hasMessages}
+      >
+        <FolderOpen className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+});
+
+/** Single message row with bubble, actions, agent info, and inline diff cards. Subscribes only to its own agentEvents. */
+const MessageItem = React.memo(function MessageItem({
+  msg, agentDisplayName, agentName, onCopy, onQuote, onRegenerate, onDelete, respondToPermission,
+}: {
+  msg: Message; agentDisplayName?: string; agentName?: string;
+  onCopy: () => void; onQuote: () => void; onRegenerate: () => void; onDelete: () => void;
+  respondToPermission: (id: string, allowed: boolean) => void;
+}) {
+  // Subscribe only to this message's agent events — no global store pollution
+  const events = useAppStore((s) => s.agentEvents[msg.id]);
+  const diffCards = useAppStore((s) => s.diffCards[msg.sessionId]?.filter((c) => c.agentMessageId === msg.id) ?? EMPTY_DIFF_CARDS);
+  const [resolvedPermissions, setResolvedPermissions] = useState<Set<string>>(() => new Set());
+
+  // Extract token usage
+  const tokenUpdates = events?.filter((ev) => ev.type === 'token_update') ?? [];
+  const lastToken = tokenUpdates[tokenUpdates.length - 1]?.details?.tokenUsage;
+  const inputTokens = lastToken?.input ?? 0;
+  const outputTokens = lastToken?.output ?? 0;
+  const permissionReqs = events?.filter((ev) => ev.type === 'permission_request') ?? [];
+
+  return (
+    <>
+      <div className={`flex ${msg.senderType === 'human' ? 'flex-row-reverse' : ''} relative group`}>
+        <div className="flex-1 min-w-0">
+          <MessageBubble message={msg} isStreaming={msg.status === 'streaming'}
+            agentDisplayName={agentDisplayName} agentName={agentName} />
+        </div>
+        {msg.status !== 'streaming' && msg.status !== 'sending' && (
+          <div className={`flex-shrink-0 flex items-start pt-2.5 ${msg.senderType === 'human' ? 'mr-3 order-first' : 'ml-1'}`}>
+            <MessageActions message={msg} agentDisplayName={agentDisplayName}
+              onCopy={onCopy} onQuote={onQuote} onRegenerate={onRegenerate} onDelete={onDelete} />
+          </div>
+        )}
+      </div>
+      {/* Agent info: token bar + permission requests */}
+      {msg.senderType === 'agent' && (inputTokens > 0 || outputTokens > 0 || permissionReqs.length > 0) && (
+        <div className="mx-4 my-1 space-y-1">
+          {(inputTokens > 0 || outputTokens > 0) && (
+            <div className="flex items-center gap-3 text-[11px] text-hub-tertiary px-1">
+              <span title="Input tokens">↑ {formatTokens(inputTokens)}</span>
+              <span title="Output tokens">↓ {formatTokens(outputTokens)}</span>
+              <span title="Total tokens">Σ {formatTokens(inputTokens + outputTokens)}</span>
+            </div>
+          )}
+          {permissionReqs.map((ev) => {
+            const pid = ev.details.permissionId ?? ev.id;
+            const resolved = resolvedPermissions.has(pid);
+            return (
+              <div key={ev.id} className="bg-hub-warning/10 border border-hub-warning/30 rounded-hub-lg px-4 py-3 my-2 animate-pulse">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="w-4 h-4 text-hub-warning" />
+                  <span className="text-sm font-medium text-hub-warning">Permission Request</span>
+                </div>
+                <div className="text-xs text-hub-tertiary space-y-1 mb-3">
+                  <div>Tool: <span className="text-hub-secondary font-mono">{ev.details.tool ?? 'unknown'}</span></div>
+                  {ev.details.path && <div>Path: <span className="text-hub-secondary font-mono">{ev.details.path}</span></div>}
+                </div>
+                {!resolved && msg.status === 'streaming' ? (
+                  <div className="flex gap-2">
+                    <button onClick={() => { setResolvedPermissions(prev => new Set(prev).add(pid)); respondToPermission(pid, true); }}
+                      className="px-4 py-1.5 bg-hub-success hover:bg-hub-success/80 text-white text-xs rounded-md font-medium transition">Allow</button>
+                    <button onClick={() => { setResolvedPermissions(prev => new Set(prev).add(pid)); respondToPermission(pid, false); }}
+                      className="px-4 py-1.5 bg-hub-danger hover:bg-hub-danger/80 text-white text-xs rounded-md font-medium transition">Deny</button>
+                  </div>
+                ) : (
+                  <span className="text-xs text-hub-muted italic">{resolved ? 'Response sent' : 'Agent terminated — request expired'}</span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {/* Inline diff cards for this message */}
+      {diffCards.map((card) => (
+        <DiffCard key={card.id} sessionId={msg.sessionId} title={card.title} files={card.files} />
+      ))}
+    </>
+  );
+}, (prev, next) => {
+  // Custom comparator: only re-render if message content, status, or agent info changed
+  return prev.msg === next.msg
+    && prev.msg.status === next.msg.status
+    && prev.msg.content === next.msg.content
+    && prev.agentDisplayName === next.agentDisplayName
+    && prev.agentName === next.agentName;
+});
+
+/** Bottom artifact feed: deployment cards, test reports, review reports. Only re-renders on artifact changes. */
+const ArtifactFeed = React.memo(function ArtifactFeed({ sessionId }: { sessionId: string }) {
+  const deploymentCards = useAppStore((s) => s.deploymentCards[sessionId] ?? EMPTY_DEPLOYMENT_CARDS);
+  const testReports = useAppStore((s) => s.testReports[sessionId] ?? EMPTY_TEST_REPORTS);
+  const reviewReports = useAppStore((s) => s.reviewReports[sessionId] ?? EMPTY_REVIEW_REPORTS);
+
+  return (
+    <>
+      {deploymentCards.map((card) => (
+        <DeployCard key={card.deploymentId} sessionId={sessionId} deployment={card} />
+      ))}
+      {testReports.map((item) => <TestReportCard key={item.id} report={item.report} />)}
+      {reviewReports.map((item) => <ReviewCard key={item.id} report={item.report} />)}
+    </>
+  );
+});
+
 export function ChatView() {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
   const agents = useAppStore((s) => s.agents);
 
-  const messages = useAppStore((s) => {
-    if (!activeSessionId) return EMPTY_MESSAGES;
-    return s.messages[activeSessionId] ?? EMPTY_MESSAGES;
-  });
+  // useShallow: batch selectors to avoid re-render on reference change when content is same
+  const [messages, taskPlans] = useAppStore(useShallow((s) => [
+    activeSessionId ? (s.messages[activeSessionId] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES,
+    s.taskPlans,
+  ]));
 
-  const agentEvents = useAppStore((s) => s.agentEvents);
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const prevMessageLenRef = useRef(messages.length);
-  const taskPlans = useAppStore((s) => s.taskPlans);
-  const diffCards = useAppStore((s) => activeSessionId ? (s.diffCards[activeSessionId] ?? EMPTY_DIFF_CARDS) : EMPTY_DIFF_CARDS);
-  const deploymentCards = useAppStore((s) => activeSessionId ? (s.deploymentCards[activeSessionId] ?? EMPTY_DEPLOYMENT_CARDS) : EMPTY_DEPLOYMENT_CARDS);
-  const testReports = useAppStore((s) => activeSessionId ? (s.testReports[activeSessionId] ?? EMPTY_TEST_REPORTS) : EMPTY_TEST_REPORTS);
-  const reviewReports = useAppStore((s) => activeSessionId ? (s.reviewReports[activeSessionId] ?? EMPTY_REVIEW_REPORTS) : EMPTY_REVIEW_REPORTS);
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
   const { send, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan, forceCompleteTask, forceFailTask } = useChat(activeSessionId ?? '');
   const addToast = useAppStore((s) => s.addToast);
-  const [resolvedPermissions, setResolvedPermissions] = useState<Set<string>>(() => new Set());
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
   const renderedPlanIds = useRef(new Set<string>());
 
-  // Agents lookup by id
-  const agentMap = new Map<string, AgentConfig>();
-  for (const a of agents) agentMap.set(a.id, a);
+  // Memoize agentMap — only rebuild when agents array changes
+  const agentMap = useMemo(() => {
+    const map = new Map<string, AgentConfig>();
+    for (const a of agents) map.set(a.id, a);
+    return map;
+  }, [agents]);
 
-  // Determine session type and participants
+  // Determine session type and participants — memoized
   const activeSession = sessions.find((s) => s.id === activeSessionId);
-  const sessionAgents: AgentConfig[] = (activeSession as any)?.agents
-    ?.map((sa: any) => agentMap.get(sa.agentId) ?? {
-      id: sa.agentId,
-      name: sa.name,
-      displayName: sa.displayName,
-      description: '',
-      systemPrompt: '',
-    } as AgentConfig)
-    ?? [];
+  const sessionAgents = useMemo((): AgentConfig[] => {
+    return (activeSession as any)?.agents
+      ?.map((sa: any) => agentMap.get(sa.agentId) ?? {
+        id: sa.agentId, name: sa.name, displayName: sa.displayName,
+        description: '', systemPrompt: '',
+      } as AgentConfig) ?? [];
+  }, [activeSession, agentMap]);
 
   // @mention agents: in group mode, restrict to session members; in solo, show all
   const mentionableAgents = useMemo(() => {
-    if (!activeSession || activeSession.type !== 'group') {
-      return agents;
-    }
-    const sessionAgentIds = new Set(
-      ((activeSession as any)?.agents || []).map((sa: any) => sa.agentId)
-    );
+    if (!activeSession || activeSession.type !== 'group') return agents;
+    const sessionAgentIds = new Set(((activeSession as any)?.agents || []).map((sa: any) => sa.agentId));
     return agents.filter((a) => sessionAgentIds.has(a.id));
   }, [activeSession, agents]);
 
@@ -164,90 +359,21 @@ export function ChatView() {
   }, [messages, isNearBottom]);
 
   // Streaming content — only follow if user is near bottom
+  const messagesLength = messages.length;
   useEffect(() => {
     if (isNearBottom) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [agentEvents, isNearBottom]);
+  }, [messagesLength, isNearBottom]);
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
     setShowScrollButton(false);
   }, []);
 
-  const renderAgentInfo = (messageId: string, isStreaming: boolean) => {
-    const events = agentEvents[messageId];
-    if (!events || events.length === 0) return null;
-
-    // Extract token usage from the latest token_update event
-    const tokenUpdates = events.filter((ev) => ev.type === 'token_update');
-    const lastToken = tokenUpdates[tokenUpdates.length - 1]?.details?.tokenUsage;
-    const inputTokens = lastToken?.input ?? 0;
-    const outputTokens = lastToken?.output ?? 0;
-
-    // Extract permission requests (still interactive)
-    const permissionReqs = events.filter((ev) => ev.type === 'permission_request');
-
-    return (
-      <div className="mx-4 my-1 space-y-1">
-        {/* Token usage bar */}
-        {(inputTokens > 0 || outputTokens > 0) && (
-          <div className="flex items-center gap-3 text-[11px] text-hub-tertiary px-1">
-            <span title="Input tokens">↑ {formatTokens(inputTokens)}</span>
-            <span title="Output tokens">↓ {formatTokens(outputTokens)}</span>
-            <span title="Total tokens">Σ {formatTokens(inputTokens + outputTokens)}</span>
-          </div>
-        )}
-
-        {/* Permission requests render as interactive cards */}
-        {permissionReqs.map((ev) => {
-          const pid = ev.details.permissionId ?? ev.id;
-          const resolved = resolvedPermissions.has(pid);
-          return (
-            <div key={ev.id} ref={(el) => {
-              if (el && !resolved && isStreaming) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            }} className="bg-hub-warning/10 border border-hub-warning/30 rounded-hub-lg px-4 py-3 my-2 animate-pulse">
-              <div className="flex items-center gap-2 mb-2">
-                <Shield className="w-4 h-4 text-hub-warning" />
-                <span className="text-sm font-medium text-hub-warning">Permission Request</span>
-              </div>
-              <div className="text-xs text-hub-tertiary space-y-1 mb-3">
-                <div>Tool: <span className="text-hub-secondary font-mono">{ev.details.tool ?? 'unknown'}</span></div>
-                {ev.details.path && <div>Path: <span className="text-hub-secondary font-mono">{ev.details.path}</span></div>}
-              </div>
-              {!resolved && isStreaming ? (
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => { const next = new Set(resolvedPermissions); next.add(pid); setResolvedPermissions(next); respondToPermission(pid, true); }}
-                    className="px-4 py-1.5 bg-hub-success hover:bg-hub-success/80 text-white text-xs rounded-md font-medium transition"
-                  >
-                    Allow
-                  </button>
-                  <button
-                    onClick={() => { const next = new Set(resolvedPermissions); next.add(pid); setResolvedPermissions(next); respondToPermission(pid, false); }}
-                    className="px-4 py-1.5 bg-hub-danger hover:bg-hub-danger/80 text-white text-xs rounded-md font-medium transition"
-                  >
-                    Deny
-                  </button>
-                </div>
-              ) : (
-                <span className="text-xs text-hub-muted italic">
-                  {resolved ? 'Response sent' : 'Agent terminated — request expired'}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  };
-
   const sessionPermissionModes = useAppStore((s) => s.sessionPermissionModes);
   const setSessionPermissionMode = useAppStore((s) => s.setSessionPermissionMode);
   const updateSessionInList = useAppStore((s) => s.updateSessionInList);
-  const [showPermDropdown, setShowPermDropdown] = useState(false);
   const [showTrustWarning, setShowTrustWarning] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showAddAgents, setShowAddAgents] = useState(false);
@@ -259,22 +385,12 @@ export function ChatView() {
     url: string;
   } | null>(null);
 
-  const getPermissionMode = (): string => {
-    if (!activeSessionId) return 'ask';
-    return sessionPermissionModes[activeSessionId] ?? (activeSession as any)?.permissionMode ?? 'ask';
-  };
-
-  const permissionMode = getPermissionMode();
+  const permissionMode = !activeSessionId ? 'ask'
+    : sessionPermissionModes[activeSessionId] ?? (activeSession as any)?.permissionMode ?? 'ask';
 
   const handleChangePermissionMode = async (mode: string) => {
     if (!activeSessionId) return;
-    setShowPermDropdown(false);
-
-    if (mode === 'trust') {
-      setShowTrustWarning(true);
-      return;
-    }
-
+    if (mode === 'trust') { setShowTrustWarning(true); return; }
     await applyPermissionMode(mode);
   };
 
@@ -284,11 +400,10 @@ export function ChatView() {
       await api.updateSession(activeSessionId, { permissionMode: mode });
       setSessionPermissionMode(activeSessionId, mode);
       updateSessionInList(activeSessionId, { permissionMode: mode as any });
-      // Notify backend to sync REPL providers
       try {
         const ws = await ensureConnection();
         ws.send(JSON.stringify({ type: 'permission_mode_change', mode }));
-      } catch { /* WS may not be connected yet — session update is sufficient */ }
+      } catch { /* WS may not be connected yet */ }
     } catch (err) {
       console.error('Failed to update permission mode:', err);
     }
@@ -299,14 +414,6 @@ export function ChatView() {
     await applyPermissionMode('trust');
   };
 
-  const permLabels: Record<string, { label: string; icon: JSX.Element; color: string }> = {
-    read_only: { label: 'Read Only', icon: <Lock className="w-3.5 h-3.5" />, color: 'text-hub-tertiary' },
-    ask: { label: 'Ask', icon: <Shield className="w-3.5 h-3.5" />, color: 'text-hub-warning' },
-    smart: { label: 'Smart', icon: <Sparkles className="w-3.5 h-3.5" />, color: 'text-hub-accent' },
-    trust: { label: 'Trust', icon: <Zap className="w-3.5 h-3.5" />, color: 'text-hub-success' },
-  };
-
-  const currentPerm = permLabels[permissionMode] ?? permLabels.ask;
   const hasRunningAgent = activeSessionId ? isSessionStreaming(activeSessionId) : false;
   const { width: panelWidth, onMouseDown: onPanelResize } = useResizablePanel({
     defaultWidth: 288, minWidth: 220, maxWidth: 500, side: 'right',
@@ -357,147 +464,49 @@ export function ChatView() {
     <div className="flex-1 flex h-full">
       {/* Chat area */}
       <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Session header with permission mode indicator */}
-        <div className="px-4 py-2 border-b border-hub flex items-center gap-2 bg-hub-surface relative z-10">
-          {/* Add/Remove agent buttons — only for group sessions */}
-          {activeSession?.type === 'group' && (
-            <>
-              <button onClick={() => setShowAddAgents(true)}
-                className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-hub-accent/30 text-hub-accent hover:bg-hub-accent/10 transition shrink-0"
-                title="Add agent to group"
-              >
-                <Plus className="w-3 h-3" /> Add
-              </button>
-              <button onClick={() => setShowRemoveAgents(true)}
-                className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded border border-hub-danger/30 text-hub-danger hover:bg-hub-danger/10 transition shrink-0"
-                title="Remove agent from group"
-              >
-                <Minus className="w-3 h-3" /> Rmv
-              </button>
-            </>
-          )}
-
-          {/* Session title */}
-          <span className="text-xs text-hub-secondary font-medium truncate flex-1 min-w-0">
-            {activeSession?.title ?? 'Session'}
-          </span>
-
-          {/* Session participants */}
-          {sessionAgents.length > 0 && (
-            <>
-              <span className="text-[11px] text-hub-tertiary font-medium">Participants</span>
-              <span className="text-[11px] px-2 py-0.5 rounded-full bg-hub-accent/10 border border-hub-accent/30 text-hub-accent font-medium">You</span>
-              {sessionAgents.map((a) => (
-                <span key={a.id}
-                  className="text-xs px-2 py-0.5 rounded-full border text-hub-secondary"
-                  style={{ borderColor: agentColor(a.name), backgroundColor: agentColor(a.name) + '20' }}
-                >
-                  {a.displayName}
-                </span>
-              ))}
-            </>
-          )}
-
-          {/* Permission mode dropdown */}
-          <div className="relative shrink-0">
-            <button
-              onClick={() => setShowPermDropdown(!showPermDropdown)}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium transition hover:bg-hub-hover ${currentPerm.color}`}
-              title="Permission mode"
-            >
-              {currentPerm.icon}
-              <span>{currentPerm.label}</span>
-              <ChevronDown className="w-3 h-3" />
-            </button>
-            {showPermDropdown && (
-              <div className="absolute top-full right-0 mt-1 bg-hub-raised border border-hub rounded-hub-lg shadow-xl z-50 w-36 overflow-hidden">
-                {Object.entries(permLabels).map(([key, { label, icon, color }]) => (
-                  <button
-                    key={key}
-                    onClick={() => handleChangePermissionMode(key)}
-                    className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition ${
-                      permissionMode === key ? 'bg-hub-active font-semibold' : 'hover:bg-hub-hover'
-                    } ${color}`}
-                  >
-                    {icon} {label}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Settings button */}
-          <button onClick={() => setSettingsOpen(true)} className="p-1.5 rounded hover:bg-hub-hover text-hub-tertiary transition shrink-0" title="Settings">
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-          {/* Workspace button — disabled after sandbox is created (first message sent) */}
-          <button
-            onClick={() => !(messages.length > 0) && setShowWorkspaceSelector(true)}
-            className={`p-1.5 rounded transition shrink-0 ${
-              messages.length > 0
-                ? 'text-hub-muted/30 cursor-not-allowed'
-                : 'hover:bg-hub-hover text-hub-tertiary'
-            }`}
-            title={messages.length > 0 ? 'Workspace locked — session already started' : 'Set Workspace Directory'}
-            disabled={messages.length > 0}
-          >
-            <FolderOpen className="w-3.5 h-3.5" />
-          </button>
-        </div>
+        <SessionHeader
+          activeSessionId={activeSessionId!}
+          activeSession={activeSession}
+          sessionAgents={sessionAgents}
+          permissionMode={permissionMode}
+          onPermissionChange={handleChangePermissionMode}
+          onSettingsOpen={() => setSettingsOpen(true)}
+          onAddAgents={() => setShowAddAgents(true)}
+          onRemoveAgents={() => setShowRemoveAgents(true)}
+          onWorkspaceOpen={() => setShowWorkspaceSelector(true)}
+          hasMessages={messages.length > 0}
+        />
         <div className="flex-1 overflow-y-auto chat-scroll" ref={scrollContainerRef} onScroll={handleChatScroll}>
-          {/* Scroll-to-bottom floating button */}
           {showScrollButton && (
             <div className="sticky top-2 z-10 flex justify-center">
-              <button
-                onClick={scrollToBottom}
-                className="px-4 py-1.5 bg-hub-accent/90 hover:bg-hub-accent text-white text-xs rounded-full shadow-lg transition-all animate-bounce"
-              >
+              <button onClick={scrollToBottom}
+                className="px-4 py-1.5 bg-hub-accent/90 hover:bg-hub-accent text-white text-xs rounded-full shadow-lg transition-all animate-bounce">
                 ↓ 新消息
               </button>
             </div>
           )}
-          {messages.map((msg: any) => (
+          {messages.map((msg: Message) => (
             <React.Fragment key={msg.id}>
-              <div className={`flex ${msg.senderType === 'human' ? 'flex-row-reverse' : ''} relative group`}>
-                <div className="flex-1 min-w-0">
-                  <MessageBubble
-                    message={msg}
-                    isStreaming={msg.status === 'streaming'}
-                    agentDisplayName={msg.agentId ? agentMap.get(msg.agentId)?.displayName : undefined}
-                    agentName={msg.agentId ? agentMap.get(msg.agentId)?.name : undefined}
-                  />
-                </div>
-                {/* Message actions dropdown — show on hover for done/error messages */}
-                {msg.status !== 'streaming' && msg.status !== 'sending' && (
-                  <div className={`flex-shrink-0 flex items-start pt-2.5 ${msg.senderType === 'human' ? 'mr-3 order-first' : 'ml-1'}`}>
-                    <MessageActions
-                      message={msg}
-                      agentDisplayName={msg.agentId ? agentMap.get(msg.agentId)?.displayName : undefined}
-                      onCopy={() => handleCopyMessage(msg)}
-                      onQuote={() => handleQuoteMessage(msg)}
-                      onRegenerate={() => handleRegenerateMessage(msg)}
-                      onDelete={() => handleDeleteMessage(msg)}
-                    />
-                  </div>
-                )}
-              </div>
-              {msg.senderType === 'agent' && renderAgentInfo(msg.id, msg.status === 'streaming')}
-              {diffCards.filter((card) => card.agentMessageId === msg.id).map((card) => (
-                <DiffCard key={card.id} sessionId={activeSessionId} title={card.title} files={card.files} />
-              ))}
-              {/* Planner task plan: render after the Planner agent's message. Use ref to avoid duplicate panels when multiple planner messages exist. */}
-              {msg.senderType === 'agent' && msg.agentId && (agentMap.get(msg.agentId)?.name === 'planner' || agentMap.get(msg.agentId)?.name?.startsWith('planner-')) && msg.status === 'done' && (
+              <MessageItem
+                msg={msg}
+                agentDisplayName={msg.agentId ? agentMap.get(msg.agentId)?.displayName : undefined}
+                agentName={msg.agentId ? agentMap.get(msg.agentId)?.name : undefined}
+                onCopy={() => handleCopyMessage(msg)}
+                onQuote={() => handleQuoteMessage(msg)}
+                onRegenerate={() => handleRegenerateMessage(msg)}
+                onDelete={() => handleDeleteMessage(msg)}
+                respondToPermission={respondToPermission}
+              />
+              {msg.senderType === 'agent' && msg.agentId
+                && (agentMap.get(msg.agentId)?.name === 'planner' || agentMap.get(msg.agentId)?.name?.startsWith('planner-'))
+                && msg.status === 'done' && (
                 <PlanRenderer planFromMessage={msg} taskPlans={taskPlans} confirmedPlans={confirmedPlans}
                   setConfirmedPlans={setConfirmedPlans} setTaskPlan={setTaskPlan} confirmPlan={confirmPlan}
                   renderedPlanIds={renderedPlanIds} />
               )}
             </React.Fragment>
           ))}
-          {deploymentCards.map((card) => (
-            <DeployCard key={card.deploymentId} sessionId={activeSessionId} deployment={card} />
-          ))}
-          {testReports.map((item) => <TestReportCard key={item.id} report={item.report} />)}
-          {reviewReports.map((item) => <ReviewCard key={item.id} report={item.report} />)}
+          <ArtifactFeed sessionId={activeSessionId!} />
           <div ref={bottomRef} />
         </div>
         <MessageInput onSend={send} disabled={hasRunningAgent} mentionableAgents={mentionableAgents} />

@@ -17,6 +17,7 @@ export interface OneShotAgentProcess {
     promptFileId?: string,
     claudeSessionId?: string,
     agentConfigId?: string,
+    hostSandboxDir?: string,
   ): Promise<void>;
   write(input: string): void;
   kill(): void;
@@ -92,6 +93,7 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
     promptFileId?: string,
     claudeSessionId?: string,
     agentConfigId?: string,
+    hostSandboxDir?: string,
   ): Promise<void> {
     this.killed = false;
     this.doneReceived = false;
@@ -100,6 +102,7 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
     this.eventParser.reset();
 
     const hwDir = hostWorkDir || _workDir;
+    const sbDir = hostSandboxDir || hwDir;
     const agentTag = promptFileId || 'agent';
     const profile = trustMode ? "bypass" : "read_only";
 
@@ -107,6 +110,7 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
       containerId,
       prompt,
       hostWorkDir: hwDir,
+      hostSandboxDir: sbDir,
       agentTag,
       agentConfigTag: agentConfigId,
       permissionMode: this.mapPermissionMode(profile),

@@ -94,8 +94,11 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   // Model and thinking from agent config in store
   const agents = useAppStore((s) => s.agents);
   const agentConfig = agents.find((a) => a.name === agentName || a.id === agentId);
-  const model = (agentConfig as any)?.providerConfig?.model || 'unknown';
-  const thinkingLevel = (agentConfig as any)?.providerConfig?.thinking ? 'high' : 'off';
+  // providerConfig may be a JSON string (Prisma Json type) or an object
+  const rawConfig = (agentConfig as any)?.providerConfig;
+  const pConfig = typeof rawConfig === 'string' ? (() => { try { return JSON.parse(rawConfig); } catch { return {}; } })() : (rawConfig || {});
+  const model = pConfig.model || 'unknown';
+  const thinkingLevel = pConfig.thinking ? 'high' : 'off';
 
   const isCollapsed = collapsed && !expanded;
 

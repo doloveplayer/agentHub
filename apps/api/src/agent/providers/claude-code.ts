@@ -22,6 +22,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
   private claudeSessionId: string | undefined;
   private currentContainerId = '';
   private currentHostWorkDir = '';
+  private currentHostSandboxDir = '';
   private currentTrustMode = true;
   private currentAgentTag = '';
   private currentAgentConfigId: string | undefined;
@@ -64,6 +65,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
     const hostWorkDir = config.hostWorkDir || _workDir;
     this.currentContainerId = containerId;
     this.currentHostWorkDir = hostWorkDir;
+    this.currentHostSandboxDir = config.hostSandboxDir || hostWorkDir;
     this.currentTrustMode = config.trustMode ?? true;
     this.currentAgentTag = config.agentName || 'agent';
     this.currentAgentConfigId = config.agentName;
@@ -94,6 +96,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
       containerId: this.currentContainerId,
       prompt,
       hostWorkDir: this.currentHostWorkDir,
+      hostSandboxDir: this.currentHostSandboxDir,
       agentTag: this.currentAgentTag,
       agentConfigTag: this.currentAgentConfigId,
       permissionMode: mapPermissionMode(profile),

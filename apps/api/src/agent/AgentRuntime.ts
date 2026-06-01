@@ -22,6 +22,8 @@ interface SandboxInfo {
   containerId: string;
   workDir: string;
   hostWorkDir: string;
+  sandboxDir: string;
+  hostSandboxDir: string;
 }
 
 interface AgentEntry {
@@ -37,6 +39,12 @@ interface AgentEntry {
   isPlanner: boolean; // true if this agent is a planner
   accumulatedOutput: string; // accumulate output for planner agents
   model: string; // model name for context window calculation
+  // Retained after 'done' clears currentMessageId so late 'token_usage' events
+  // (Claude SDK sends result→done before assistant→token_usage) can still
+  // persist token data to the correct message.
+  lastSessionId: string | null;
+  lastMessageId: string | null;
+  lastAgentId: string | null;
 }
 
 /** Estimated context window sizes per model. Default 200K for Claude models. */
@@ -95,6 +103,9 @@ class AgentRuntime {
     entry.currentSession = sessionId;
     entry.currentMessageId = agentMessageId || null;
     entry.currentAgentId = agentId;
+    entry.lastSessionId = sessionId;
+    entry.lastMessageId = agentMessageId || null;
+    entry.lastAgentId = agentId;
     entry.accumulatedOutput = ''; // Reset accumulated output for new task
     this.clearIdleTimer(entry);
     entry.provider.sendPrompt(prompt);
@@ -109,11 +120,11 @@ class AgentRuntime {
     let hostWorkDir: string;
 
     if (sandbox) {
-      // Reuse session sandbox — agent files go to .sandboxes/{sessionId}/
+      // Reuse session sandbox — agent config goes to sandbox dir, user work to workspace
       containerId = sandbox.containerId;
       hostWorkDir = sandbox.hostWorkDir;
-      // Initialize agent directory in the session sandbox
-      AgentDirectoryManager.initialize(hostWorkDir, agent.name, agent.systemPrompt, null, undefined);
+      // Initialize agent directory in the sandbox dir (not user workspace)
+      AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, null, undefined);
       // Update agent record with session sandbox info
       await prisma.agent.update({
         where: { id: agentId },
@@ -136,6 +147,7 @@ class AgentRuntime {
     }
 
     const provider = ProviderFactory.create(agent.provider);
+    const hostSandboxDir = sandbox ? sandbox.hostSandboxDir : hostWorkDir;
     await provider.start(
       'agent-' + agentId,
       'Standby — waiting for tasks',
@@ -145,6 +157,7 @@ class AgentRuntime {
         apiKey: (agent.providerConfig as any)?.apiKey,
         model: (agent.providerConfig as any)?.model,
         hostWorkDir,
+        hostSandboxDir,
         trustMode: true,
       },
     );
@@ -164,6 +177,9 @@ class AgentRuntime {
       isPlanner,
       accumulatedOutput: '',
       model,
+      lastSessionId: null,
+      lastMessageId: null,
+      lastAgentId: null,
     };
 
     provider.onEvent((event: UnifiedAgentEvent) => {
@@ -315,19 +331,23 @@ class AgentRuntime {
         entry.currentAgentId = null;
         this.processNextOrIdle(agentId, entry);
         break;
-      case 'token_usage':
+      case 'token_usage': {
+        // Use current message context, or fall back to last* (after 'done' cleared current*)
+        const tokMsgId = agentMessageId || entry.lastMessageId;
+        const tokSessionId = sessionId !== 'unknown' ? sessionId : entry.lastSessionId || sessionId;
+        const tokAgentId = entry.currentAgentId || entry.lastAgentId;
         // Store token usage in memory for persistence on completion
-        if (agentMessageId) {
-          this.tokenUsageMap.set(agentMessageId, {
+        if (tokMsgId) {
+          this.tokenUsageMap.set(tokMsgId, {
             input: event.inputTokens ?? 0,
             output: event.outputTokens ?? 0,
             cacheRead: event.cacheReadTokens ?? 0,
             cacheCreate: event.cacheCreateTokens ?? 0,
           });
         }
-        broadcast(sessionId, {
+        broadcast(tokSessionId, {
           type: 'token_update',
-          agentMessageId,
+          agentMessageId: tokMsgId,
           details: {
             tokenUsage: {
               input: event.inputTokens ?? 0,
@@ -338,7 +358,36 @@ class AgentRuntime {
             },
           },
         });
+        // If done already fired, persist now since the done handler couldn't
+        if (!agentMessageId && tokMsgId) {
+          const tokUsage = this.tokenUsageMap.get(tokMsgId);
+          if (tokUsage) {
+            prisma.message.update({
+              where: { id: tokMsgId },
+              data: {
+                inputTokens: tokUsage.input,
+                outputTokens: tokUsage.output,
+                cacheReadTokens: tokUsage.cacheRead,
+                cacheCreateTokens: tokUsage.cacheCreate,
+              },
+            }).catch((e) => console.error('[AgentRuntime] Late token persist failed:', e));
+            if (tokAgentId) {
+              prisma.sessionAgent.update({
+                where: { sessionId_agentId: { sessionId: tokSessionId, agentId: tokAgentId } },
+                data: {
+                  totalInputTokens: { increment: tokUsage.input },
+                  totalOutputTokens: { increment: tokUsage.output },
+                  totalCacheReadTokens: { increment: tokUsage.cacheRead },
+                  totalCacheCreateTokens: { increment: tokUsage.cacheCreate },
+                  messageCount: { increment: 1 },
+                },
+              }).catch(() => {});
+            }
+            this.tokenUsageMap.delete(tokMsgId);
+          }
+        }
         break;
+      }
     }
   }
 

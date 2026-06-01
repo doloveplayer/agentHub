@@ -175,7 +175,6 @@ const server = serve(
 );
 
 // Task scheduling is handled by in-process DAG dispatch (ws/taskDispatcher.ts).
-// BullMQ was removed — DAG state persistence replaced it (see DagPersistence.ts).
 
 // Graceful shutdown
 process.on('SIGINT', () => {

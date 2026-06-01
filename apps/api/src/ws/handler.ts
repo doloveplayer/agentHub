@@ -49,6 +49,36 @@ export { broadcast } from './state.js';
 const agentNameToType = new Map<string, string>();
 const sessionTypes = new Map<string, string>(); // sessionId → 'solo' | 'group'
 
+/** Sessions whose sandbox + plan watcher have been initialized. */
+const sandboxInitialized = new Set<string>();
+
+/** Lazily initialize sandbox, plan watcher, and stale task checker for a session.
+ *  Called on first chat message so workspace path is already configured. */
+async function ensureSandboxReady(sessionId: string, sessionType?: string | null): Promise<ReturnType<typeof sandboxes.get>> {
+  if (sandboxInitialized.has(sessionId)) return sandboxes.get(sessionId);
+
+  const sb = await getOrCreateSandbox(sessionId, sessionType);
+  await prisma.session.update({
+    where: { id: sessionId }, data: { sandboxContainerId: sb.containerId },
+  }).catch(() => {});
+  console.log(`[ws] Sandbox ready: session=${sessionId} container=${sb.containerId.slice(0, 12)} hostDir=${sb.hostWorkDir}`);
+
+  if (!sessionsWithMilestones.has(sessionId)) {
+    sessionsWithMilestones.add(sessionId);
+    MilestoneBroadcaster.on(sessionId, (event) => { broadcast(sessionId, event); });
+  }
+
+  import('./planWatcher.js').then(({ startPlanWatcher }) => {
+    startPlanWatcher(sessionId, sb.hostSandboxDir, sb);
+  }).catch((err) => {
+    console.error('[ws] Failed to start plan watcher:', err.message);
+  });
+  startStaleTaskChecker(sessionId, sb);
+
+  sandboxInitialized.add(sessionId);
+  return sb;
+}
+
 // ---- Connection handler ----
 
 function buildProfileFromAgent(agent: { name: string; description?: string; capabilities?: unknown }): Partial<AgentCapability> {
@@ -91,8 +121,8 @@ async function handleConnection(ws: WebSocket, request: any) {
     if (!sandboxReady) { earlyMessages.push({ data }); return; }
     handleMessage(ws, sessionId, data);
   });
-  ws.on('close', () => cleanupSessionClient(sessionId, ws));
-  ws.on('error', () => cleanupSessionClient(sessionId, ws));
+  ws.on('close', () => { sandboxInitialized.delete(sessionId); cleanupSessionClient(sessionId, ws); });
+  ws.on('error', () => { sandboxInitialized.delete(sessionId); cleanupSessionClient(sessionId, ws); });
 
   try {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
@@ -143,30 +173,8 @@ async function handleConnection(ws: WebSocket, request: any) {
   if (!sessions.has(sessionId)) sessions.set(sessionId, new Set());
   sessions.get(sessionId)!.add(ws);
 
-  try {
-    const sb = await getOrCreateSandbox(sessionId, sessionType);
-    await prisma.session.update({
-      where: { id: sessionId }, data: { sandboxContainerId: sb.containerId },
-    }).catch(() => {});
-    console.log(`[ws] Sandbox ready: session=${sessionId} container=${sb.containerId.slice(0, 12)} hostDir=${sb.hostWorkDir}`);
-    if (!sessionsWithMilestones.has(sessionId)) {
-      sessionsWithMilestones.add(sessionId);
-      MilestoneBroadcaster.on(sessionId, (event) => { broadcast(sessionId, event); });
-    }
-    // Start plan.json file watcher for this session
-    import('./planWatcher.js').then(({ startPlanWatcher }) => {
-      startPlanWatcher(sessionId, sb.hostWorkDir, sb);
-    }).catch((err) => {
-      console.error('[ws] Failed to start plan watcher:', err.message);
-    });
-    // Start stale task checker for plan executions
-    startStaleTaskChecker(sessionId, sb);
-  } catch (err: any) {
-    console.error(`[ws] Sandbox creation failed: session=${sessionId} error=${err.message}`);
-    sendTo(ws, { type: 'error', message: `Sandbox creation failed: ${err.message}` });
-    ws.close(4000, 'Sandbox failed');
-    return;
-  }
+  // Sandbox creation is deferred to first chat message (ensureSandboxReady)
+  // so the user can configure a workspace path before the container bind mount is set.
 
   console.log(`[ws] Client connected: session=${sessionId} userId=${userId}`);
   sendTo(ws, { type: 'connected', sessionId });
@@ -316,7 +324,16 @@ async function handleChatMessage(
   const prompt = data.content || data.prompt;
   if (!prompt) { broadcast(sessionId, { type: 'stream_error', error: 'Missing content or prompt' }); return; }
 
-  const sandbox = sandboxes.get(sessionId);
+  // Lazily initialize sandbox on first message (deferred from connection time
+  // so the user can configure workspace path before the bind mount is set)
+  let sandbox: ReturnType<typeof sandboxes.get>;
+  try {
+    sandbox = await ensureSandboxReady(sessionId, sessionTypes.get(sessionId));
+  } catch (err: any) {
+    console.error(`[ws] Sandbox creation failed: session=${sessionId} error=${err.message}`);
+    broadcast(sessionId, { type: 'stream_error', error: `Sandbox creation failed: ${err.message}` });
+    return;
+  }
   if (!sandbox) { broadcast(sessionId, { type: 'stream_error', error: 'No active sandbox' }); return; }
 
   // Resolve trust mode from session permission mode.
@@ -422,11 +439,11 @@ async function handleChatMessage(
 1. 在规划任务之前，请**先读取你的 skill cap-inventory.md**，获取当前群聊中所有可用 Agent 的能力清单
 2. plan.json 中的 agentType 必须使用 cap-inventory.md 中声明的值，不要附加 session ID 或后缀
 3. 每个任务必须包含 risk 字段（low / high），参考 plan skill 中的风险判定规则
-4. 将 plan.json 通过 Write 工具写入 /workspace/plan.json，Hub 会自动检测并调度\n`;
+4. 将 plan.json 通过 Write 工具写入 /sandbox/plan.json，Hub 会自动检测并调度\n`;
         }
-        agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostWorkDir) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
+        agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostSandboxDir) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
         isPlannerAgent = agent.name === 'planner' || agent.name.startsWith('planner-');
-        if (sandbox) AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null, sessionId);
+        if (sandbox) AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null, sessionId);
       }
     } else {
       agentPrompt = history ? `${history}\n\n---\n${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}` : `${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}`;
@@ -698,7 +715,7 @@ async function handleConfirmPlan(sessionId: string, data: { planId: string; task
     include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, providerConfig: true } } },
   });
   for (const sa of sessionAgents) {
-    AgentDirectoryManager.initialize(sandbox.hostWorkDir, sa.agent.name, sa.agent.systemPrompt, sa.agent.providerConfig as Record<string, unknown> | null);
+    AgentDirectoryManager.initialize(sandbox.hostSandboxDir, sa.agent.name, sa.agent.systemPrompt, sa.agent.providerConfig as Record<string, unknown> | null);
   }
 
   dispatchTasksToAgents(sessionId, data.planId, tasks, {

@@ -84,7 +84,7 @@ export class InboxManager {
 
 You are part of a multi-agent session. Other agents may observe your work and contact you.
 
-INBOX: Your inbox is at /workspace/_inbox_${norm(agentName)}.jsonl. Other agents may send you intervention requests here.
+INBOX: Your inbox is at /sandbox/_inbox_${norm(agentName)}.jsonl. Other agents may send you intervention requests here.
 After completing each significant tool_use, read your inbox file and respond to any intervention requests:
   - If helpful and relevant, respond with accepted:true
   - If not relevant, respond with accepted:false and a brief reason

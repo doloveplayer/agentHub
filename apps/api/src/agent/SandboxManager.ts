@@ -11,8 +11,10 @@ const SANDBOXES_ROOT = config.sandbox.root;
 
 export interface SandboxInfo {
   containerId: string;
-  workDir: string;       // container path (/workspace)
-  hostWorkDir: string;   // host path
+  workDir: string;       // container path (/workspace) — user's working directory
+  hostWorkDir: string;   // host path to user workspace
+  sandboxDir: string;    // container path (/sandbox) — agent config + runtime files
+  hostSandboxDir: string; // host path to sandbox directory
 }
 
 export interface PortForwardInfo {
@@ -26,13 +28,14 @@ const portForwards = new Map<string, { server: http.Server; info: PortForwardInf
 
 export class SandboxManager {
   static async create(sessionId: string, memoryMb?: number, customHostWorkDir?: string): Promise<SandboxInfo> {
-    // Use custom path if provided, otherwise use default sandbox path
-    const hostWorkDir = customHostWorkDir || resolve(SANDBOXES_ROOT, sessionId);
-
-    // Only create directory if using default sandbox path
-    if (!customHostWorkDir && !existsSync(hostWorkDir)) {
-      mkdirSync(hostWorkDir, { recursive: true });
+    // Sandbox directory is ALWAYS the default path — agent config + runtime files
+    const hostSandboxDir = resolve(SANDBOXES_ROOT, sessionId);
+    if (!existsSync(hostSandboxDir)) {
+      mkdirSync(hostSandboxDir, { recursive: true });
     }
+
+    // User workspace: custom path if provided, otherwise same as sandbox
+    const hostWorkDir = customHostWorkDir || hostSandboxDir;
 
     // Validate that custom directory exists
     if (customHostWorkDir && !existsSync(customHostWorkDir)) {
@@ -46,6 +49,12 @@ export class SandboxManager {
 
     const mem = memoryMb ?? config.sandbox.soloMemoryMb;
 
+    // Dual mount: sandbox dir for agent config, user workspace for actual work
+    const binds = [`${hostSandboxDir}:/sandbox`];
+    if (hostWorkDir !== hostSandboxDir) {
+      binds.push(`${hostWorkDir}:/workspace`);
+    }
+
     const container = await docker.createContainer({
       name: containerName,
       Image: config.sandbox.image,
@@ -57,7 +66,7 @@ export class SandboxManager {
       OpenStdin: false,
       HostConfig: {
         Memory: mem * 1024 * 1024,
-        Binds: [`${hostWorkDir}:/workspace`],
+        Binds: binds,
       },
     });
 
@@ -67,6 +76,8 @@ export class SandboxManager {
       containerId: container.id,
       workDir: '/workspace',
       hostWorkDir,
+      sandboxDir: '/sandbox',
+      hostSandboxDir,
     };
   }
 

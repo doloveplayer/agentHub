@@ -27,6 +27,7 @@ export interface ProviderConfig {
   env?: Record<string, string>;
   agentName?: string;
   hostWorkDir?: string;
+  hostSandboxDir?: string;
   trustMode?: boolean;
 }
 

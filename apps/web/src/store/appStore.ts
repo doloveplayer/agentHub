@@ -264,28 +264,26 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   appendToMessage: (sessionId, msgId, chunk) =>
     set((state) => {
-      const sessionMsgs = state.messages[sessionId] ?? [];
-      return {
-        messages: {
-          ...state.messages,
-          [sessionId]: sessionMsgs.map((m) =>
-            m.id === msgId ? { ...m, content: m.content + chunk } : m
-          ),
-        },
-      };
+      const sessionMsgs = state.messages[sessionId];
+      if (!sessionMsgs) return state;
+      const idx = sessionMsgs.findIndex((m) => m.id === msgId);
+      if (idx < 0) return state;
+      const updated = { ...sessionMsgs[idx], content: sessionMsgs[idx].content + chunk };
+      const next = sessionMsgs.slice();
+      next[idx] = updated;
+      return { messages: { ...state.messages, [sessionId]: next } };
     }),
 
   setMessageStatus: (sessionId, msgId, status) =>
     set((state) => {
-      const sessionMsgs = state.messages[sessionId] ?? [];
-      return {
-        messages: {
-          ...state.messages,
-          [sessionId]: sessionMsgs.map((m) =>
-            m.id === msgId ? { ...m, status: status as Message['status'] } : m
-          ),
-        },
-      };
+      const sessionMsgs = state.messages[sessionId];
+      if (!sessionMsgs) return state;
+      const idx = sessionMsgs.findIndex((m) => m.id === msgId);
+      if (idx < 0) return state;
+      const updated = { ...sessionMsgs[idx], status: status as Message['status'] };
+      const next = sessionMsgs.slice();
+      next[idx] = updated;
+      return { messages: { ...state.messages, [sessionId]: next } };
     }),
 
   addAgentEvent: (messageId, event) =>
