@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, existsSync } from 'fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 
 export class AgentDirectoryManager {
@@ -42,6 +42,18 @@ ${systemPrompt}
 `;
 
     writeFileSync(resolve(agentDir, 'CLAUDE.md'), claudeMd, 'utf-8');
+
+    // Inject plan-and-dispatch skill for Planner agents
+    if (agentName === 'planner' || agentName.startsWith('planner-')) {
+      const __dirname = new URL('.', import.meta.url).pathname;
+      const skillTemplatePath = resolve(__dirname, 'skills', 'plan-and-dispatch.md');
+      try {
+        const skillContent = readFileSync(skillTemplatePath, 'utf-8');
+        writeFileSync(resolve(claudeConfigDir, 'skills', 'plan-and-dispatch.md'), skillContent, 'utf-8');
+      } catch (err: any) {
+        console.warn(`[AgentDirectory] Could not write plan skill for ${agentName}: ${err.message}`);
+      }
+    }
 
     // Write Claude Code settings.json if provided (model, permissions, etc.)
     if (settings) {
