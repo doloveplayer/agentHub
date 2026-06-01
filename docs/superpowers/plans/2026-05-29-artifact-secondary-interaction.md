@@ -963,12 +963,12 @@ git commit -m "feat: inject structured quote context into agent prompt and backf
 
 > **说明**：PRD 4.4.4 标记 PPT 内联浏览为已完成，但代码中未找到实现。此 Task 补齐基础 PPT 查看器，为后续 PPT 选区引用做铺垫。
 
-- [ ] **Step 1: 安装依赖**
+- [x] **Step 1: 安装依赖**
 
 Run: `cd apps/web && npm install pptx-preview`
 Expected: 安装成功。`pptx-preview` 是轻量级 PPTX 渲染库，基于 JSZip 解析 + Canvas 渲染。
 
-- [ ] **Step 2: 创建 PptxViewer 组件**
+- [x] **Step 2: 创建 PptxViewer 组件**
 
 ```tsx
 // apps/web/src/components/PptxViewer.tsx
@@ -1083,12 +1083,12 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
 }
 ```
 
-- [ ] **Step 3: TypeScript 编译检查**
+- [x] **Step 3: TypeScript 编译检查**
 
 Run: `npx tsc --noEmit -p apps/web/tsconfig.json`
 Expected: 无错误（可能需要处理 pptx-preview 的类型声明，若无类型则添加 `declare module 'pptx-preview'`）。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/web/src/components/PptxViewer.tsx apps/web/package.json
@@ -1105,7 +1105,7 @@ git commit -m "feat: add PptxViewer component with slide navigation and zoom"
 
 > **说明**：PPT 渲染为 Canvas，无法直接做文字选区。采用截图区域方案：用户在 PPT 上拖拽选区 → 截取该区域 → 以截图 + 描述发送给 Agent。
 
-- [ ] **Step 1: PptxViewer 添加区域截图功能**
+- [x] **Step 1: PptxViewer 添加区域截图功能**
 
 在 `PptxViewer` 中添加拖拽选区逻辑：
 
@@ -1188,16 +1188,16 @@ const handleMouseUp = async () => {
 </div>
 ```
 
-- [ ] **Step 2: 文档段落引用已有的结构化 prompt 升级**
+- [x] **Step 2: 文档段落引用已有的结构化 prompt 升级**
 
 在 Task 4 中已将 `MessageBubble` 的段落引用升级为 `buildQuotePrompt`。文档渲染复用同一组件，无需额外修改。
 
-- [ ] **Step 3: TypeScript 编译检查**
+- [x] **Step 3: TypeScript 编译检查**
 
 Run: `npx tsc --noEmit -p apps/web/tsconfig.json`
 Expected: 无错误。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/web/src/components/PptxViewer.tsx
@@ -1208,7 +1208,7 @@ git commit -m "feat: add PPT region selection and screenshot-based quote"
 
 ## Task 14: E2E 验证 — 全链路测试
 
-- [ ] **Step 1: 启动服务并验证编译**
+- [x] **Step 1: 启动服务并验证编译**
 
 Run:
 ```bash
@@ -1216,7 +1216,7 @@ npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tscon
 ```
 Expected: 两个项目均无编译错误。
 
-- [ ] **Step 2: 功能验证清单**
+- [x] **Step 2: 功能验证清单**
 
 手动验证以下场景：
 
@@ -1227,7 +1227,7 @@ Expected: 两个项目均无编译错误。
 5. **PPT 浏览**：上传 PPTX 文件 → 内联查看器显示，可翻页/缩放
 6. **PPT 区域截图引用**：在 PPT 查看器中拖拽选区 → 截图数据注入输入框
 
-- [ ] **Step 3: Commit 最终状态**
+- [x] **Step 3: Commit 最终状态**
 
 ```bash
 git add -A
