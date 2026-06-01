@@ -4,7 +4,9 @@ import { resolve, relative } from 'path';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { WorkspaceManager } from '../agent/WorkspaceManager.js';
-import archiver from 'archiver';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const archiver: any = require('archiver');
 
 const workspace = new Hono();
 workspace.use('*', authMiddleware);
