@@ -96,10 +96,10 @@ function toTarget(agent: Pick<AgentConfig, 'id' | 'name' | 'displayName'>): Agen
 }
 
 /** Find the closest available agent when exact type match fails */
-export function findClosestAgent(
+export function findClosestAgent<T extends { name: string; displayName: string }>(
   neededType: string,
-  available: { name: string; displayName: string }[],
-): { name: string; displayName: string } | null {
+  available: T[],
+): T | null {
   if (available.length === 0) return null;
   // Exact match on displayName
   const exact = available.find(a => a.displayName === neededType);

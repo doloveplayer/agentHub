@@ -75,6 +75,13 @@ import {
   recordMessageBeforeVersion,
   takeMessageBeforeVersion,
 } from './diffBroadcast.js';
+import {
+  appendTaskRunOutput,
+  clearActiveTaskRun,
+  getActiveTaskRun,
+  setActiveTaskRun,
+} from './taskEventRouter.js';
+import type { AbstractProvider, UnifiedAgentEvent } from '../agent/providers/base.js';
 
 export { type AgentTaskQueue, type TaskDispatchNode };
 
@@ -153,6 +160,141 @@ function buildTaskMessageId(planId: string, taskId: string): string {
   return `task-${planId}-${taskId}`.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
 
+const providersWithTaskHandler = new WeakSet<AbstractProvider>();
+
+function registerProviderTaskEventHandler(
+  sessionId: string,
+  agentName: string,
+  provider: AbstractProvider,
+): void {
+  if (providersWithTaskHandler.has(provider)) return;
+  providersWithTaskHandler.add(provider);
+  provider.onEvent((event) => {
+    handleProviderTaskEvent(sessionId, agentName, event);
+  });
+}
+
+function handleProviderTaskEvent(
+  sessionId: string,
+  agentName: string,
+  event: UnifiedAgentEvent,
+): void {
+  const run = getActiveTaskRun<AgentTaskQueue, TaskDispatchNode>(sessionId, agentName);
+  if (!run || !run.queue || !run.task) return;
+
+  const { queue, task, taskMessageId } = run;
+  const execution = planExecutions.get(planKey(sessionId, queue.planId));
+  if (execution) touchTask(execution, task.id);
+
+  switch (event.type) {
+    case 'thinking': {
+      const chunk = event.content || '';
+      appendTaskRunOutput(sessionId, agentName, chunk);
+      broadcast(sessionId, { type: 'stream_chunk', content: chunk, agentMessageId: taskMessageId });
+      broadcast(sessionId, {
+        type: 'agent_status',
+        status: 'thinking',
+        details: { content: chunk.slice(0, 120) },
+        agentMessageId: taskMessageId,
+        timestamp: Date.now(),
+      });
+      break;
+    }
+    case 'tool_use':
+      broadcast(sessionId, {
+        type: 'agent_status',
+        status: 'tool_use',
+        details: {
+          toolName: event.toolName || event.toolInput?.toolName,
+          input: event.toolInput,
+          inputPreview: JSON.stringify(event.toolInput || {}).slice(0, 80),
+        },
+        agentMessageId: taskMessageId,
+        timestamp: Date.now(),
+      });
+      break;
+    case 'tool_result':
+      broadcast(sessionId, {
+        type: 'agent_status',
+        status: 'tool_result',
+        details: { resultPreview: (event.content || '').slice(0, 80) },
+        agentMessageId: taskMessageId,
+        timestamp: Date.now(),
+      });
+      break;
+    case 'token_usage':
+      stateTracker.updateTokenUsage(taskMessageId, {
+        input: event.inputTokens || 0,
+        output: event.outputTokens || 0,
+        cacheRead: event.cacheReadTokens || 0,
+        cacheCreate: event.cacheCreateTokens || 0,
+      });
+      broadcast(sessionId, {
+        type: 'agent_status',
+        status: 'token_update',
+        details: {
+          tokenUsage: {
+            input: event.inputTokens || 0,
+            output: event.outputTokens || 0,
+            cacheRead: event.cacheReadTokens || 0,
+            cacheCreate: event.cacheCreateTokens || 0,
+            contextPct: calcContextPct(event.inputTokens || 0),
+          },
+        },
+        agentMessageId: taskMessageId,
+        timestamp: Date.now(),
+      });
+      break;
+    case 'done': {
+      const exitCode = event.exitCode ?? 0;
+      const succeeded = exitCode === 0;
+      const output = getActiveTaskRun<AgentTaskQueue, TaskDispatchNode>(sessionId, agentName)?.output || '';
+      broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMessageId, fullContent: output, exitCode });
+      broadcast(sessionId, {
+        type: succeeded ? 'task_completed' : 'task_failed',
+        planId: queue.planId,
+        taskId: task.id,
+        agentName,
+        output: output.slice(0, 200),
+      });
+      stateTracker.setDone(taskMessageId);
+      void prisma.message.update({
+        where: { id: taskMessageId },
+        data: { content: output || '[Agent finished]', status: succeeded ? 'done' : 'error' },
+      }).catch(() => {});
+      agentCurrentTask.delete(agentName);
+      agentCurrentMessage.delete(agentName);
+      clearActiveTaskRun(sessionId, agentName, taskMessageId);
+      queue.current = null;
+      clearRunningAgent(sessionId, taskMessageId);
+      import('./handler.js').then(({ drainPendingQueue, drainPerSessionQueue }) => {
+        drainPendingQueue();
+        drainPerSessionQueue(sessionId);
+      }).catch(() => {});
+      processNextInQueue(sessionId, agentName, queue);
+      void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, succeeded);
+      break;
+    }
+    case 'error':
+      broadcast(sessionId, {
+        type: 'stream_error',
+        agentMessageId: taskMessageId,
+        error: event.message || 'Unknown error',
+      });
+      agentCurrentTask.delete(agentName);
+      agentCurrentMessage.delete(agentName);
+      clearActiveTaskRun(sessionId, agentName, taskMessageId);
+      queue.current = null;
+      clearRunningAgent(sessionId, taskMessageId);
+      import('./handler.js').then(({ drainPendingQueue, drainPerSessionQueue }) => {
+        drainPendingQueue();
+        drainPerSessionQueue(sessionId);
+      }).catch(() => {});
+      processNextInQueue(sessionId, agentName, queue);
+      break;
+  }
+}
+
 export async function processNextInQueue(
   sessionId: string,
   agentName: string,
@@ -196,6 +338,7 @@ export async function processNextInQueue(
   const procInfo = agentProcesses.get(sessionId)?.get(agentName);
 
   if (procInfo && procInfo.provider.isAlive()) {
+    registerProviderTaskEventHandler(sessionId, agentName, procInfo.provider);
     const taskPrompt = buildTaskPrompt(task);
     const taskMessageId = buildTaskMessageId(queue.planId, task.id);
     recordMessageBeforeVersion(
@@ -216,6 +359,15 @@ export async function processNextInQueue(
       });
       incRunningAgentCount();
     }
+    setActiveTaskRun({
+      sessionId,
+      agentName,
+      planId: queue.planId,
+      taskId: task.id,
+      taskMessageId,
+      queue,
+      task,
+    });
     broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: procInfo.agentId, taskMessageId });
     procInfo.provider.sendPrompt(taskPrompt);
   } else {
@@ -250,6 +402,7 @@ async function startReplForTask(
   try {
     const { ProviderFactory } = await import('../agent/providers/factory.js');
     const provider = ProviderFactory.create('claude-code');
+    registerProviderTaskEventHandler(sessionId, agentName, provider);
 
     // Create message and register state BEFORE provider.start(),
     // so task_assigned reaches the frontend before any stream_chunk events.
@@ -266,71 +419,16 @@ async function startReplForTask(
       provider, timer: null, agentId: agent.id,
     });
     agentCurrentMessage.set(agentName, taskMsgId);
-    broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
-
-    let output = '';
-    provider.onEvent((event) => {
-      // Touch task activity on every event to prevent timeout
-      if (task && queue.planId) {
-        const execution = planExecutions.get(planKey(sessionId, queue.planId));
-        if (execution) touchTask(execution, task.id);
-      }
-      switch (event.type) {
-        case 'thinking':
-          output += event.content || '';
-          broadcast(sessionId, { type: 'stream_chunk', content: event.content || '', agentMessageId: taskMsgId });
-          broadcast(sessionId, { type: 'agent_status', status: 'thinking', details: { content: (event.content || '').slice(0, 120) }, agentMessageId: taskMsgId, timestamp: Date.now() });
-          break;
-        case 'tool_use':
-          broadcast(sessionId, { type: 'agent_status', status: 'tool_use', details: { toolName: (event as any).toolName || (event as any).toolInput?.toolName, input: (event as any).toolInput, inputPreview: JSON.stringify((event as any).toolInput || {}).slice(0, 80) }, agentMessageId: taskMsgId, timestamp: Date.now() });
-          break;
-        case 'tool_result':
-          broadcast(sessionId, { type: 'agent_status', status: 'tool_result', details: { resultPreview: ((event as any).content || '').slice(0, 80) }, agentMessageId: taskMsgId, timestamp: Date.now() });
-          break;
-        case 'token_usage':
-          stateTracker.updateTokenUsage(taskMsgId, {
-            input: (event as any).inputTokens || 0,
-            output: (event as any).outputTokens || 0,
-            cacheRead: (event as any).cacheReadTokens || 0,
-            cacheCreate: (event as any).cacheCreateTokens || 0,
-          });
-          broadcast(sessionId, { type: 'agent_status', status: 'token_update', details: { tokenUsage: { input: (event as any).inputTokens || 0, output: (event as any).outputTokens || 0, cacheRead: (event as any).cacheReadTokens || 0, cacheCreate: (event as any).cacheCreateTokens || 0, contextPct: calcContextPct((event as any).inputTokens || 0) } }, agentMessageId: taskMsgId, timestamp: Date.now() });
-          break;
-        case 'done':
-          broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMsgId, fullContent: output, exitCode: event.exitCode ?? 0 });
-          broadcast(sessionId, { type: event.exitCode === 0 ? 'task_completed' : 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: output.slice(0, 200) });
-          stateTracker.setDone(taskMsgId);
-          // Persist agent output to DB so it survives page refresh / reconnect
-          void prisma.message.update({ where: { id: taskMsgId }, data: { content: output || '[Agent finished]', status: event.exitCode === 0 ? 'done' : 'error' } }).catch(() => {});
-          agentCurrentTask.delete(agentName);
-          agentCurrentMessage.delete(agentName);
-          queue.current = null;
-          // Release concurrency slot (counterpart to incRunningAgentCount in startReplForTask)
-          clearRunningAgent(sessionId, taskMsgId);
-          // Drain any pending agents waiting for a concurrency slot
-          import('./handler.js').then(({ drainPendingQueue, drainPerSessionQueue }) => {
-            drainPendingQueue();
-            drainPerSessionQueue(sessionId);
-          }).catch(() => {});
-          processNextInQueue(sessionId, agentName, queue);
-          void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, event.exitCode === 0);
-          break;
-        case 'error':
-          broadcast(sessionId, { type: 'stream_error', agentMessageId: taskMsgId, error: event.message || 'Unknown error' });
-          agentCurrentTask.delete(agentName);
-          agentCurrentMessage.delete(agentName);
-          queue.current = null;
-          // Release concurrency slot on error too
-          clearRunningAgent(sessionId, taskMsgId);
-          // Drain any pending agents waiting for a concurrency slot
-          import('./handler.js').then(({ drainPendingQueue, drainPerSessionQueue }) => {
-            drainPendingQueue();
-            drainPerSessionQueue(sessionId);
-          }).catch(() => {});
-          processNextInQueue(sessionId, agentName, queue);
-          break;
-      }
+    setActiveTaskRun({
+      sessionId,
+      agentName,
+      planId: queue.planId,
+      taskId: task.id,
+      taskMessageId: taskMsgId,
+      queue,
+      task,
     });
+    broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
 
     console.log(`[ws] Task REPL started: agent=${agentName} task=${task.id}`);
     await provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
@@ -340,7 +438,10 @@ async function startReplForTask(
     console.error(`[ws] Task REPL start failed: ${err.message}`);
     broadcast(sessionId, { type: 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: `Failed to start: ${err.message}` });
     agentCurrentTask.delete(agentName);
+    agentCurrentMessage.delete(agentName);
+    clearActiveTaskRun(sessionId, agentName, taskMsgId);
     queue.current = null;
+    clearRunningAgent(sessionId, taskMsgId);
     void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, false);
   }
 }
@@ -401,6 +502,7 @@ export async function dispatchTasksToAgents(
         broadcast(sessionId, {
           type: 'agent_reassigned', planId, taskId: task.id,
           from: task.agentType, to: suggested.name,
+          agentId: suggested.id,
           taskTitle: task.title,
         });
       } else {
@@ -915,7 +1017,7 @@ export async function reassignQueuedTasks(
     const matching = availableAgents.filter(
       (a) => a.name !== failedAgentName
     );
-    let target: { name: string; displayName: string } | null = matching.length > 0
+    let target: (typeof availableAgents)[number] | null = matching.length > 0
       ? matching.reduce((best, a) => {
           const load = (agentTaskQueues.get(a.name)?.tasks.length ?? 0) + (agentCurrentTask.has(a.name) ? 1 : 0);
           const bestLoad = (agentTaskQueues.get(best.name)?.tasks.length ?? 0) + (agentCurrentTask.has(best.name) ? 1 : 0);
@@ -923,7 +1025,7 @@ export async function reassignQueuedTasks(
         })
       : null;
     if (!target) {
-      target = findClosestAgent(task.agentType, availableAgents as any);
+      target = findClosestAgent(task.agentType, availableAgents);
     }
 
     if (!target) {
@@ -944,6 +1046,7 @@ export async function reassignQueuedTasks(
       taskId: task.id,
       from: failedAgentName,
       to: target.name,
+      agentId: target.id,
       taskTitle: task.title,
     });
 

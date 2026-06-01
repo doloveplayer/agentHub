@@ -206,6 +206,11 @@ export function useChat(sessionId: string) {
                 setTaskPlan(data.planId, data.tasks);
               }
               break;
+            case 'plan_recovered':
+              if (data.planId && data.tasks) {
+                setTaskPlan(data.planId, data.tasks);
+              }
+              break;
             case 'plan_executing':
               // Individual task_assigned/task_completed/task_failed events drive
               // node status. Keep unresolved dependencies waiting here.
@@ -230,6 +235,13 @@ export function useChat(sessionId: string) {
                     store.addStreamingMessage(sessionId, data.taskMessageId);
                   }
                 }
+              }
+              break;
+            case 'agent_reassigned':
+              if (data.planId && data.taskId && data.to) {
+                const store = useAppStore.getState();
+                const agentId = data.agentId || store.agents.find((agent) => agent.name === data.to)?.id || '';
+                store.setTaskAgent(data.planId, data.taskId, agentId, data.to);
               }
               break;
             case 'conflict_detected': {

@@ -187,6 +187,8 @@ async function handleConnection(ws: WebSocket, request: any) {
       broadcast(sessionId, {
         type: 'plan_recovered',
         planId: plan.planId,
+        planTitle: plan.planTitle,
+        status: plan.status,
         tasks: plan.tasks.map((t) => ({
           taskId: t.id,
           planId: plan.planId,
@@ -887,5 +889,3 @@ export function stopHeartbeat(): void {
 export function handleWebSocket(ws: WebSocket, request: any): void {
   handleConnection(ws, request);
 }
-
-

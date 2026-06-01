@@ -1,24 +1,46 @@
 import React, { Component, useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, AlertTriangle } from 'lucide-react';
 import { buildQuotePrompt, type QuotePayload } from '../lib/quoteContext';
+import type { PptxFallbackSlide } from '../lib/pptxFallback';
+
+const PPTX_PREVIEW_FALLBACK_MESSAGE =
+  'The PPTX was downloaded, but browser preview cannot render this file. Open it in PowerPoint or LibreOffice from the download button.';
+
+export function normalizePptxPreviewError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err || '');
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes('t is undefined') ||
+    lower.includes('cannot read properties of undefined') ||
+    lower.includes('undefined is not an object') ||
+    lower.includes('null is not an object')
+  ) {
+    return PPTX_PREVIEW_FALLBACK_MESSAGE;
+  }
+
+  return raw ? `Browser preview cannot render this PPTX file: ${raw}` : PPTX_PREVIEW_FALLBACK_MESSAGE;
+}
 
 /** Catches crashes from the pptx-preview library (e.g. missing background elements) */
-class PptxErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
-  constructor(props: { children: React.ReactNode }) {
+class PptxErrorBoundary extends Component<{ children: React.ReactNode; onError?: (message: string) => void }, { error: string | null }> {
+  constructor(props: { children: React.ReactNode; onError?: (message: string) => void }) {
     super(props);
     this.state = { error: null };
   }
   static getDerivedStateFromError(error: Error) {
-    return { error: error.message || 'Unknown rendering error' };
+    return { error: normalizePptxPreviewError(error) };
+  }
+  componentDidCatch(error: Error) {
+    this.props.onError?.(normalizePptxPreviewError(error));
   }
   render() {
     if (this.state.error) {
       return (
         <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 text-xs text-hub-muted">
           <AlertTriangle className="h-8 w-8 text-hub-warning" />
-          <p className="text-hub-tertiary">Preview unavailable for this slide</p>
+          <p className="text-hub-tertiary">Preview unavailable</p>
           <p className="text-[11px] text-hub-muted max-w-sm text-center">
-            The PPTX contains unsupported elements. Try downloading and opening with PowerPoint or LibreOffice.
+            {this.state.error}
           </p>
         </div>
       );
@@ -32,9 +54,10 @@ interface Props {
   src: string;
   /** Whether src is base64-encoded data */
   isBase64?: boolean;
+  onPreviewError?: (message: string) => void;
 }
 
-export function PptxViewer({ src, isBase64 = false }: Props) {
+export function PptxViewer({ src, isBase64 = false, onPreviewError }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const previewerRef = useRef<ReturnType<typeof import('pptx-preview').init> | null>(null);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -42,6 +65,7 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
   const [scale, setScale] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackSlides, setFallbackSlides] = useState<PptxFallbackSlide[] | null>(null);
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const dragEndRef = useRef<{ x: number; y: number } | null>(null);
   const selectingRef = useRef(false);
@@ -52,13 +76,12 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
     let cancelled = false;
 
     const load = async () => {
+      let buffer: ArrayBuffer | null = null;
       try {
         setLoading(true);
         setError(null);
+        setFallbackSlides(null);
 
-        const { init } = await import('pptx-preview');
-
-        let buffer: ArrayBuffer;
         if (isBase64) {
           const base64 = src.includes(',') ? src.split(',')[1] : src;
           const binary = atob(base64);
@@ -69,10 +92,13 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
           }
         } else {
           const resp = await fetch(src);
+          if (!resp.ok) throw new Error(`Download failed (${resp.status})`);
           buffer = await resp.arrayBuffer();
         }
 
         if (cancelled || !containerRef.current) return;
+
+        const { init } = await import('pptx-preview');
 
         // Destroy previous previewer if any
         if (previewerRef.current) {
@@ -94,10 +120,34 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
         if (!cancelled) {
           setTotalSlides(previewer.slideCount);
           setCurrentSlide(previewer.currentIndex ?? 0);
+          setFallbackSlides(null);
         }
       } catch (err: any) {
         if (!cancelled) {
-          setError(err.message || 'Failed to load PPTX');
+          const message = normalizePptxPreviewError(err);
+          if (buffer) {
+            try {
+              const { parsePptxFallbackSlides } = await import('../lib/pptxFallback');
+              const fallback = await parsePptxFallbackSlides(buffer);
+              if (!cancelled && fallback.length > 0) {
+                if (previewerRef.current) {
+                  previewerRef.current.destroy();
+                  previewerRef.current = null;
+                }
+                if (containerRef.current) containerRef.current.innerHTML = '';
+                setFallbackSlides(fallback);
+                setTotalSlides(fallback.length);
+                setCurrentSlide(0);
+                setError(null);
+                return;
+              }
+            } catch (fallbackErr) {
+              console.warn('[PptxViewer] fallback parser failed:', fallbackErr);
+            }
+          }
+          setFallbackSlides(null);
+          setError(message);
+          onPreviewError?.(message);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -113,9 +163,14 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
         previewerRef.current = null;
       }
     };
-  }, [src, isBase64]);
+  }, [src, isBase64, onPreviewError]);
 
   const goToSlide = useCallback((index: number) => {
+    if (fallbackSlides?.length) {
+      setCurrentSlide(Math.max(0, Math.min(fallbackSlides.length - 1, index)));
+      return;
+    }
+
     const previewer = previewerRef.current;
     if (!previewer) return;
     const clamped = Math.max(0, Math.min(totalSlides - 1, index));
@@ -123,10 +178,12 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
       previewer.renderSingleSlide(clamped);
       setCurrentSlide(clamped);
     } catch (err: any) {
+      const message = normalizePptxPreviewError(err);
       console.warn('[PptxViewer] renderSingleSlide failed:', err.message);
-      setError(`This slide cannot be rendered (${err.message || 'unsupported content'}). Try another slide.`);
+      setError(message);
+      onPreviewError?.(message);
     }
-  }, [totalSlides]);
+  }, [fallbackSlides, totalSlides, onPreviewError]);
 
   const prevSlide = useCallback(() => {
     goToSlide(currentSlide - 1);
@@ -275,15 +332,19 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
             {error}
           </div>
         )}
-        <PptxErrorBoundary>
-          <div
-            ref={containerRef}
-            style={{
-              transform: `scale(${scale})`,
-              transformOrigin: 'top left',
-            }}
-          />
-        </PptxErrorBoundary>
+        {fallbackSlides?.length ? (
+          <FallbackSlideRenderer slide={fallbackSlides[currentSlide]} scale={scale} />
+        ) : (
+          <PptxErrorBoundary onError={onPreviewError}>
+            <div
+              ref={containerRef}
+              style={{
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left',
+              }}
+            />
+          </PptxErrorBoundary>
+        )}
         {/* Selection overlay using stable dragRect state */}
         {dragRect && (
           <div
@@ -299,4 +360,61 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
       </div>
     </div>
   );
+}
+
+function FallbackSlideRenderer({ slide, scale }: { slide: PptxFallbackSlide; scale: number }) {
+  const width = 960;
+  const height = Math.round(width * (slide.height / slide.width));
+
+  return (
+    <div className="p-3">
+      <div
+        className="relative overflow-hidden bg-white shadow"
+        style={{
+          width,
+          height,
+          transform: `scale(${scale})`,
+          transformOrigin: 'top left',
+        }}
+      >
+        {slide.elements.map((element) => {
+          const hasText = element.text.trim().length > 0;
+          return (
+            <div
+              key={element.id}
+              className="absolute overflow-hidden"
+              style={{
+                left: `${element.x * 100}%`,
+                top: `${element.y * 100}%`,
+                width: `${element.w * 100}%`,
+                height: `${element.h * 100}%`,
+                backgroundColor: element.fill,
+                color: textColorForFill(element.fill),
+                fontSize: element.fontSize ? `${Math.max(8, element.fontSize)}px` : '14px',
+                fontWeight: element.bold ? 700 : 400,
+                lineHeight: 1.28,
+                padding: hasText ? '8px' : undefined,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {hasText ? element.text : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function textColorForFill(fill?: string): string {
+  if (!fill) return '#111827';
+  const match = fill.match(/^#?([0-9A-Fa-f]{6})$/);
+  if (!match) return '#111827';
+  const value = match[1];
+  const r = Number.parseInt(value.slice(0, 2), 16);
+  const g = Number.parseInt(value.slice(2, 4), 16);
+  const b = Number.parseInt(value.slice(4, 6), 16);
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance < 0.45 ? '#ffffff' : '#111827';
 }

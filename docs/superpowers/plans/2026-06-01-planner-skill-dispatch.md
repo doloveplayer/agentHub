@@ -878,10 +878,10 @@ In `AgentRuntime.ts`, change the `done` handler's planner branch:
 if (entry.isPlanner && entry.accumulatedOutput) {
   const planPath = `${entry.hostWorkDir}/plan.json`;
   const { existsSync } = await import('fs');
-  
+
   // Give file watcher a 3s head start to detect plan.json
   await new Promise(r => setTimeout(r, 3000));
-  
+
   if (!existsSync(planPath)) {
     // Fallback: text-based plan extraction
     const plan = extractAndValidate(entry.accumulatedOutput);
@@ -924,7 +924,7 @@ if (entry.isPlanner && entry.accumulatedOutput) {
   // Fallback: text extraction from output (when Write tool unavailable).
   const planPath = `${entry.hostWorkDir}/plan.json`;
   let planHandled = false;
-  
+
   try {
     const { existsSync } = require('fs');
     if (existsSync(planPath)) {
@@ -932,7 +932,7 @@ if (entry.isPlanner && entry.accumulatedOutput) {
       planHandled = true;
     }
   } catch {}
-  
+
   if (!planHandled) {
     const plan = extractAndValidate(entry.accumulatedOutput);
     if (plan) {

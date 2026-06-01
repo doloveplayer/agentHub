@@ -384,6 +384,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const tasks = state.taskPlans[planId];
       if (!tasks) return state;
       const task = tasks.find(t => t.taskId === taskId);
+      if (!task) return state;
       return {
         taskPlans: {
           ...state.taskPlans,

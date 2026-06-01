@@ -18,7 +18,7 @@ function stripSessionSuffix(agentType: string): string {
 export function normalizePlan(raw: Record<string, unknown>): Plan {
   return {
     planTitle: String(
-      raw.planTitle || raw.title || raw.planId || raw.name || 'Untitled Plan'
+      raw.planTitle || raw.title || raw.project || raw.planId || raw.name || 'Untitled Plan'
     ),
     summary: String(raw.summary || raw.description || ''),
     tasks: Array.isArray(raw.tasks)
@@ -30,7 +30,7 @@ export function normalizePlan(raw: Record<string, unknown>): Plan {
 function normalizeTask(t: Record<string, unknown>): PlanTask {
   return {
     id: String(t.id || t.taskId || t.task_id || ''),
-    title: String(t.title || t.name || ''),
+    title: String(t.title || t.subject || t.name || ''),
     description: String(t.description || t.desc || ''),
     agentType: stripSessionSuffix(String(t.agentType || t.agent_type || t.agent || '')),
     dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn.map(String)

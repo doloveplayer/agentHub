@@ -12,7 +12,7 @@ workspace.use('*', authMiddleware);
 
 const SANDBOX_ROOT = resolve(process.cwd(), '..', '..', '.sandboxes');
 
-interface FileNode {
+export interface FileNode {
   name: string;
   path: string;
   type: 'file' | 'directory';
@@ -66,6 +66,10 @@ function readFileTree(
   } catch {
     return [];
   }
+}
+
+export function readWorkspaceFileTreeForTest(workspaceRoot: string, source: 'sandbox' | 'workspace' = 'sandbox'): FileNode[] {
+  return readFileTree(workspaceRoot, workspaceRoot, 4, 0, source);
 }
 
 // GET /api/workspace/:sessionId/tree — merged sandbox + workspace tree

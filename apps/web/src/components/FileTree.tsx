@@ -144,6 +144,7 @@ export function FileTree({ sessionId, onSelectFile, onOpenFile, onDownloadPath }
         </div>
       </div>
 
+      {/* Legend */}
       {!isEmpty && (
         <div className="flex items-center gap-3 px-3 py-1.5 border-b border-hub bg-hub-surface/50 text-[10px] text-hub-tertiary">
           <span className="flex items-center gap-1">
@@ -183,6 +184,7 @@ export function FileTree({ sessionId, onSelectFile, onOpenFile, onDownloadPath }
           </div>
         )}
 
+        {/* Workspace section — with subtle separator */}
         {workspaceTree.length > 0 && (
           <div>
             {sandboxTree.length > 0 && (

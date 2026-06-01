@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import { FileText, ChevronDown, ChevronRight, X } from 'lucide-react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { AlertTriangle, Download, FileText, ChevronDown, ChevronRight, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { PptxViewer } from './PptxViewer';
 
@@ -18,7 +18,9 @@ export function PptxCard({ sessionId, filePath, fileName, onDismiss }: Props) {
   const [pptxUrl, setPptxUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const urlRef = useRef<string | null>(null);
 
   const displayName = fileName || filePath.split('/').pop() || 'presentation.pptx';
@@ -34,6 +36,7 @@ export function PptxCard({ sessionId, filePath, fileName, onDismiss }: Props) {
     const load = async () => {
       setLoading(true);
       setError(null);
+      setPreviewError(null);
       try {
         const result = await api.downloadWorkspacePath(sessionId, filePath);
         if (cancelled) return;
@@ -50,6 +53,35 @@ export function PptxCard({ sessionId, filePath, fileName, onDismiss }: Props) {
       setUrl(null);
     };
   }, [sessionId, filePath]);
+
+  const downloadBlob = (url: string, name: string) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  };
+
+  const handleDownload = async (event?: MouseEvent) => {
+    event?.stopPropagation();
+    if (pptxUrl) {
+      downloadBlob(pptxUrl, displayName);
+      return;
+    }
+
+    setDownloading(true);
+    try {
+      const result = await api.downloadWorkspacePath(sessionId, filePath);
+      const url = URL.createObjectURL(result.blob);
+      downloadBlob(url, result.filename || displayName);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to download PPTX');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="mx-4 my-3 overflow-hidden rounded-hub-lg border border-hub bg-hub-surface">
@@ -76,6 +108,14 @@ export function PptxCard({ sessionId, filePath, fileName, onDismiss }: Props) {
         <span className="text-[10px] text-hub-muted shrink-0">
           {expanded ? 'Collapse' : 'Preview'}
         </span>
+        <button
+          onClick={handleDownload}
+          disabled={downloading}
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-hub-tertiary hover:bg-hub-hover hover:text-hub-secondary disabled:opacity-50 shrink-0"
+          title="Download"
+        >
+          <Download className="h-3.5 w-3.5" />
+        </button>
         {onDismiss && (
           <button
             onClick={(e) => {
@@ -103,7 +143,21 @@ export function PptxCard({ sessionId, filePath, fileName, onDismiss }: Props) {
               {error}
             </div>
           )}
-          {!loading && pptxUrl && <PptxViewer src={pptxUrl} />}
+          {!loading && previewError && (
+            <div className="flex min-h-[160px] flex-col items-center justify-center gap-2 text-center text-xs text-hub-muted">
+              <AlertTriangle className="h-7 w-7 text-hub-warning" />
+              <p className="max-w-sm text-hub-tertiary">{previewError}</p>
+              <button
+                onClick={handleDownload}
+                disabled={downloading}
+                className="inline-flex items-center gap-1.5 rounded-hub border border-hub px-2.5 py-1.5 text-xs text-hub-secondary hover:bg-hub-hover disabled:opacity-50"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </button>
+            </div>
+          )}
+          {!loading && pptxUrl && !previewError && <PptxViewer src={pptxUrl} onPreviewError={setPreviewError} />}
           {!loading && !pptxUrl && !error && (
             <div className="flex min-h-[120px] items-center justify-center text-xs text-hub-muted">
               No preview available

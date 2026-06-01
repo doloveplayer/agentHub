@@ -22,7 +22,7 @@ interface SandboxInfo {
  * an absolute path (/sandbox/plan.json) or a relative path (plan.json from CWD=/workspace).
  */
 export function startPlanWatcher(sessionId: string, hostSandboxDir: string, sandbox: SandboxInfo): void {
-  if (watchers.has(sessionId)) {
+  if (hasWatcherForSession(sessionId)) {
     console.warn(`[PlanWatcher] Already watching session ${sessionId.slice(0, 8)}`);
     return;
   }
@@ -62,9 +62,11 @@ export function startPlanWatcher(sessionId: string, hostSandboxDir: string, sand
         handlePlan();
       });
       watchers.set(`${sessionId}:${dir}`, watcher);
+      scheduleExistingPlanRead(sessionId, resolve(dir, 'plan.json'), sandbox);
     } catch (err: any) {
       console.warn(`[PlanWatcher] fs.watch failed for ${dir}, falling back to polling:`, err.message);
       startPolling(sessionId, resolve(dir, 'plan.json'), sandbox);
+      scheduleExistingPlanRead(sessionId, resolve(dir, 'plan.json'), sandbox);
     }
   }
 }
@@ -175,6 +177,8 @@ async function handlePlanFile(
     status: 'waiting' as const,
   }));
 
+  processedHashes.set(sessionId, hash);
+
   broadcast(sessionId, {
     type: 'plan_result',
     planId,
@@ -232,4 +236,24 @@ function startPolling(
   }, 500);
 
   pollingIntervals.set(sessionId, interval);
+}
+
+function scheduleExistingPlanRead(
+  sessionId: string,
+  planPath: string,
+  sandbox: SandboxInfo,
+): void {
+  setTimeout(() => {
+    if (!hasWatcherForSession(sessionId) && !pollingIntervals.has(sessionId)) return;
+    handlePlanFile(sessionId, planPath, sandbox).catch((err) => {
+      console.error(`[PlanWatcher] Error handling existing plan for ${sessionId.slice(0, 8)}:`, err.message);
+    });
+  }, 100);
+}
+
+function hasWatcherForSession(sessionId: string): boolean {
+  for (const key of watchers.keys()) {
+    if (key === sessionId || key.startsWith(`${sessionId}:`)) return true;
+  }
+  return false;
 }
