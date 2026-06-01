@@ -175,8 +175,22 @@ export function generateId(): string {
 export async function getOrCreateSandbox(sessionId: string, sessionType?: string | null) {
   let sandbox = sandboxes.get(sessionId);
   if (!sandbox) {
-    // Check for custom workspace path
-    const customWorkDir = realWorkspacePaths.get(sessionId);
+    // Check for custom workspace path: in-memory first, then DB fallback
+    let customWorkDir = realWorkspacePaths.get(sessionId);
+    if (!customWorkDir) {
+      try {
+        const { prisma } = await import('../db/prisma.js');
+        const session = await prisma.session.findUnique({
+          where: { id: sessionId },
+          select: { workspacePath: true, workspaceMode: true },
+        });
+        if (session?.workspacePath && session.workspaceMode === 'custom') {
+          customWorkDir = session.workspacePath;
+          // Restore in-memory map so subsequent lookups are fast
+          realWorkspacePaths.set(sessionId, customWorkDir);
+        }
+      } catch { /* DB unavailable, proceed with default sandbox */ }
+    }
     const memoryMb = sessionType === 'group' ? config.sandbox.groupMemoryMb : config.sandbox.soloMemoryMb;
 
     // Check if a container already exists for this session (prevents orphan containers)
