@@ -109,6 +109,6 @@ export function findClosestAgent(
     a.displayName.toLowerCase().includes(neededType.toLowerCase().replace('agent', ''))
   );
   if (prefix) return prefix;
-  // Fallback to code-agent
-  return available.find(a => a.name === 'code-agent') ?? available[0];
+  // Fallback to code-agent (handle both suffixed "code-agent-xxx" and bare "code-agent")
+  return available.find(a => a.name.startsWith('code-agent')) ?? available[0];
 }
