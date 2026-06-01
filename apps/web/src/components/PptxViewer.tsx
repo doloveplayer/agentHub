@@ -1,6 +1,31 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut } from 'lucide-react';
+import React, { Component, useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, ZoomIn, ZoomOut, AlertTriangle } from 'lucide-react';
 import { buildQuotePrompt, type QuotePayload } from '../lib/quoteContext';
+
+/** Catches crashes from the pptx-preview library (e.g. missing background elements) */
+class PptxErrorBoundary extends Component<{ children: React.ReactNode }, { error: string | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error: error.message || 'Unknown rendering error' };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="flex min-h-[200px] flex-col items-center justify-center gap-2 text-xs text-hub-muted">
+          <AlertTriangle className="h-8 w-8 text-hub-warning" />
+          <p className="text-hub-tertiary">Preview unavailable for this slide</p>
+          <p className="text-[11px] text-hub-muted max-w-sm text-center">
+            The PPTX contains unsupported elements. Try downloading and opening with PowerPoint or LibreOffice.
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface Props {
   /** PPTX file as base64 data or URL */
@@ -94,8 +119,13 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
     const previewer = previewerRef.current;
     if (!previewer) return;
     const clamped = Math.max(0, Math.min(totalSlides - 1, index));
-    previewer.renderSingleSlide(clamped);
-    setCurrentSlide(clamped);
+    try {
+      previewer.renderSingleSlide(clamped);
+      setCurrentSlide(clamped);
+    } catch (err: any) {
+      console.warn('[PptxViewer] renderSingleSlide failed:', err.message);
+      setError(`This slide cannot be rendered (${err.message || 'unsupported content'}). Try another slide.`);
+    }
   }, [totalSlides]);
 
   const prevSlide = useCallback(() => {
@@ -245,13 +275,15 @@ export function PptxViewer({ src, isBase64 = false }: Props) {
             {error}
           </div>
         )}
-        <div
-          ref={containerRef}
-          style={{
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
-          }}
-        />
+        <PptxErrorBoundary>
+          <div
+            ref={containerRef}
+            style={{
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+            }}
+          />
+        </PptxErrorBoundary>
         {/* Selection overlay using stable dragRect state */}
         {dragRect && (
           <div
