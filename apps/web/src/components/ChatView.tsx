@@ -99,6 +99,10 @@ export function ChatView() {
   const agentEvents = useAppStore((s) => s.agentEvents);
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const prevMessageLenRef = useRef(messages.length);
   const taskPlans = useAppStore((s) => s.taskPlans);
   const diffCards = useAppStore((s) => activeSessionId ? (s.diffCards[activeSessionId] ?? EMPTY_DIFF_CARDS) : EMPTY_DIFF_CARDS);
   const deploymentCards = useAppStore((s) => activeSessionId ? (s.deploymentCards[activeSessionId] ?? EMPTY_DEPLOYMENT_CARDS) : EMPTY_DEPLOYMENT_CARDS);
@@ -138,9 +142,38 @@ export function ChatView() {
     return agents.filter((a) => sessionAgentIds.has(a.id));
   }, [activeSession, agents]);
 
+  // Scroll behavior: auto-scroll only when user is already near bottom.
+  // When scrolled up and new messages arrive, show a "jump to bottom" button instead.
+  const handleChatScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const near = dist < 80;
+    setIsNearBottom(near);
+    if (near) setShowScrollButton(false);
+  }, []);
+
+  // New messages arrived
   useEffect(() => {
+    if (isNearBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    } else if (messages.length > prevMessageLenRef.current) {
+      setShowScrollButton(true);
+    }
+    prevMessageLenRef.current = messages.length;
+  }, [messages, isNearBottom]);
+
+  // Streaming content — only follow if user is near bottom
+  useEffect(() => {
+    if (isNearBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [agentEvents, isNearBottom]);
+
+  const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, agentEvents]);
+    setShowScrollButton(false);
+  }, []);
 
   const renderAgentInfo = (messageId: string, isStreaming: boolean) => {
     const events = agentEvents[messageId];
@@ -402,7 +435,18 @@ export function ChatView() {
             <FolderOpen className="w-3.5 h-3.5" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto chat-scroll">
+        <div className="flex-1 overflow-y-auto chat-scroll" ref={scrollContainerRef} onScroll={handleChatScroll}>
+          {/* Scroll-to-bottom floating button */}
+          {showScrollButton && (
+            <div className="sticky top-2 z-10 flex justify-center">
+              <button
+                onClick={scrollToBottom}
+                className="px-4 py-1.5 bg-hub-accent/90 hover:bg-hub-accent text-white text-xs rounded-full shadow-lg transition-all animate-bounce"
+              >
+                ↓ 新消息
+              </button>
+            </div>
+          )}
           {messages.map((msg: any) => (
             <React.Fragment key={msg.id}>
               <div className={`flex ${msg.senderType === 'human' ? 'flex-row-reverse' : ''} relative group`}>
