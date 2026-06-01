@@ -10,17 +10,11 @@ interface Props {
   position: { top: number; left: number };
 }
 
-export function agentColor(name: string): string {
-  const colors: Record<string, string> = {
-    'code-agent': '#8b5cf6',
-    'review-agent': '#38a169',
+import { agentAvatarColor } from './AgentCard';
 
-    'planner': '#4fd1c5',
-    'test-agent': '#569cd6',
-    'security-agent': '#d69e2e',
-  };
-  return colors[name] ?? '#4fd1c5';
-}
+function agentColor(name: string): string { return agentAvatarColor(name); }
+
+export { agentAvatarColor as agentColor };
 
 export function AgentMentionPopup({ agents, query, focusedIndex, onSelect, onClose, position }: Props) {
   const popupRef = useRef<HTMLDivElement>(null);

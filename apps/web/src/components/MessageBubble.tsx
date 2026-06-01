@@ -4,7 +4,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
 import type { Message } from '@agenthub/shared';
-import { agentColor } from './AgentMentionPopup';
+import { agentAvatarColor } from './AgentCard';
 import { safeMarkdownUrl } from '../lib/markdown';
 import { safeContent } from '../lib/text';
 import { buildQuotePrompt, type QuotePayload } from '../lib/quoteContext';
@@ -37,7 +37,7 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
       setTimeout(() => setCopied(false), 2000);
     } catch { /* clipboard unavailable */ }
   };
-  const color = isHuman ? undefined : agentColor(nameForKey);
+  const color = isHuman ? undefined : agentAvatarColor(nameForKey);
   const components = useMemo(() => createMarkdownComponents(message.id, agentName), [message.id, agentName]);
 
   const label = isHuman ? 'You' : (agentDisplayName || 'Agent');

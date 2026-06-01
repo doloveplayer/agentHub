@@ -24,6 +24,31 @@ function calcContextPct(inputTokens: number): number {
   return Math.round((inputTokens / 200000) * 100);
 }
 
+/** Check if a task's expected output file exists in the sandbox. */
+function taskOutputExists(hostWorkDir: string, expectedOutput: string): boolean {
+  if (!expectedOutput) return false;
+  const filePath = path.resolve(hostWorkDir, expectedOutput.replace(/^\/workspace\/?/, ''));
+  return fs.existsSync(filePath);
+}
+
+/** Mark a task as running in the DAG execution state. */
+function markTaskRunningForPlan(sessionId: string, planId: string, taskId: string): void {
+  const execution = planExecutions.get(planKey(sessionId, planId));
+  if (execution) markTaskRunning(execution, taskId);
+}
+
+/** Mark a task as done in the DAG execution state. */
+function markTaskDoneForPlan(sessionId: string, planId: string, taskId: string): void {
+  const execution = planExecutions.get(planKey(sessionId, planId));
+  if (execution) {
+    const item = execution.tasks.get(taskId);
+    if (item) {
+      item.status = 'done';
+      execution.summaryBroadcasted = false;
+    }
+  }
+}
+
 /** Resolve trustMode boolean from session's permission mode. */
 function resolveTrustMode(sessionId: string): boolean {
   const mode = sessionPermissionModes.get(sessionId) || 'ask';
@@ -133,6 +158,31 @@ export async function processNextInQueue(
   agentName: string,
   queue: AgentTaskQueue,
 ): Promise<void> {
+  // Skip tasks whose expected output already exists (agent already did the work)
+  while (queue.tasks.length > 0) {
+    const next = queue.tasks[0];
+    if (next.expectedOutput && taskOutputExists(queue.sandbox.hostWorkDir, next.expectedOutput)) {
+      console.log(`[taskDispatcher] Task ${next.id} output already exists, auto-completing`);
+      queue.tasks.shift();
+      markTaskDoneForPlan(sessionId, queue.planId, next.id);
+      broadcast(sessionId, {
+        type: 'task_completed', planId: queue.planId, taskId: next.id,
+        agentName, output: `Output already exists: ${next.expectedOutput}`,
+      });
+      DagPersistence.updateTaskStatus(sessionId, queue.planId, next.id, 'done').catch(() => {});
+      // Check if this unblocks dependents
+      const execution = planExecutions.get(planKey(sessionId, queue.planId));
+      if (execution) {
+        const ready = forceTaskDone(execution, next.id);
+        if (ready.length > 0) {
+          await enqueueTaskAssignments(sessionId, queue.planId, ready, queue.sandbox);
+        }
+      }
+    } else {
+      break;
+    }
+  }
+
   if (queue.tasks.length === 0) {
     agentTaskQueues.delete(agentName);
     return;
@@ -762,11 +812,6 @@ async function enqueueTaskAssignments(
     const agent = agentsByName.get(agentName);
     if (agent) await startTaskAgent(sessionId, agent, sandbox);
   }
-}
-
-function markTaskRunningForPlan(sessionId: string, planId: string, taskId: string): void {
-  const execution = planExecutions.get(planKey(sessionId, planId));
-  if (execution) markTaskRunning(execution, taskId);
 }
 
 function setPlanExecution(sessionId: string, planId: string, execution: DagExecutionState): void {

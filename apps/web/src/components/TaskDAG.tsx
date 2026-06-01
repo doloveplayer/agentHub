@@ -28,11 +28,17 @@ function CustomTaskNode({ data }: { data: Record<string, unknown> }) {
     }}>
       <Handle type="target" position={Position.Top} style={{ background: style.border, width: 10, height: 10 }} />
       <div style={{ fontWeight: 600, marginBottom: 2 }}>{t.title}</div>
-      <div style={{ fontSize: 10, opacity: 0.7 }}>{t.agentType}</div>
-      {t.assignedAgentName && (
-        <div style={{ fontSize: 10, color: 'var(--accent-primary)', marginTop: 2 }}>
-          ↳ {t.assignedAgentName}
+      {t.assignedAgentName ? (
+        <div style={{ fontSize: 10, opacity: 0.85, marginTop: 2 }}>
+          {t.assignedAgentName.replace(/-\w{6,}$/, '')}
+          {t.assignedAgentName.replace(/-\w{6,}$/, '') !== t.agentType?.replace(/-\w{6,}$/, '') && (
+            <span style={{ fontSize: 9, opacity: 0.5, marginLeft: 4 }}>
+              (reassigned from {t.agentType?.replace(/-\w{6,}$/, '')})
+            </span>
+          )}
         </div>
+      ) : (
+        <div style={{ fontSize: 10, opacity: 0.5 }}>{t.agentType?.replace(/-\w{6,}$/, '')}</div>
       )}
       {t.status === 'running' && pct !== null && (
         <div style={{ marginTop: 6, height: 3, background: '#1e1e1e', borderRadius: 2 }}>

@@ -30,8 +30,8 @@ function getProviderInfo(provider?: AgentProvider) {
   }
 }
 
-/** Generate a stable avatar color from a string. */
-function avatarColor(name: string): string {
+/** Generate a stable avatar color from a string. Shared across components. */
+export function agentAvatarColor(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
   return `hsl(${Math.abs(hash) % 360}, 55%, 45%)`;
@@ -71,7 +71,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const terminalEvents = status === 'running' ? events : [];
 
   const capabilityTags = deriveCapabilityTags(agentName, displayName);
-  const avatarBg = avatarColor(agentName || displayName);
+  const avatarBg = agentAvatarColor(agentName || displayName);
   const avatarLetter = displayName.charAt(0).toUpperCase();
   const badge = STATUS_BADGE[status] || STATUS_BADGE.idle;
   const providerInfo = getProviderInfo(provider);
