@@ -54,9 +54,12 @@ export function PptxCard({ sessionId, filePath, fileName, onDismiss }: Props) {
   return (
     <div className="mx-4 my-3 overflow-hidden rounded-hub-lg border border-hub bg-hub-surface">
       {/* Card header */}
-      <button
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 border-b border-hub px-4 py-3 hover:bg-hub-hover/50 transition"
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded); } }}
+        className="flex w-full items-center gap-2 border-b border-hub px-4 py-3 hover:bg-hub-hover/50 transition cursor-pointer"
       >
         {expanded ? (
           <ChevronDown className="h-4 w-4 text-hub-tertiary shrink-0" />
@@ -85,7 +88,7 @@ export function PptxCard({ sessionId, filePath, fileName, onDismiss }: Props) {
             <X className="h-3.5 w-3.5" />
           </button>
         )}
-      </button>
+      </div>
 
       {/* Card body — expandable PPTX preview */}
       {expanded && (
