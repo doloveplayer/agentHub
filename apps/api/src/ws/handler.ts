@@ -150,6 +150,12 @@ async function handleConnection(ws: WebSocket, request: any) {
       sessionsWithMilestones.add(sessionId);
       MilestoneBroadcaster.on(sessionId, (event) => { broadcast(sessionId, event); });
     }
+    // Start plan.json file watcher for this session
+    import('./planWatcher.js').then(({ startPlanWatcher }) => {
+      startPlanWatcher(sessionId, sb.hostWorkDir, sb);
+    }).catch((err) => {
+      console.error('[ws] Failed to start plan watcher:', err.message);
+    });
   } catch (err: any) {
     console.error(`[ws] Sandbox creation failed: session=${sessionId} error=${err.message}`);
     sendTo(ws, { type: 'error', message: `Sandbox creation failed: ${err.message}` });
@@ -404,18 +410,16 @@ async function handleChatMessage(
       if (agent) {
         let sessionMemberBlock = '';
         if (agent.name === 'planner' || agent.name.startsWith('planner-')) {
-          const members = await prisma.sessionAgent.findMany({
-            where: { sessionId },
-            include: { agent: { select: { name: true, displayName: true, description: true } } },
-          });
-          if (members.length > 0) {
-            const memberLines = members.map(sa => `- ${sa.agent.displayName} (${sa.agent.name}): ${sa.agent.description}`).join('\n');
-            sessionMemberBlock = `\n## 当前群聊成员\n${memberLines}\n\n请根据成员专长分配任务。agentType 仅限以上成员。如需其他类型 Agent，在 plan 的 missingAgents 字段中列出：\n\`\`\`json\n"missingAgents": [{"name": "...", "displayName": "...", "description": "...", "reason": "..."}]\n\`\`\`\n`;
-          }
+          sessionMemberBlock = `\n## 任务规划指引
+
+1. 在规划任务之前，请**先读取你的 skill cap-inventory.md**，获取当前群聊中所有可用 Agent 的能力清单
+2. plan.json 中的 agentType 必须使用 cap-inventory.md 中声明的值，不要附加 session ID 或后缀
+3. 每个任务必须包含 risk 字段（low / high），参考 plan skill 中的风险判定规则
+4. 将 plan.json 通过 Write 工具写入 /workspace/plan.json，Hub 会自动检测并调度\n`;
         }
         agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostWorkDir) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
         isPlannerAgent = agent.name === 'planner' || agent.name.startsWith('planner-');
-        if (sandbox) AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null);
+        if (sandbox) AgentDirectoryManager.initialize(sandbox.hostWorkDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null, sessionId);
       }
     } else {
       agentPrompt = history ? `${history}\n\n---\n${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}` : `${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}`;

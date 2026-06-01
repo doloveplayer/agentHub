@@ -2,6 +2,7 @@
 // Manages all agent REPL processes globally (not per-session), handling
 // lazy container startup, prompt queueing, and idle timeout shutdown.
 
+import { existsSync } from 'fs';
 import { ProviderFactory } from './providers/factory.js';
 import type { AbstractProvider, UnifiedAgentEvent } from './providers/base.js';
 import { AgentContainer } from './AgentContainer.js';
@@ -89,7 +90,7 @@ class AgentRuntime {
       containerId = sandbox.containerId;
       hostWorkDir = sandbox.hostWorkDir;
       // Initialize agent directory in the session sandbox
-      AgentDirectoryManager.initialize(hostWorkDir, agent.name, agent.systemPrompt);
+      AgentDirectoryManager.initialize(hostWorkDir, agent.name, agent.systemPrompt, null, undefined);
       // Update agent record with session sandbox info
       await prisma.agent.update({
         where: { id: agentId },
@@ -99,7 +100,7 @@ class AgentRuntime {
       // Fallback: create dedicated agent container
       if (!agent.containerId || agent.containerStatus === 'stopped') {
         const info = await AgentContainer.create(agentId, agent.systemPrompt);
-        AgentDirectoryManager.initialize(info.hostWorkDir, agent.name, agent.systemPrompt);
+        AgentDirectoryManager.initialize(info.hostWorkDir, agent.name, agent.systemPrompt, null, undefined);
         await prisma.agent.update({
           where: { id: agentId },
           data: { containerId: info.containerId, containerStatus: 'running', hostWorkDir: info.hostWorkDir },
@@ -176,32 +177,48 @@ class AgentRuntime {
         broadcast(sessionId, { type: 'stream_end', exitCode: event.exitCode ?? 0, agentMessageId });
         if (agentMessageId) clearRunningAgent(sessionId, agentMessageId);
 
-        // Parse planner output and broadcast plan_result
+        // Parse planner output and broadcast plan_result.
+        // Primary path: plan.json written by Planner (detected by PlanWatcher).
+        // Fallback: text extraction from output (when Write tool unavailable).
         if (entry.isPlanner && entry.accumulatedOutput) {
-          const plan = extractAndValidate(entry.accumulatedOutput);
-          if (plan) {
-            const planId = `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-            broadcast(sessionId, {
-              type: 'plan_result',
-              planId,
-              planTitle: plan.planTitle,
-              summary: plan.summary,
-              tasks: plan.tasks.map((t) => ({
-                taskId: t.id,
+          const planPath = `${entry.hostWorkDir}/plan.json`;
+          let planHandled = false;
+
+          try {
+            if (existsSync(planPath)) {
+              // File watcher will handle this — skip text extraction
+              planHandled = true;
+            }
+          } catch {}
+
+          if (!planHandled) {
+            const plan = extractAndValidate(entry.accumulatedOutput);
+            if (plan) {
+              const planId = `plan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+              broadcast(sessionId, {
+                type: 'plan_result',
                 planId,
-                title: t.title,
-                description: t.description,
-                agentType: t.agentType,
-                dependsOn: t.dependsOn,
-                expectedOutput: t.expectedOutput,
-                priority: t.priority,
-                status: 'waiting',
-              })),
-              missingAgents: plan.missingAgents,
-            });
-            console.log(`[AgentRuntime] Plan parsed and broadcast: planId=${planId} tasks=${plan.tasks.length}`);
-          } else {
-            console.warn(`[AgentRuntime] Failed to parse planner output for agent ${agentId}`);
+                planTitle: plan.planTitle,
+                summary: plan.summary,
+                risk: 'low',
+                requiresConfirmation: true,
+                tasks: plan.tasks.map((t) => ({
+                  taskId: t.id,
+                  planId,
+                  title: t.title,
+                  description: t.description,
+                  agentType: t.agentType,
+                  dependsOn: t.dependsOn,
+                  expectedOutput: t.expectedOutput,
+                  priority: t.priority,
+                  status: 'waiting',
+                })),
+                missingAgents: plan.missingAgents,
+              });
+              console.log(`[AgentRuntime] Plan parsed from text fallback: planId=${planId} tasks=${plan.tasks.length}`);
+            } else {
+              console.warn(`[AgentRuntime] Failed to parse planner output for agent ${agentId}`);
+            }
           }
           entry.accumulatedOutput = '';
         }

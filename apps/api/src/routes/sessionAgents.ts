@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { prisma } from '../db/prisma.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { CapabilityInventory } from '../agent/CapabilityInventory.js';
 
 const sessionAgents = new Hono();
 sessionAgents.use('*', authMiddleware);
@@ -41,6 +42,10 @@ sessionAgents.post('/:sessionId/agents', async (c) => {
     broadcast(sessionId, { type: 'agent_added', agentId: id, sessionId });
   }
 
+  CapabilityInventory.regenerate(sessionId).catch((err) =>
+    console.error(`[sessionAgents] Failed to regenerate cap-inventory:`, err.message)
+  );
+
   return c.json({ added }, 201);
 });
 
@@ -56,6 +61,10 @@ sessionAgents.delete('/:sessionId/agents/:agentId', async (c) => {
 
   const { broadcast } = await import('../ws/state.js');
   broadcast(sessionId, { type: 'agent_removed', agentId, sessionId });
+
+  CapabilityInventory.regenerate(sessionId).catch((err) =>
+    console.error(`[sessionAgents] Failed to regenerate cap-inventory:`, err.message)
+  );
 
   return c.body(null, 204);
 });

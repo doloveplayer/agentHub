@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
+import { CapabilityInventory } from './CapabilityInventory.js';
 
 export class AgentDirectoryManager {
   /**
@@ -18,6 +19,7 @@ export class AgentDirectoryManager {
     agentName: string,
     systemPrompt: string,
     settings?: Record<string, unknown> | null,
+    sessionId?: string,
   ): string {
     const agentDir = resolve(hostWorkDir, `_agent_${agentName}`);
     const claudeConfigDir = resolve(agentDir, '.claude');
@@ -58,6 +60,16 @@ ${systemPrompt}
     // Write Claude Code settings.json if provided (model, permissions, etc.)
     if (settings) {
       writeFileSync(resolve(claudeConfigDir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf-8');
+    }
+
+    // Regenerate capability inventory for Planner agents when any agent is added
+    if (sessionId) {
+      const isPlanner = agentName === 'planner' || agentName.startsWith('planner-');
+      if (!isPlanner) {
+        CapabilityInventory.regenerate(sessionId).catch((err) =>
+          console.error(`[AgentDirectory] Failed to regenerate cap-inventory:`, err.message)
+        );
+      }
     }
 
     return agentDir;
