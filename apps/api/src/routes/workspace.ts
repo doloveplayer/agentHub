@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
-import { readdirSync, statSync, realpathSync, existsSync } from 'fs';
+import { readdirSync, statSync, realpathSync, existsSync, readFileSync } from 'fs';
 import { resolve, basename } from 'path';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { WorkspaceManager } from '../agent/WorkspaceManager.js';
-import { getWorkspaceRoot, readWorkspaceTextFile, toWorkspacePath, writeWorkspaceTextFile } from './workspaceFileAccess.js';
+import { getWorkspaceRoot, readWorkspaceTextFile, resolveWorkspaceFilePath, toWorkspacePath, writeWorkspaceTextFile } from './workspaceFileAccess.js';
 import { buildWorkspaceZip, collectArchiveFiles, workspaceDownloadName } from './workspaceArchive.js';
 
 const workspace = new Hono();
@@ -244,6 +244,40 @@ workspace.get('/browse', async (c) => {
     return c.json({ path: real, dirs });
   } catch (err: any) {
     return c.json({ error: `Failed to read directory: ${err.message}` }, 500);
+  }
+});
+
+// GET /api/workspace/:sessionId/html-preview?path=/workspace/index.html
+workspace.get('/:sessionId/html-preview', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('sessionId');
+  const filePath = c.req.query('path');
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } });
+  if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+  if (!filePath) return c.json({ error: 'Missing path query param' }, 400);
+
+  const workDir = getWorkspaceRoot(sessionId);
+  const resolved = resolveWorkspaceFilePath(workDir, filePath);
+  // Also try custom workspace if not found in sandbox
+  let absPath: string | null = null;
+  if (resolved.ok) {
+    absPath = resolved.absolutePath;
+  } else if (session.workspacePath) {
+    try {
+      const alt = resolveWorkspaceFilePath(realpathSync(session.workspacePath), filePath);
+      if (alt.ok) absPath = alt.absolutePath;
+    } catch { /* not found */ }
+  }
+
+  if (!absPath) return c.json({ error: 'File not found' }, 404);
+
+  try {
+    const content = readFileSync(absPath, 'utf-8');
+    c.header('Content-Type', 'text/html; charset=utf-8');
+    return c.body(content);
+  } catch {
+    return c.json({ error: 'Failed to read file' }, 500);
   }
 });
 

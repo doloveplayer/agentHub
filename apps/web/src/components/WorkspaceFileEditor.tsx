@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
 import { Download, FileText, Maximize2, Minimize2, RefreshCw, Save, X } from 'lucide-react';
 import { api } from '../lib/api';
-import { displayWorkspacePath, inferWorkspaceLanguage, isEditableWorkspaceFile, isPptxWorkspaceFile, safeDownloadName } from '../lib/workspaceFile';
+import { displayWorkspacePath, inferWorkspaceLanguage, isEditableWorkspaceFile, isHtmlFile, isPptxWorkspaceFile, safeDownloadName } from '../lib/workspaceFile';
 import { PptxViewer } from './PptxViewer';
 
 interface Props {
@@ -46,6 +46,8 @@ export function WorkspaceFileEditor({
   const language = useMemo(() => inferWorkspaceLanguage(path), [path]);
   const editable = useMemo(() => isEditableWorkspaceFile(path), [path]);
   const previewablePptx = useMemo(() => isPptxWorkspaceFile(path), [path]);
+  const isHtml = useMemo(() => isHtmlFile(path), [path]);
+  const [htmlMode, setHtmlMode] = useState<'code' | 'preview'>('preview');
   const dirty = loaded !== null && content !== loaded.content;
 
   const setPreviewUrl = (url: string | null) => {
@@ -177,6 +179,22 @@ export function WorkspaceFileEditor({
         >
           <Download className="h-3.5 w-3.5" />
         </button>
+        {isHtml && (
+          <div className="flex rounded bg-hub-surface border border-hub px-0.5 py-0.5">
+            <button
+              onClick={() => setHtmlMode('code')}
+              className={`px-2 py-0.5 text-[11px] rounded ${htmlMode === 'code' ? 'bg-hub-accent text-white' : 'text-hub-secondary hover:text-hub-primary'}`}
+            >
+              Code
+            </button>
+            <button
+              onClick={() => setHtmlMode('preview')}
+              className={`px-2 py-0.5 text-[11px] rounded ${htmlMode === 'preview' ? 'bg-hub-accent text-white' : 'text-hub-secondary hover:text-hub-primary'}`}
+            >
+              Preview
+            </button>
+          </div>
+        )}
         {onToggleFullscreen && (
           <button
             onClick={onToggleFullscreen}
@@ -224,6 +242,15 @@ export function WorkspaceFileEditor({
           <div className="mt-2 text-[11px] text-hub-muted">
             PPTX preview is read-only. Use Download to save the original file.
           </div>
+        </div>
+      ) : isHtml && htmlMode === 'preview' ? (
+        <div className="min-h-0 flex-1 bg-white">
+          <iframe
+            src={api.getHtmlPreviewUrl(sessionId, path)}
+            className="w-full h-full border-0"
+            sandbox="allow-scripts allow-same-origin"
+            title="HTML Preview"
+          />
         </div>
       ) : editable ? (
         <div className="min-h-0 flex-1">

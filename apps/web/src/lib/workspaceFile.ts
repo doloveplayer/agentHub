@@ -52,6 +52,13 @@ export function isEditableWorkspaceFile(path: string): boolean {
   return !NON_EDITABLE_EXTENSIONS.has(match[1]);
 }
 
+const HTML_EXTENSIONS = new Set(['html', 'htm']);
+
+export function isHtmlFile(path: string): boolean {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  return HTML_EXTENSIONS.has(ext);
+}
+
 export function isPptxWorkspaceFile(path: string): boolean {
   return /\.pptx$/i.test(path);
 }
