@@ -3,7 +3,7 @@ import type { Session, Message, AgentConfig } from '@agenthub/shared';
 
 export interface AgentEvent {
   id: string;
-  type: 'thinking' | 'tool_use' | 'tool_result' | 'subagent_start' | 'subagent_result' | 'permission_request' | 'token_update' | 'file_produced' | 'phase_complete';
+  type: 'thinking' | 'tool_use' | 'tool_result' | 'subagent_start' | 'subagent_result' | 'permission_request' | 'token_update' | 'file_produced' | 'phase_complete' | 'skill_use';
   timestamp: number;
   agentId?: string;
   details: {
@@ -18,6 +18,7 @@ export interface AgentEvent {
     path?: string;
     permissionId?: string;
     tokenUsage?: { input: number; output: number; cacheRead?: number; cacheCreate?: number; contextPct?: number };
+    skillName?: string;
   };
 }
 
@@ -126,6 +127,7 @@ interface AppState {
   addToast: (message: string, type?: 'error' | 'info' | 'success') => void;
   deleteMessage: (sessionId: string, msgId: string) => void;
   removeToast: (id: string) => void;
+  skillStats: Record<string, { skillName: string; count: number }[]>;
 }
 
 export interface TaskState {
@@ -166,6 +168,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   unreadCounts: {},
   inboxNotifications: {},
   toasts: [],
+  skillStats: {},
 
   setToken: (token) => {
     if (token) localStorage.setItem('agenthub_token', token);
@@ -287,12 +290,34 @@ export const useAppStore = create<AppState>((set, get) => ({
     }),
 
   addAgentEvent: (messageId, event) =>
-    set((state) => ({
-      agentEvents: {
+    set((state) => {
+      const nextAgentEvents = {
         ...state.agentEvents,
         [messageId]: [...(state.agentEvents[messageId] ?? []), event],
-      },
-    })),
+      };
+
+      if (event.type === 'skill_use') {
+        const sn = event.details.skillName || 'unknown';
+        const an = (event as any).agentName || 'unknown';
+        const existing = state.skillStats[an] || [];
+        const idx = existing.findIndex(s => s.skillName === sn);
+        let nextStats: typeof state.skillStats;
+        if (idx >= 0) {
+          nextStats = {
+            ...state.skillStats,
+            [an]: existing.map((s, i) => i === idx ? { ...s, count: s.count + 1 } : s),
+          };
+        } else {
+          nextStats = {
+            ...state.skillStats,
+            [an]: [...existing, { skillName: sn, count: 1 }],
+          };
+        }
+        return { agentEvents: nextAgentEvents, skillStats: nextStats };
+      }
+
+      return { agentEvents: nextAgentEvents };
+    }),
 
   setTaskPlan: (planId, tasks) =>
     set((state) => ({

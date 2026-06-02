@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Square, Settings, UserPlus } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import type { AgentEvent } from '../store/appStore';
-import { FaceBusinessCard, FaceTerminalLog, FaceDashboard } from './AgentCardFaces';
+import { FaceBusinessCard, FaceTerminalLog, FaceDashboard, FaceSkillStats } from './AgentCardFaces';
 import type { AgentProvider } from '@agenthub/shared';
 
 /** Derive capability tags from agent name / display name. */
@@ -155,7 +155,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
         )}
         {/* Dot indicators */}
         <div className="flex items-center gap-1 ml-auto flex-shrink-0">
-          {[0, 1, 2].map((face) => (
+          {[0, 1, 2, 3].map((face) => (
             <button
               key={face}
               onClick={(e) => { e.stopPropagation(); switchFace(face); }}
@@ -164,7 +164,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
                   ? 'bg-hub-accent scale-110'
                   : 'bg-hub-muted/30 hover:bg-hub-muted/60'
               }`}
-              title={['摘要', '日志', '仪表盘'][face]}
+              title={['摘要', '日志', '仪表盘', 'Skills'][face]}
             />
           ))}
         </div>
@@ -225,6 +225,14 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
             cacheTokens={cacheTokens}
             thinkingLevel={thinkingLevel}
             toolCount={toolCount}
+          />
+        )}
+        {activeFace === 3 && (
+          <FaceSkillStats
+            skills={useAppStore(s => {
+              const stats = s.skillStats[agentName || displayName] || [];
+              return stats;
+            })}
           />
         )}
       </div>

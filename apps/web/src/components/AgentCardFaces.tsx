@@ -158,3 +158,41 @@ export function FaceDashboard({
     </div>
   );
 }
+
+// ---- Face 4: Skill Stats ----
+export function FaceSkillStats({
+  skills,
+}: {
+  skills: { skillName: string; count: number }[];
+}) {
+  if (skills.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-6 text-hub-muted text-caption italic">
+        尚未使用 skills
+      </div>
+    );
+  }
+
+  const total = skills.reduce((s, r) => s + r.count, 0);
+
+  return (
+    <div className="py-3 px-3 space-y-2 text-[11px]">
+      {skills
+        .sort((a, b) => b.count - a.count)
+        .map((s) => (
+          <div
+            key={s.skillName}
+            className="flex items-center justify-between"
+          >
+            <span className="text-hub-primary font-mono">{s.skillName}</span>
+            <span className="text-hub-accent font-medium tabular-nums">
+              {s.count}次
+            </span>
+          </div>
+        ))}
+      <div className="pt-2 border-t border-hub text-hub-tertiary">
+        总计: {total} 次调用 · {skills.length} 个 skills
+      </div>
+    </div>
+  );
+}
