@@ -19,10 +19,27 @@ import * as fs from 'fs';
 import { createSDKAgentProcess, createOneShotAgentProcess } from '../agent/processFactory.js';
 
 
-function calcContextPct(inputTokens: number): number {
+/** Estimated context window sizes per model. */
+const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  'deepseek-v4-pro': 1000000,
+  'deepseek-v4-flash': 1000000,
+  'claude-sonnet-4-6': 200000,
+  'claude-opus-4-7': 200000,
+  'claude-haiku-4-5': 200000,
+  'claude-sonnet-4-5': 200000,
+  'claude-opus-4-5': 200000,
+  'claude-opus-4': 200000,
+  'claude-sonnet-4': 200000,
+  'gemini-2.5-pro': 1048576,
+  'gemini-2.5-flash': 1048576,
+  'gpt-4o': 128000,
+  'gpt-4-turbo': 128000,
+};
+
+function calcContextPct(inputTokens: number, model?: string): number {
   if (!inputTokens || inputTokens <= 0) return 0;
-  // Default 200K context window for Claude models
-  return Math.round((inputTokens / 200000) * 100);
+  const window = MODEL_CONTEXT_WINDOWS[model || ''] || 200000;
+  return Math.round((inputTokens / window) * 100);
 }
 
 /** Check if a task's expected output file exists in the sandbox. */
@@ -230,21 +247,26 @@ function handleProviderTaskEvent(
         cacheRead: event.cacheReadTokens || 0,
         cacheCreate: event.cacheCreateTokens || 0,
       });
-      broadcast(sessionId, {
-        type: 'agent_status',
-        status: 'token_update',
-        details: {
-          tokenUsage: {
-            input: event.inputTokens || 0,
-            output: event.outputTokens || 0,
-            cacheRead: event.cacheReadTokens || 0,
-            cacheCreate: event.cacheCreateTokens || 0,
-            contextPct: calcContextPct(event.inputTokens || 0),
+      // Broadcast cumulative totals from StateTracker
+      {
+        const snap = stateTracker.getSnapshot(taskMessageId);
+        const cumulative = snap?.tokenUsage;
+        broadcast(sessionId, {
+          type: 'agent_status',
+          status: 'token_update',
+          details: {
+            tokenUsage: {
+              input: cumulative?.input ?? 0,
+              output: cumulative?.output ?? 0,
+              cacheRead: cumulative?.cacheRead ?? 0,
+              cacheCreate: cumulative?.cacheCreate ?? 0,
+              contextPct: calcContextPct(cumulative?.input ?? 0),
+            },
           },
-        },
-        agentMessageId: taskMessageId,
+          agentMessageId: taskMessageId,
         timestamp: Date.now(),
       });
+      }
       break;
     case 'done': {
       const exitCode = event.exitCode ?? 0;

@@ -5,6 +5,22 @@ import type { AgentEvent } from '../store/appStore';
 import { FaceBusinessCard, FaceTerminalLog, FaceDashboard } from './AgentCardFaces';
 import type { AgentProvider } from '@agenthub/shared';
 
+/** Estimated context window sizes per model — mirrors AgentRuntime.ts for frontend fallback. */
+const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  'deepseek-v4-pro': 1000000,
+  'deepseek-v4-flash': 1000000,
+  'claude-sonnet-4-6': 200000,
+  'claude-opus-4-7': 200000,
+  'claude-haiku-4-5': 200000,
+  'gemini-2.5-pro': 1048576,
+  'gpt-4o': 128000,
+};
+
+function calcContextPct(inputTokens: number, model: string): number {
+  const window = MODEL_CONTEXT_WINDOWS[model] || 200000;
+  return Math.round((inputTokens / window) * 100);
+}
+
 /** Derive capability tags from agent name / display name. */
 function deriveCapabilityTags(agentName?: string, displayName?: string): string[] {
   const name = (agentName || displayName || '').toLowerCase();
@@ -76,6 +92,15 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const badge = STATUS_BADGE[status] || STATUS_BADGE.idle;
   const providerInfo = getProviderInfo(provider);
 
+  // Model and thinking from agent config in store (needed early for contextPct fallback)
+  const agents = useAppStore((s) => s.agents);
+  const agentConfig = agents.find((a) => a.name === agentName || a.id === agentId);
+  // providerConfig may be a JSON string (Prisma Json type) or an object
+  const rawConfig = (agentConfig as any)?.providerConfig;
+  const pConfig = typeof rawConfig === 'string' ? (() => { try { return JSON.parse(rawConfig); } catch { return {}; } })() : (rawConfig || {});
+  const model = pConfig.model || 'deepseek-v4-pro';
+  const thinkingLevel = pConfig.thinking ? 'high' : 'off';
+
   // Dashboard data - prioritize real-time events, fallback to persisted data
   const tokenEvents = events.filter((e) => e.type === 'token_update');
   const lastToken = tokenEvents.length > 0 ? tokenEvents[tokenEvents.length - 1].details.tokenUsage : null;
@@ -89,16 +114,9 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const cacheTokens = lastToken
     ? ((lastToken.cacheRead ?? 0) + (lastToken.cacheCreate ?? 0))
     : ((msgWithTokens?.cacheReadTokens ?? 0) + (msgWithTokens?.cacheCreateTokens ?? 0));
-  const contextPct = lastToken?.contextPct ?? 0;
-
-  // Model and thinking from agent config in store
-  const agents = useAppStore((s) => s.agents);
-  const agentConfig = agents.find((a) => a.name === agentName || a.id === agentId);
-  // providerConfig may be a JSON string (Prisma Json type) or an object
-  const rawConfig = (agentConfig as any)?.providerConfig;
-  const pConfig = typeof rawConfig === 'string' ? (() => { try { return JSON.parse(rawConfig); } catch { return {}; } })() : (rawConfig || {});
-  const model = pConfig.model || 'unknown';
-  const thinkingLevel = pConfig.thinking ? 'high' : 'off';
+  // contextPct: prefer live event value; fall back to computation from persisted inputTokens
+  const contextPct = lastToken?.contextPct
+    ?? (inputTokens > 0 ? calcContextPct(inputTokens, model) : 0);
 
   const isCollapsed = collapsed && !expanded;
 
