@@ -47,8 +47,10 @@ interface AgentEntry {
   lastAgentId: string | null;
 }
 
-/** Estimated context window sizes per model. Default 200K for Claude models. */
+/** Estimated context window sizes per model. Default 200K for unknown models. */
 const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
+  'deepseek-v4-pro': 1000000,
+  'deepseek-v4-flash': 1000000,
   'claude-sonnet-4-6': 200000,
   'claude-opus-4-7': 200000,
   'claude-haiku-4-5': 200000,
@@ -201,7 +203,7 @@ class AgentRuntime {
     );
 
     const isPlanner = agent.name === 'planner' || agent.name.startsWith('planner-');
-    const model = (agent.providerConfig as any)?.model || 'claude-sonnet-4-6';
+    const model = (agent.providerConfig as any)?.model || 'deepseek-v4-pro';
     const entry: AgentEntry = {
       provider,
       containerId,
@@ -382,28 +384,31 @@ class AgentRuntime {
         const tokMsgId = agentMessageId || entry.lastMessageId;
         const tokSessionId = sessionId !== 'unknown' ? sessionId : entry.lastSessionId || sessionId;
         const tokAgentId = entry.currentAgentId || entry.lastAgentId;
-        // Store token usage in memory for persistence on completion
+        // Accumulate token usage across multiple API calls per message
         if (tokMsgId) {
-          this.tokenUsageMap.set(tokMsgId, {
-            input: event.inputTokens ?? 0,
-            output: event.outputTokens ?? 0,
-            cacheRead: event.cacheReadTokens ?? 0,
-            cacheCreate: event.cacheCreateTokens ?? 0,
+          const prev = this.tokenUsageMap.get(tokMsgId);
+          const cumulative = {
+            input: (prev?.input ?? 0) + (event.inputTokens ?? 0),
+            output: (prev?.output ?? 0) + (event.outputTokens ?? 0),
+            cacheRead: (prev?.cacheRead ?? 0) + (event.cacheReadTokens ?? 0),
+            cacheCreate: (prev?.cacheCreate ?? 0) + (event.cacheCreateTokens ?? 0),
+          };
+          this.tokenUsageMap.set(tokMsgId, cumulative);
+          // Broadcast cumulative totals so the dashboard shows overall consumption
+          broadcast(tokSessionId, {
+            type: 'token_update',
+            agentMessageId: tokMsgId,
+            details: {
+              tokenUsage: {
+                input: cumulative.input,
+                output: cumulative.output,
+                cacheRead: cumulative.cacheRead,
+                cacheCreate: cumulative.cacheCreate,
+                contextPct: calcContextPct(cumulative.input, entry.model),
+              },
+            },
           });
         }
-        broadcast(tokSessionId, {
-          type: 'token_update',
-          agentMessageId: tokMsgId,
-          details: {
-            tokenUsage: {
-              input: event.inputTokens ?? 0,
-              output: event.outputTokens ?? 0,
-              cacheRead: event.cacheReadTokens ?? 0,
-              cacheCreate: event.cacheCreateTokens ?? 0,
-              contextPct: calcContextPct(event.inputTokens ?? 0, entry.model),
-            },
-          },
-        });
         // If done already fired, persist now since the done handler couldn't
         if (!agentMessageId && tokMsgId) {
           const tokUsage = this.tokenUsageMap.get(tokMsgId);

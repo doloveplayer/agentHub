@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { AgentEvent } from '../store/appStore';
 import { api } from '../lib/api';
@@ -32,6 +32,15 @@ export function useChat(sessionId: string) {
   // Derive effective trust mode from session-specific permission mode, matching backend logic
   const permMode = sessionPermissionModes[sessionId] || sessions.find(s => s.id === sessionId)?.permissionMode || 'ask';
   const trustMode = permMode === 'smart' || permMode === 'trust';
+  // Session-filtered agent list for mention parsing — in group sessions, only
+  // session members should be reachable via plain-text @mention, matching the
+  // dropdown behavior in MessageInput.
+  const mentionableAgents = useMemo(() => {
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session || (session as any).type !== 'group') return agents;
+    const memberIds = new Set(((session as any)?.agents || []).map((sa: any) => sa.agentId));
+    return agents.filter((a) => memberIds.has(a.id));
+  }, [agents, sessions, sessionId]);
   const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addReviewReport, addToast } = useAppStore();
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {
@@ -552,13 +561,13 @@ export function useChat(sessionId: string) {
     // Build mentions from explicit tags or parse from text
     let mentions: { agentId: string; agentName: string; subPrompt: string }[];
     if (mentionedAgents.length > 0) {
-      const { broadcastContext } = parseMentions(content, agents);
+      const { broadcastContext } = parseMentions(content, mentionableAgents);
       mentions = mentionedAgents.map((tag) => {
         const subPrompt = broadcastContext ? `${broadcastContext}\n\n${content}` : content;
         return { agentId: tag.agentId, agentName: tag.agentName, subPrompt };
       });
     } else {
-      const parsed = parseMentions(content, agents);
+      const parsed = parseMentions(content, mentionableAgents);
       mentions = parsed.mentions.length > 0 ? parsed.mentions : [];
     }
 

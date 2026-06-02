@@ -7,30 +7,40 @@ export async function seedAgentTemplates() {
       displayName: 'CodeAgent',
       description: 'Writes and modifies code, runs shell commands, creates files',
       systemPrompt: 'You are CodeAgent, an expert software engineer. Write clean, secure, well-tested code. Use tools to read, write, and execute code. Prefer editing existing files over creating new ones.',
+      provider: 'claude-code',
+      providerConfig: { model: 'deepseek-v4-pro' },
     },
     {
       name: 'review-agent',
       displayName: 'ReviewAgent',
       description: 'Reviews code for bugs, security vulnerabilities, and style issues',
       systemPrompt: 'You are ReviewAgent, a thorough code reviewer. Check for security vulnerabilities, logic bugs, type safety, and error handling gaps. Report with severity and file:line references.',
+      provider: 'claude-code',
+      providerConfig: { model: 'deepseek-v4-pro' },
     },
     {
       name: 'devops-agent',
       displayName: 'DevOpsAgent',
       description: 'Handles deployment, CI/CD, Docker, and infrastructure tasks',
       systemPrompt: 'You are DevOpsAgent, an infrastructure specialist. Handle Docker, CI/CD, deployment scripts. Ensure production-readiness.',
+      provider: 'claude-code',
+      providerConfig: { model: 'deepseek-v4-pro' },
     },
     {
       name: 'planner',
       displayName: 'Planner',
       description: 'Task planning expert — breaks down complex requirements into structured task plans',
       systemPrompt: 'You are Planner, a PM/PMO-style orchestrator. Break down requirements into DAG-structured task plans. Output JSON only when triggered. Default to conversational mode.',
+      provider: 'claude-code',
+      providerConfig: { model: 'deepseek-v4-pro', thinking: true },
     },
     {
       name: 'test-agent',
       displayName: 'TestAgent',
       description: 'Generates tests, runs test suites, and reports results',
       systemPrompt: 'You are TestAgent, a testing specialist. Analyze target files, write test code, run tests, and report results with pass/fail and timing.',
+      provider: 'claude-code',
+      providerConfig: { model: 'deepseek-v4-pro' },
     },
   ];
 
@@ -52,7 +62,7 @@ export const defaultAgents = [
     systemPrompt: 'You are CodeAgent, an expert software engineer. Write clean, secure, well-tested code. Use tools to read, write, and execute code. Prefer editing existing files over creating new ones. Default to no comments unless the WHY is non-obvious.',
     provider: 'claude-code',
     providerConfig: {
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4-pro',
       permissions: {
         allow: [
           'Read(/workspace/**)',
@@ -94,7 +104,7 @@ export const defaultAgents = [
     systemPrompt: 'You are ReviewAgent, a thorough code reviewer. Check every file for: security vulnerabilities (OWASP Top 10), logic bugs, type safety, error handling gaps, and code style. Report findings with severity (high/medium/low) and specific file:line references. Suggest concrete fixes for each issue.',
     provider: 'claude-code',
     providerConfig: {
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4-pro',
       permissions: {
         allow: ['Read(/workspace/**)', 'Bash(ls:/workspace/**)', 'Bash(cat:/workspace/**)', 'Bash(find:/workspace/**)', 'Bash(npm:*:*)', 'Bash(npx:*:*)', 'Bash(node:*:*)', 'Bash(git:*:*)'],
         deny: [
@@ -111,7 +121,7 @@ export const defaultAgents = [
     systemPrompt: 'You are TestAgent, a test automation specialist. Analyze target files, generate focused unit/integration tests, run the project test command, and report pass/fail counts, duration, and failure stacks. Prefer minimal tests that cover observable behavior.',
     provider: 'claude-code',
     providerConfig: {
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-v4-pro',
       permissions: {
         allow: [
           'Read(/workspace/**)',

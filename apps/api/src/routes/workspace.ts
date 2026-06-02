@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { readdirSync, statSync, realpathSync, existsSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, basename } from 'path';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { WorkspaceManager } from '../agent/WorkspaceManager.js';
@@ -119,6 +119,17 @@ workspace.get('/:sessionId/file', async (c) => {
   try {
     return c.json(readWorkspaceTextFile(workDir, filePath));
   } catch (err: any) {
+    // If the file is not in the sandbox directory, try the custom workspace path
+    if (session.workspacePath) {
+      try {
+        const real = realpathSync(session.workspacePath);
+        return c.json(readWorkspaceTextFile(real, filePath));
+      } catch (err2: any) {
+        const status2 = typeof err2.status === 'number' ? err2.status : 404;
+        const message2 = status2 === 400 || status2 === 403 ? err2.message : 'Failed to read file';
+        return c.json({ error: message2 }, status2 as any);
+      }
+    }
     const status = typeof err.status === 'number' ? err.status : 404;
     const message = status === 400 || status === 403 ? err.message : 'Failed to read file';
     return c.json({ error: message }, status as any);
@@ -164,7 +175,10 @@ workspace.get('/:sessionId/download', async (c) => {
   const workDir = getWorkspaceRoot(sessionId);
   try {
     const files = collectArchiveFiles(workDir, filePath);
-    const isDirectory = files.length !== 1 || files[0].archivePath !== workspaceDownloadName(filePath, false);
+    // Use raw basename for the directory check — workspaceDownloadName sanitizes
+    // non-ASCII chars, which would mismatch Chinese/Unicode filenames.
+    const rawName = filePath.replace(/^\/workspace\/?/, '').replace(/\/+$/, '') || 'workspace';
+    const isDirectory = files.length !== 1 || files[0].archivePath !== basename(rawName);
     const body = isDirectory ? buildWorkspaceZip(files) : files[0].content;
     const downloadName = workspaceDownloadName(filePath, isDirectory);
     c.header('Content-Disposition', `attachment; filename="${downloadName}"`);

@@ -50,10 +50,12 @@ export class SandboxManager {
     const mem = memoryMb ?? config.sandbox.soloMemoryMb;
 
     // Binds: sandbox dir (agent runtime), workspace (user files), agents home (persistent identity)
-    const binds = [`${hostSandboxDir}:/sandbox`];
-    if (hostWorkDir !== hostSandboxDir) {
-      binds.push(`${hostWorkDir}:/workspace`);
-    }
+    // Always bind-mount both paths. When hostWorkDir === hostSandboxDir, Docker
+    // correctly mounts the same host directory to both container paths.
+    const binds = [
+      `${hostSandboxDir}:/sandbox`,
+      `${hostWorkDir}:/workspace`,
+    ];
     // Mount entire agents directory for per-agent persistent homes
     const agentsRoot = config.agentContainer.hostRoot;
     if (existsSync(agentsRoot)) {

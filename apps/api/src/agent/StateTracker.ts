@@ -43,7 +43,14 @@ export class StateTracker {
   updateTokenUsage(agentMessageId: string, usage: AgentSnapshot['tokenUsage']): void {
     const snap = this.snapshots.get(agentMessageId);
     if (!snap) return;
-    snap.tokenUsage = usage;
+    // Accumulate token usage across multiple API calls per message
+    const prev = snap.tokenUsage;
+    snap.tokenUsage = {
+      input: (prev?.input ?? 0) + (usage?.input ?? 0),
+      output: (prev?.output ?? 0) + (usage?.output ?? 0),
+      cacheRead: (prev?.cacheRead ?? 0) + (usage?.cacheRead ?? 0),
+      cacheCreate: (prev?.cacheCreate ?? 0) + (usage?.cacheCreate ?? 0),
+    };
     snap.updatedAt = Date.now();
   }
 
