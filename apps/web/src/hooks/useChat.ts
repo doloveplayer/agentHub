@@ -211,6 +211,11 @@ export function useChat(sessionId: string) {
                 setTaskPlan(data.planId, data.tasks);
               }
               break;
+            case 'plan_archived':
+              if (data.planId) {
+                addToast(`Plan ${data.planId.slice(0, 8)} 归档完成 · ${data.experienceCount || 0} 条经验`, 'success');
+              }
+              break;
             case 'plan_executing':
               // Individual task_assigned/task_completed/task_failed events drive
               // node status. Keep unresolved dependencies waiting here.
@@ -449,6 +454,18 @@ export function useChat(sessionId: string) {
               });
               break;
             }
+            case 'skill_use':
+              if (data.agentMessageId) {
+                const store = useAppStore.getState();
+                store.addAgentEvent(data.agentMessageId, {
+                  id: data.agentMessageId + '-skill-' + Date.now(),
+                  type: 'skill_use',
+                  timestamp: data.timestamp || Date.now(),
+                  agentId: data.agentId,
+                  details: { skillName: data.skillName },
+                } as any);
+              }
+              break;
             case 'diff_summary':
               if (data.files?.length) {
                 addDiffCard(sessionId, {

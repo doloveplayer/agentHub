@@ -79,7 +79,7 @@ export async function ensureSandboxReady(sessionId: string, sessionType?: string
               })), sandbox).catch((err: any) =>
                 console.error(`[recovery] Re-dispatch failed: ${err.message}`)
               );
-            }).catch(() => {});
+            }).catch((err: any) => console.error('[recovery] Task dispatcher import failed:', err.message));
           }
           broadcast(sessionId, {
             type: 'plan_recovered',
@@ -88,8 +88,8 @@ export async function ensureSandboxReady(sessionId: string, sessionType?: string
           });
         }
       }
-    }).catch(() => {});
-  }).catch(() => {});
+    }).catch((err: any) => console.error('[recovery] getIncompleteForSession failed:', err.message));
+  }).catch((err: any) => console.error('[recovery] CheckpointManager import failed:', err.message));
 
   sandboxInitialized.add(sessionId);
   return sb;

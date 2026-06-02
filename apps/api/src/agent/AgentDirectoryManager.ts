@@ -52,9 +52,17 @@ ${systemPrompt}
     const memoryDir = resolve(homeDir, '.claude', 'memory', category);
     mkdirSync(memoryDir, { recursive: true });
 
+    // Escape YAML-sensitive chars in description value
+    const safeDetail = exp.detail
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"')
+      .slice(0, 120);
+    const safeTitle = exp.title.replace(/\n/g, ' ');
+    const safeBody = exp.detail.startsWith('---') ? '\n' + exp.detail : exp.detail;
+
     const frontmatter = `---
 name: ${slug}
-description: ${exp.detail.slice(0, 120)}
+description: "${safeDetail}"
 metadata:
   type: reference
   tags: [${exp.tags.join(', ')}]
@@ -63,9 +71,9 @@ metadata:
   sourceTask: ${exp.sourceTask || ''}
 ---
 
-## ${exp.title}
+## ${safeTitle}
 
-${exp.detail}
+${safeBody}
 `;
 
     const filePath = resolve(memoryDir, `${slug}.md`);

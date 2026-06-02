@@ -44,6 +44,13 @@ export class ContextBusPersistence {
       for (const r of records) {
         let value: unknown = r.value;
         try { value = JSON.parse(r.value); } catch { /* keep as string */ }
+        // Defensive: tags may be JSON string or already-parsed array
+        let tags: string[] = [];
+        if (Array.isArray(r.tags)) {
+          tags = r.tags as string[];
+        } else if (typeof r.tags === 'string') {
+          try { tags = JSON.parse(r.tags) as string[]; } catch { tags = []; }
+        }
         bus.set({
           key: r.key,
           value,
@@ -51,7 +58,7 @@ export class ContextBusPersistence {
           author: r.author,
           taskId: r.taskId || undefined,
           planId: r.planId || undefined,
-          tags: r.tags as string[],
+          tags,
           status: r.status as ContextEntry['status'],
         });
       }

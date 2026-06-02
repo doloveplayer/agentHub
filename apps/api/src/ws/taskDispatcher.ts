@@ -257,9 +257,8 @@ function handleProviderTaskEvent(
       });
       break;
     case 'skill_use': {
-      const skillEvent = event as any;
       stateTracker.recordSkillUse({
-        skillName: skillEvent.skillName || 'unknown',
+        skillName: event.skillName || 'unknown',
         agentName,
         agentId: run.task?.agentType || agentName,
         taskId: task.id,
@@ -267,9 +266,10 @@ function handleProviderTaskEvent(
       });
       broadcast(sessionId, {
         type: 'skill_use',
-        skillName: skillEvent.skillName,
+        skillName: event.skillName,
         agentName,
         agentId: run.task?.agentType || agentName,
+        agentMessageId: taskMessageId,
         taskId: task.id,
         planId: queue.planId,
         timestamp: Date.now(),
@@ -299,18 +299,6 @@ function handleProviderTaskEvent(
           taskId: task.id,
           planId: queue.planId,
           tags: [agentName, task.agentType, 'handoff'],
-          status: 'active',
-        });
-      } else {
-        const bus = getSessionContextBus(sessionId);
-        bus.set({
-          key: `task:${task.id}:failure`,
-          value: `Failed: ${output.slice(0, 300)}`,
-          type: 'known-issue',
-          author: agentName,
-          taskId: task.id,
-          planId: queue.planId,
-          tags: [agentName, task.agentType, 'failure'],
           status: 'active',
         });
       }
@@ -833,6 +821,24 @@ export async function handleDispatchedTaskFinished(
     }
   }
 
+  // Write known-issue to ContextBus when task is definitively failed (not retrying)
+  if (!success) {
+    const failedItem = execution.tasks.get(taskId);
+    if (failedItem && failedItem.status === 'failed') {
+      const bus = getSessionContextBus(sessionId);
+      bus.set({
+        key: `task:${taskId}:failure`,
+        value: `Failed after ${failedItem.retryCount} retries: ${failedItem.lastError || ''}`.slice(0, 300),
+        type: 'known-issue',
+        author: failedItem.agentName,
+        taskId,
+        planId,
+        tags: [failedItem.agentName, failedItem.task.agentType, 'failure'],
+        status: 'active',
+      });
+    }
+  }
+
   maybeBroadcastPlanSummary(sessionId, execution);
   persistState(sessionId, planId, execution).catch((err) =>
     console.error(`[dag] Persist error on task finish: ${err.message}`));
@@ -853,10 +859,12 @@ export async function handleDispatchedTaskFinished(
       .filter(item => item.status === 'failed' || item.status === 'blocked')
       .map(item => ({ id: item.task.id, error: item.lastError || '', retryCount: item.retryCount || 0 }));
 
+    const existingCp = CheckpointManager.read(sessionId, planId);
     CheckpointManager.save(
-      sessionId, planId, pending, completed, failed, {},
+      sessionId, planId, pending, completed, failed,
+      existingCp?.agentSessions || {},
     );
-  }).catch(() => {});
+  }).catch((err: any) => console.error('[dag] CheckpointManager import failed:', err.message));
 }
 
 /**
@@ -1031,7 +1039,7 @@ export async function enqueueTaskAssignments(
           expectedOutput: item.task.expectedOutput, priority: item.task.priority,
         }));
       CheckpointManager.save(sessionId, planId, pending, [], [], {});
-    }).catch(() => {});
+    }).catch((err: any) => console.error('[dag] ArchiveManager import failed:', err.message));
   }
 }
 
@@ -1112,7 +1120,7 @@ function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionSta
           manifestPath: `.sandboxes/${sessionId}/archive/${execution.planId}/manifest.json`,
         });
       }).catch(err => console.error(`[archive] Plan ${execution.planId} archive failed:`, err));
-    }).catch(() => {});
+    }).catch((err: any) => console.error('[dag] ArchiveManager dynamic import failed:', err.message));
   }
 }
 

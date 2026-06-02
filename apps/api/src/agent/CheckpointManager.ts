@@ -37,8 +37,8 @@ export class CheckpointManager {
     const filePath = resolve(checkpointDir, `${planId}.json`);
     writeFileSync(filePath, JSON.stringify(checkpoint, null, 2), 'utf-8');
 
-    // Also persist to DB
-    prisma.sessionCheckpoint.upsert({
+    // Also persist to DB (fire-and-forget — filesystem is the authoritative source)
+    void prisma.sessionCheckpoint.upsert({
       where: { sessionId_planId: { sessionId, planId } },
       update: { data: checkpoint as any },
       create: {
@@ -84,6 +84,8 @@ export class CheckpointManager {
         tags: entry.tags, status: entry.status,
       });
     }
+    // Restored entries are not "new" — they come from a prior checkpoint
+    currentBus.clearNewKeys();
     return currentBus;
   }
 

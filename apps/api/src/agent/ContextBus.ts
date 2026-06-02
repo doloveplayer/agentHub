@@ -219,6 +219,11 @@ export class ContextBus {
   hasNewEntriesOfType(type: ContextEntryType): boolean {
     return this.getNewEntriesOfType(type).length > 0;
   }
+
+  /** Clear the "new" tracking set — called after experience extraction to prevent cross-plan duplicates. */
+  clearNewKeys(): void {
+    this.newKeys.clear();
+  }
 }
 
 /** Per-session singleton — created by WS handler on session connect, destroyed on disconnect. */

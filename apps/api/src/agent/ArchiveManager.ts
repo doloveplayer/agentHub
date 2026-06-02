@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 import { execSync } from 'child_process';
 import { prisma } from '../db/prisma.js';
+import { DagPersistence } from './DagPersistence.js';
 import { getSessionContextBus } from './ContextBus.js';
 import { ExperienceExtractor, type ExtractionTask, type FailedTaskInfo } from './ExperienceExtractor.js';
 import { AgentDirectoryManager } from './AgentDirectoryManager.js';
@@ -36,6 +37,7 @@ export class ArchiveManager {
 
     // Step 4: Cleanup from ContextBus
     bus.archive(planId);
+    bus.clearNewKeys();
 
     return { manifest, experiences };
   }
@@ -58,7 +60,7 @@ export class ArchiveManager {
       diffContent = execSync('git diff --stat HEAD', {
         cwd: hostWorkDir, encoding: 'utf-8', timeout: 10000,
       });
-    } catch { diffContent = '(git diff unavailable)'; }
+    } catch { diffContent = '(git diff unavailable)'; console.warn('[ArchiveManager] git diff failed'); }
 
     // Collect file changes
     const added: string[] = [];
@@ -76,7 +78,7 @@ export class ArchiveManager {
         else if (code === 'D') removed.push(file);
         else modified.push(file);
       }
-    } catch { /* ignore */ }
+    } catch (err: any) { console.warn(`[ArchiveManager] git status failed: ${err.message}`); }
 
     const durationMs = Date.now() - startTime;
     const manifest: ArchiveManifest = {
@@ -103,11 +105,8 @@ export class ArchiveManager {
     writeFileSync(resolve(archiveDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
     writeFileSync(resolve(archiveDir, 'diff.patch'), diffContent, 'utf-8');
 
-    // Persist to DB
-    await prisma.planExecution.updateMany({
-      where: { sessionId, planId },
-      data: { status: 'archived' },
-    }).catch(() => {});
+    // Persist to DB via DagPersistence
+    await DagPersistence.markArchived(sessionId, planId);
 
     return manifest;
   }
@@ -123,13 +122,20 @@ export class ArchiveManager {
       }
     }
 
+    // Fetch all agents once and match by exact name (case-insensitive)
+    const allAgents = await prisma.agent.findMany({
+      select: { id: true, name: true, systemPrompt: true },
+    }).catch(() => [] as { id: string; name: string; systemPrompt: string }[]);
+
     for (const [agentType, exps] of byAgent) {
       try {
-        const agents = await prisma.agent.findMany({
-          where: { name: { contains: agentType, mode: 'insensitive' } },
-          select: { id: true, name: true, systemPrompt: true },
-        });
-        for (const agent of agents) {
+        const normalizedType = agentType.toLowerCase();
+        const matched = allAgents.filter(a => a.name.toLowerCase() === normalizedType);
+        if (matched.length === 0) {
+          console.warn(`[ArchiveManager] No agent found for type "${agentType}", skipping ${exps.length} experiences`);
+          continue;
+        }
+        for (const agent of matched) {
           const homeDir = AgentDirectoryManager.getAgentHome(agent.id);
           AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt);
           for (const exp of exps) {
