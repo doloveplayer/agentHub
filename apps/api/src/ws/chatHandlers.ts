@@ -316,7 +316,8 @@ export async function handleChatMessage(
 3. 每个任务必须包含 risk 字段（low / high），参考 plan skill 中的风险判定规则
 4. 将 plan.json 通过 Write 工具写入 /sandbox/plan.json，Hub 会自动检测并调度\n`;
       }
-      agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostSandboxDir, sessionId) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${sessionContext ? sessionContext + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
+      const inboxPrompt = sandbox ? await InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostSandboxDir, sessionId) : '';
+      agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${inboxPrompt}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${sessionContext ? sessionContext + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
       if (sandbox) AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null, sessionId, agent.skills as any[] | null, agent.id);
       agentNameToType.set(agent.name, agent.name);
     } else {
