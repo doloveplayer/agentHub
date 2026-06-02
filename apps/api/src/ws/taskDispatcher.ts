@@ -2,6 +2,7 @@
 // Extracted from handler.ts.
 
 import { stateTracker } from '../agent/StateTracker.js';
+import { getSessionContextBus } from '../agent/ContextBus.js';
 import { findClosestAgent } from '../agent/turns.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
@@ -131,8 +132,17 @@ function planKey(sessionId: string, planId: string): string {
   return `${sessionId}:${planId}`;
 }
 
-function buildTaskPrompt(task: TaskDispatchNode): string {
-  return `Task: ${task.title}
+function buildTaskPrompt(task: TaskDispatchNode, sessionId?: string): string {
+  let contextBlock = '';
+  if (sessionId) {
+    const bus = getSessionContextBus(sessionId);
+    const digest = bus.getProjectDigest(400);
+    const experience = bus.getRelevantExperience(task.agentType, task.description);
+    if (digest) contextBlock += digest + '\n';
+    if (experience) contextBlock += experience + '\n';
+  }
+
+  return `${contextBlock}Task: ${task.title}
 Description: ${task.description}
 Expected Output: ${task.expectedOutput}
 ${task.dependsOn.length > 0 ? `\nDepends on: ${task.dependsOn.join(', ')}\n` : ''}
@@ -259,6 +269,31 @@ function handleProviderTaskEvent(
         output: output.slice(0, 200),
       });
       stateTracker.setDone(taskMessageId);
+      if (succeeded && output) {
+        const bus = getSessionContextBus(sessionId);
+        bus.set({
+          key: `task:${task.id}:output-summary`,
+          value: output.slice(0, 500),
+          type: 'task-handoff',
+          author: agentName,
+          taskId: task.id,
+          planId: queue.planId,
+          tags: [agentName, task.agentType, 'handoff'],
+          status: 'active',
+        });
+      } else {
+        const bus = getSessionContextBus(sessionId);
+        bus.set({
+          key: `task:${task.id}:failure`,
+          value: `Failed: ${output.slice(0, 300)}`,
+          type: 'known-issue',
+          author: agentName,
+          taskId: task.id,
+          planId: queue.planId,
+          tags: [agentName, task.agentType, 'failure'],
+          status: 'active',
+        });
+      }
       void prisma.message.update({
         where: { id: taskMessageId },
         data: { content: output || '[Agent finished]', status: succeeded ? 'done' : 'error' },
@@ -344,7 +379,7 @@ export async function processNextInQueue(
 
   if (procInfo && procInfo.provider.isAlive()) {
     registerProviderTaskEventHandler(sessionId, agentName, procInfo.provider);
-    const taskPrompt = buildTaskPrompt(task);
+    const taskPrompt = buildTaskPrompt(task, sessionId);
     const taskMessageId = buildTaskMessageId(queue.planId, task.id);
     recordMessageBeforeVersion(
       taskMessageId,
@@ -402,7 +437,7 @@ async function startReplForTask(
     messageId: taskMsgId, hostWorkDir: sandbox.hostWorkDir,
     resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type), broadcast,
   });
-  const fullPrompt = `${agent.systemPrompt}${languageConsistencyPrompt(detectLanguage(task.description || task.title))}\n\n---\n\n${buildTaskPrompt(task)}\n${coordinationPrompt}`;
+  const fullPrompt = `${agent.systemPrompt}${languageConsistencyPrompt(detectLanguage(task.description || task.title))}\n\n---\n\n${buildTaskPrompt(task, sessionId)}\n${coordinationPrompt}`;
 
   try {
     const { ProviderFactory } = await import('../agent/providers/factory.js');
@@ -600,7 +635,7 @@ export async function handleDispatchedTaskFinished(
 
     const sandbox = sandboxes.get(sessionId);
     const fileTree = sandbox ? collectFileTree(sandbox.hostWorkDir) : undefined;
-    const taskPrompt = failedTask ? buildTaskPrompt(failedTask.task) : undefined;
+    const taskPrompt = failedTask ? buildTaskPrompt(failedTask.task, sessionId) : undefined;
 
     // Stage 1: auto-retry (before max retries)
     if (currentRetryCount < MAX_AUTO_RETRIES) {
@@ -805,7 +840,7 @@ export async function handleReplanFailedTask(
 
   const sandbox = sandboxes.get(sessionId);
   const fileTree = sandbox ? collectFileTree(sandbox.hostWorkDir) : undefined;
-  const taskPrompt = buildTaskPrompt(failedTask.task);
+  const taskPrompt = buildTaskPrompt(failedTask.task, sessionId);
 
   broadcast(sessionId, {
     type: "manager_reviewing",
