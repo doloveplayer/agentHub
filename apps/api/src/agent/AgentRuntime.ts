@@ -2,7 +2,8 @@
 // Manages all agent REPL processes globally (not per-session), handling
 // lazy container startup, prompt queueing, and idle timeout shutdown.
 
-import { existsSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { resolve } from 'path';
 import { ProviderFactory } from './providers/factory.js';
 import type { AbstractProvider, UnifiedAgentEvent } from './providers/base.js';
 import { AgentContainer } from './AgentContainer.js';
@@ -10,6 +11,8 @@ import { AgentDirectoryManager } from './AgentDirectoryManager.js';
 import { extractAndValidate } from './PlanValidator.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
+import { IntentParser } from './IntentParser.js';
+import { InboxManager } from './InboxManager.js';
 import { broadcast, clearRunningAgent, quoteBackfillMap } from '../ws/state.js';
 
 interface QueueItem {
@@ -34,6 +37,7 @@ interface AgentEntry {
   currentSession: string | null;
   currentMessageId: string | null;
   currentAgentId: string | null; // agent ID for current message
+  currentAgentName: string | null; // agent display name for inbox writes
   queue: QueueItem[];
   sharedContainer: boolean; // true when using session sandbox (don't destroy on idle)
   isPlanner: boolean; // true if this agent is a planner
@@ -45,6 +49,9 @@ interface AgentEntry {
   lastSessionId: string | null;
   lastMessageId: string | null;
   lastAgentId: string | null;
+  needsCompression: boolean;           // set when contextPct > threshold
+  compressionPhase: 'none' | 'summarizing'; // compression state
+  compressionPendingPrompt: string | null;   // stores user prompt during compression
 }
 
 /** Estimated context window sizes per model. Default 200K for unknown models. */
@@ -69,6 +76,38 @@ const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
 function calcContextPct(inputTokens: number, model: string): number {
   const window = MODEL_CONTEXT_WINDOWS[model] || 200000;
   return Math.round((inputTokens / window) * 100);
+}
+
+const COMPRESSION_THRESHOLD_PCT = 70;
+
+async function resolveAgentByName(
+  sessionId: string,
+  agentName: string,
+): Promise<{ id: string; name: string } | null> {
+  try {
+    const sa = await prisma.sessionAgent.findFirst({
+      where: { sessionId, agent: { name: agentName } },
+      select: { agent: { select: { id: true, name: true } } },
+    });
+    return sa?.agent ?? null;
+  } catch { return null; }
+}
+
+function buildCompressionPrompt(contextPct: number): string {
+  return `## Context Compression Required
+
+Your context window is approximately ${contextPct}% full. Before processing the next user request,
+please write a **concise summary** of the conversation so far.
+
+Include in your summary:
+1. **User's original goal** — what the user asked you to do
+2. **Key decisions** — important choices made and why
+3. **Current state** — what files exist, what's working, what's not
+4. **Pending items** — what still needs to be done
+
+Format your summary as structured markdown. This summary will serve as the
+starting context for your next session, so be thorough but concise.
+After writing the summary, I will process your next user request.`;
 }
 
 class AgentRuntime {
@@ -143,6 +182,22 @@ class AgentRuntime {
     entry.lastAgentId = agentId;
     entry.accumulatedOutput = ''; // Reset accumulated output for new task
     this.clearIdleTimer(entry);
+
+    // --- Context Compression ---
+    if (entry.needsCompression && entry.compressionPhase === 'none') {
+      entry.needsCompression = false;
+      entry.compressionPhase = 'summarizing';
+      entry.compressionPendingPrompt = prompt;
+
+      const compressionPct = entry.currentMessageId
+        ? calcContextPct(this.tokenUsageMap.get(entry.currentMessageId)?.input ?? 0, entry.model)
+        : 75;
+      const compressionPrompt = buildCompressionPrompt(compressionPct);
+      entry.provider.sendPrompt(compressionPrompt);
+      return;
+    }
+    // --- End Context Compression ---
+
     entry.provider.sendPrompt(prompt);
   }
 
@@ -212,6 +267,7 @@ class AgentRuntime {
       currentSession: null,
       currentMessageId: null,
       currentAgentId: null,
+      currentAgentName: agent.name,
       queue: [],
       sharedContainer: !!sandbox,
       isPlanner,
@@ -220,10 +276,13 @@ class AgentRuntime {
       lastSessionId: null,
       lastMessageId: null,
       lastAgentId: null,
+      needsCompression: false,
+      compressionPhase: 'none' as const,
+      compressionPendingPrompt: null,
     };
 
     provider.onEvent((event: UnifiedAgentEvent) => {
-      this.handleAgentEvent(agentId, entry, event);
+      void this.handleAgentEvent(agentId, entry, event);
     });
 
     this.agents.set(agentId, entry);
@@ -232,7 +291,7 @@ class AgentRuntime {
   }
 
   /** Forward REPL events to the correct session, manage queue lifecycle */
-  private handleAgentEvent(agentId: string, entry: AgentEntry, event: UnifiedAgentEvent): void {
+  private async handleAgentEvent(agentId: string, entry: AgentEntry, event: UnifiedAgentEvent): Promise<void> {
     const sessionId = entry.currentSession || 'unknown';
     const agentMessageId = entry.currentMessageId || undefined;
 
@@ -253,7 +312,64 @@ class AgentRuntime {
         });
         break;
       case 'done':
+        // --- Handle compression completion ---
+        if (entry.compressionPhase === 'summarizing') {
+          const summary = entry.accumulatedOutput?.slice(0, 3000) || 'Conversation state preserved.';
+          const pendingPrompt = entry.compressionPendingPrompt || 'Continue.';
+          entry.compressionPhase = 'none';
+          entry.compressionPendingPrompt = null;
+          entry.accumulatedOutput = '';
+
+          try {
+            const summaryDir = resolve(entry.hostWorkDir, `_agent_${entry.currentAgentId || 'agent'}`);
+            mkdirSync(summaryDir, { recursive: true });
+            writeFileSync(resolve(summaryDir, '_context_summary.md'), summary, 'utf-8');
+          } catch {}
+
+          try { entry.provider.stop(); } catch {}
+          const fullPrompt = `## Previous Session Summary\n\n${summary}\n\n---\n\n## New Request\n\n${pendingPrompt}`;
+          await entry.provider.start(
+            'agent-' + agentId,
+            fullPrompt,
+            entry.containerId,
+            '/workspace',
+            { hostWorkDir: entry.hostWorkDir, trustMode: true },
+          );
+
+          entry.provider.onEvent((e: UnifiedAgentEvent) => {
+            this.handleAgentEvent(agentId, entry, e);
+          });
+          break;
+        }
+        // --- End compression completion ---
+
         broadcast(sessionId, { type: 'stream_end', exitCode: event.exitCode ?? 0, agentMessageId });
+
+        // Route NEEDS HELP intents to target agent inboxes
+        if (entry.accumulatedOutput) {
+          const helpIntents = IntentParser.scan(entry.accumulatedOutput);
+          for (const intent of helpIntents) {
+            const target = await resolveAgentByName(sessionId, intent.targetAgentName);
+            if (target) {
+              InboxManager.write(entry.hostWorkDir, target.name, {
+                type: 'help_request',
+                id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                from: entry.currentAgentName || entry.currentAgentId || 'unknown',
+                to: target.name,
+                summary: intent.description,
+                risk: 'low',
+                timestamp: Date.now(),
+              }, sessionId);
+              broadcast(sessionId, {
+                type: 'inbox_update',
+                agentName: target.name,
+                summary: intent.description,
+                timestamp: Date.now(),
+              });
+            }
+          }
+        }
+
         if (agentMessageId) {
           clearRunningAgent(sessionId, agentMessageId);
           void prisma.message.updateMany({
@@ -412,6 +528,11 @@ class AgentRuntime {
               },
             },
           });
+          // Check if context usage exceeds compression threshold
+          const contextPct = calcContextPct(cumulative.input, entry.model);
+          if (contextPct > COMPRESSION_THRESHOLD_PCT) {
+            entry.needsCompression = true;
+          }
         }
         // If done already fired, persist now since the done handler couldn't
         if (!agentMessageId && tokMsgId) {
@@ -524,7 +645,7 @@ class AgentRuntime {
     );
 
     provider.onEvent((event: UnifiedAgentEvent) => {
-      this.handleAgentEvent(agentId, entry, event);
+      void this.handleAgentEvent(agentId, entry, event);
     });
 
     // Update entry to point to new container

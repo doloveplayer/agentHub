@@ -6,7 +6,7 @@ function norm(name: string): string {
 }
 
 export interface InboxEntry {
-  type: 'intervention_request' | 'intervention_response' | 'context_update';
+  type: 'intervention_request' | 'intervention_response' | 'context_update' | 'help_request';
   id: string;
   from: string;       // agent name
   to: string;         // target agent name or messageId
