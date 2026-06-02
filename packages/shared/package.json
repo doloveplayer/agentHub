@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "type": "module",
   "main": "./src/types.ts",
+  "exports": {
+    ".": "./src/types.ts",
+    "./constants": "./src/constants.ts"
+  },
   "devDependencies": {
     "typescript": "^5.5.0"
   }

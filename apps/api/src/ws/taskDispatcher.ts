@@ -21,28 +21,7 @@ import * as fs from 'fs';
 import { createSDKAgentProcess, createOneShotAgentProcess } from '../agent/processFactory.js';
 
 
-/** Estimated context window sizes per model. */
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  'deepseek-v4-pro': 1000000,
-  'deepseek-v4-flash': 1000000,
-  'claude-sonnet-4-6': 200000,
-  'claude-opus-4-7': 200000,
-  'claude-haiku-4-5': 200000,
-  'claude-sonnet-4-5': 200000,
-  'claude-opus-4-5': 200000,
-  'claude-opus-4': 200000,
-  'claude-sonnet-4': 200000,
-  'gemini-2.5-pro': 1048576,
-  'gemini-2.5-flash': 1048576,
-  'gpt-4o': 128000,
-  'gpt-4-turbo': 128000,
-};
-
-function calcContextPct(inputTokens: number, model?: string): number {
-  if (!inputTokens || inputTokens <= 0) return 0;
-  const window = MODEL_CONTEXT_WINDOWS[model || ''] || 200000;
-  return Math.round((inputTokens / window) * 100);
-}
+import { calcContextPct } from '@agenthub/shared/constants';
 
 /** Check if a task's expected output file exists in the sandbox. */
 function taskOutputExists(hostWorkDir: string, expectedOutput: string): boolean {

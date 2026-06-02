@@ -54,29 +54,15 @@ interface AgentEntry {
   compressionPendingPrompt: string | null;   // stores user prompt during compression
 }
 
-/** Estimated context window sizes per model. Default 200K for unknown models. */
-const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  'deepseek-v4-pro': 1000000,
-  'deepseek-v4-flash': 1000000,
-  'claude-sonnet-4-6': 200000,
-  'claude-opus-4-7': 200000,
-  'claude-haiku-4-5': 200000,
-  'claude-sonnet-4-5': 200000,
-  'claude-opus-4-5': 200000,
-  'claude-opus-4': 200000,
-  'claude-sonnet-4': 200000,
-  'claude-3.5-sonnet': 200000,
-  'claude-3.5-haiku': 200000,
-  'gemini-2.5-pro': 1048576,
-  'gemini-2.5-flash': 1048576,
-  'gpt-4o': 128000,
-  'gpt-4-turbo': 128000,
-};
+import {
+  calcContextPct,
+  mergeModelWindowOverrides,
+} from '@agenthub/shared/constants';
 
-function calcContextPct(inputTokens: number, model: string): number {
-  const window = MODEL_CONTEXT_WINDOWS[model] || 200000;
-  return Math.round((inputTokens / window) * 100);
-}
+/** Runtime context window table — base + env overrides. */
+const modelWindows = mergeModelWindowOverrides(process.env.AGENTHUB_MODEL_WINDOWS);
+const calcPct = (inputTokens: number, model: string): number =>
+  calcContextPct(inputTokens, model, modelWindows);
 
 const COMPRESSION_THRESHOLD_PCT = 70;
 
@@ -190,7 +176,7 @@ class AgentRuntime {
       entry.compressionPendingPrompt = prompt;
 
       const compressionPct = entry.currentMessageId
-        ? calcContextPct(this.tokenUsageMap.get(entry.currentMessageId)?.input ?? 0, entry.model)
+        ? calcPct(this.tokenUsageMap.get(entry.currentMessageId)?.input ?? 0, entry.model)
         : 75;
       const compressionPrompt = buildCompressionPrompt(compressionPct);
       entry.provider.sendPrompt(compressionPrompt);
@@ -524,12 +510,12 @@ class AgentRuntime {
                 output: cumulative.output,
                 cacheRead: cumulative.cacheRead,
                 cacheCreate: cumulative.cacheCreate,
-                contextPct: calcContextPct(cumulative.input, entry.model),
+                contextPct: calcPct(cumulative.input, entry.model),
               },
             },
           });
           // Check if context usage exceeds compression threshold
-          const contextPct = calcContextPct(cumulative.input, entry.model);
+          const contextPct = calcPct(cumulative.input, entry.model);
           if (contextPct > COMPRESSION_THRESHOLD_PCT) {
             entry.needsCompression = true;
           }

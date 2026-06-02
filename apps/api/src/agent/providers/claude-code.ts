@@ -27,6 +27,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
   private currentAgentTag = '';
   private currentAgentConfigId: string | undefined;
   private currentAgentHomeDir = '';
+  private currentModel: string | undefined;
   private childProc: import('child_process').ChildProcess | null = null;
   private pendingCleanup: (() => void) | null = null;
   private partialLine = '';
@@ -76,6 +77,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
     this.currentAgentTag = config.agentName || 'agent';
     this.currentAgentConfigId = config.agentName;
     this.currentAgentHomeDir = config.agentHomeDir || '';
+    this.currentModel = config.model;
 
     return this.runInContainer(prompt, undefined);
   }
@@ -110,6 +112,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
       permissionMode: mapPermissionMode(profile),
       allowedTools: mapAllowedTools(profile),
       resumeSession,
+      model: this.currentModel,
     });
 
     this.childProc = proc;
