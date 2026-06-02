@@ -272,11 +272,23 @@ workspace.get('/:sessionId/html-preview', async (c) => {
 
   if (!absPath) return c.json({ error: 'File not found' }, 404);
 
+  // Verify the resolved path is a regular file (not a directory)
+  let stat: ReturnType<typeof statSync>;
+  try {
+    stat = statSync(absPath);
+  } catch {
+    return c.json({ error: `File not found at resolved path` }, 404);
+  }
+  if (!stat.isFile()) {
+    return c.json({ error: 'Path is not a regular file' }, 400);
+  }
+
   try {
     const content = readFileSync(absPath, 'utf-8');
     c.header('Content-Type', 'text/html; charset=utf-8');
     return c.body(content);
-  } catch {
+  } catch (err: any) {
+    console.error(`[workspace:html-preview] Failed to read file: ${absPath} — ${err.message}`);
     return c.json({ error: 'Failed to read file' }, 500);
   }
 });
