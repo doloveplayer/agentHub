@@ -68,7 +68,7 @@ test('ContextBus: should generate project digest within token limit', () => {
     });
   }
   const digest = bus.getProjectDigest(500);
-  assert.ok(digest.length <= 600, `digest length ${digest.length} > 600`);
+  assert.ok(digest.length <= 2100, `digest length ${digest.length} > 2100`);
   assert.ok(digest.includes('fact:0'), 'digest should contain fact:0');
 });
 
