@@ -1,45 +1,57 @@
 import { useState, useEffect } from 'react';
-import { X, Save, RotateCcw } from 'lucide-react';
+import { X, Save, RotateCcw, Plus, Pencil, Trash2, Upload, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api';
+import { useAppStore } from '../store/appStore';
+import type { SkillDef } from '@agenthub/shared';
 
 interface Props {
-  sessionId: string;
   agentId: string;
-  agentName: string;
   onClose: () => void;
   onSaved?: () => void;
 }
 
-export function AgentConfigEditor({ sessionId, agentId, agentName, onClose, onSaved }: Props) {
-  const [override, setOverride] = useState<string>('');
-  const [globalPrompt, setGlobalPrompt] = useState<string>('');
+interface EditableSkill {
+  name: string;
+  description: string;
+  content: string;
+  _editing?: boolean;
+  _isNew?: boolean;
+}
+
+export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
+  const agents = useAppStore((s) => s.agents);
+  const setAgents = useAppStore((s) => s.setAgents);
+  const agent = agents.find((a) => a.id === agentId);
+
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [skills, setSkills] = useState<EditableSkill[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [showReplaceWarning, setShowReplaceWarning] = useState(false);
 
   useEffect(() => {
-    loadConfig();
-  }, [sessionId, agentId]);
-
-  const loadConfig = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const config = await api.getSessionAgentConfig(sessionId, agentId);
-      setOverride(config.systemPromptOverride || '');
-      setGlobalPrompt(config.globalSystemPrompt);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load config');
-    } finally {
+    if (agent) {
+      setSystemPrompt(agent.systemPrompt);
+      setSkills((agent.skills || []) as EditableSkill[]);
       setLoading(false);
     }
-  };
+  }, [agent]);
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
-      await api.updateSessionAgentConfig(sessionId, agentId, override || undefined);
+      // Strip internal fields before saving
+      const cleanSkills: SkillDef[] = skills.map(({ _editing, _isNew, ...s }) => s);
+      const updated = await api.updateAgent(agentId, {
+        systemPrompt,
+        skills: cleanSkills.length > 0 ? cleanSkills : null,
+      });
+      // Update store
+      setAgents(agents.map((a) => (a.id === agentId ? { ...a, ...updated } : a)));
       onSaved?.();
     } catch (err: any) {
       setError(err.message || 'Failed to save config');
@@ -48,17 +60,88 @@ export function AgentConfigEditor({ sessionId, agentId, agentName, onClose, onSa
     }
   };
 
-  const handleReset = () => {
-    setOverride('');
+  const handleResetSystemPrompt = () => {
+    if (agent) setSystemPrompt(agent.systemPrompt);
   };
+
+  // --- Skills management ---
+
+  const addSkill = () => {
+    setSkills([
+      ...skills,
+      { name: '', description: '', content: '', _editing: true, _isNew: true },
+    ]);
+    setShowReplaceWarning(true);
+  };
+
+  const startEditSkill = (idx: number) => {
+    setSkills(skills.map((s, i) => (i === idx ? { ...s, _editing: true } : s)));
+  };
+
+  const updateSkillField = (idx: number, field: keyof EditableSkill, value: string) => {
+    setSkills(skills.map((s, i) => (i === idx ? { ...s, [field]: value } : s)));
+  };
+
+  const saveSkillEdit = (idx: number) => {
+    const skill = skills[idx];
+    if (!skill.name || !skill.description || !skill.content) return;
+    setSkills(skills.map((s, i) => (i === idx ? { ...s, _editing: false, _isNew: false } : s)));
+  };
+
+  const cancelSkillEdit = (idx: number) => {
+    if (skills[idx]._isNew) {
+      setSkills(skills.filter((_, i) => i !== idx));
+    } else {
+      setSkills(skills.map((s, i) => (i === idx ? { ...s, _editing: false } : s)));
+    }
+  };
+
+  const removeSkill = (idx: number) => {
+    setSkills(skills.filter((_, i) => i !== idx));
+  };
+
+  // --- File upload ---
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const result = await api.validateSkillFile(file);
+      if (result.valid && result.skill) {
+        setSkills([
+          ...skills,
+          { ...result.skill, _editing: false, _isNew: false },
+        ]);
+        setShowReplaceWarning(true);
+      } else {
+        setUploadError(result.errors?.map((e) => e.message).join('; ') || 'Validation failed');
+      }
+    } catch (err: any) {
+      setUploadError(err.message || 'Failed to validate file');
+    } finally {
+      setUploading(false);
+    }
+    // Reset input
+    e.target.value = '';
+  };
+
+  if (loading) {
+    return (
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-hub-surface rounded-lg shadow-xl p-6 text-hub-muted">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-hub-surface rounded-lg shadow-xl w-full max-w-3xl max-h-[80vh] flex flex-col">
+      <div className="bg-hub-surface rounded-lg shadow-xl w-full max-w-3xl max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-hub">
           <h3 className="text-body font-semibold text-hub-primary">
-            Configure {agentName}
+            Configure: {agent?.displayName || agent?.name}
           </h3>
           <button onClick={onClose} className="p-1 rounded hover:bg-hub-hover text-hub-muted">
             <X className="w-4 h-4" />
@@ -66,60 +149,148 @@ export function AgentConfigEditor({ sessionId, agentId, agentName, onClose, onSa
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {loading ? (
-            <div className="flex items-center justify-center py-8 text-hub-muted">
-              Loading...
+        <div className="flex-1 overflow-y-auto p-4 space-y-5">
+          {/* System Prompt */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium text-hub-primary">
+                System Prompt
+              </label>
+              {systemPrompt !== agent?.systemPrompt && (
+                <button
+                  onClick={handleResetSystemPrompt}
+                  className="flex items-center gap-1 text-xs text-hub-muted hover:text-hub-accent"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Reset to default
+                </button>
+              )}
             </div>
-          ) : (
-            <>
-              {/* Session Override */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-hub-primary">
-                    Session Override
-                  </label>
-                  {override && (
-                    <button
-                      onClick={handleReset}
-                      className="flex items-center gap-1 text-xs text-hub-muted hover:text-hub-accent"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Reset to global
-                    </button>
-                  )}
-                </div>
-                <textarea
-                  value={override}
-                  onChange={(e) => setOverride(e.target.value)}
-                  placeholder="Leave empty to use global config..."
-                  className="w-full h-48 px-3 py-2 rounded-lg bg-hub-raised border border-hub
-                             text-hub-primary text-sm font-mono resize-none focus:border-hub-accent focus:outline-none"
-                />
-                <p className="text-[10px] text-hub-muted mt-1">
-                  This override only affects this session. Leave empty to use the global system prompt.
-                </p>
-              </div>
+            <textarea
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
+              className="w-full h-36 px-3 py-2 rounded-lg bg-hub-raised border border-hub
+                         text-hub-primary text-sm font-mono resize-none focus:border-hub-accent focus:outline-none"
+            />
+          </div>
 
-              {/* Global Config (read-only) */}
-              <div>
-                <label className="text-sm font-medium text-hub-primary mb-2 block">
-                  Global System Prompt (read-only)
-                </label>
-                <div className="w-full h-32 px-3 py-2 rounded-lg bg-hub-raised border border-hub
-                                text-hub-muted text-sm font-mono overflow-y-auto">
-                  {globalPrompt || 'No global system prompt'}
-                </div>
-              </div>
+          {/* Skills */}
+          <div>
+            <label className="text-sm font-medium text-hub-primary mb-2 block">
+              Skills
+            </label>
 
-              {/* Warning */}
-              <div className="p-3 rounded-lg bg-hub-warning/10 border border-hub-warning/20">
+            {/* Replace warning */}
+            {showReplaceWarning && skills.length > 0 && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-hub-warning/10 border border-hub-warning/20 mb-3">
+                <AlertTriangle className="w-4 h-4 text-hub-warning flex-shrink-0 mt-0.5" />
                 <p className="text-xs text-hub-warning">
-                  This modification only affects the agent in this session. Other sessions will continue to use the global config.
+                  Custom skills will <strong>completely replace</strong> the agent's default skills.
+                  Save to apply your changes globally across all sessions using this agent.
                 </p>
               </div>
-            </>
-          )}
+            )}
+
+            {/* Skill list */}
+            {skills.length === 0 ? (
+              <p className="text-xs text-hub-muted py-3">No custom skills defined. The agent uses its default skills.</p>
+            ) : (
+              <div className="space-y-2 mb-3">
+                {skills.map((skill, idx) => (
+                  <div key={idx} className="border border-hub rounded-lg overflow-hidden">
+                    {skill._editing ? (
+                      /* Edit mode */
+                      <div className="p-3 space-y-2 bg-hub-raised">
+                        <input
+                          type="text"
+                          value={skill.name}
+                          onChange={(e) => updateSkillField(idx, 'name', e.target.value)}
+                          placeholder="Skill name (kebab-case)"
+                          className="w-full px-2 py-1 rounded bg-hub-surface border border-hub text-hub-primary text-sm focus:border-hub-accent focus:outline-none"
+                        />
+                        <input
+                          type="text"
+                          value={skill.description}
+                          onChange={(e) => updateSkillField(idx, 'description', e.target.value)}
+                          placeholder="Description"
+                          className="w-full px-2 py-1 rounded bg-hub-surface border border-hub text-hub-primary text-sm focus:border-hub-accent focus:outline-none"
+                        />
+                        <textarea
+                          value={skill.content}
+                          onChange={(e) => updateSkillField(idx, 'content', e.target.value)}
+                          placeholder="Skill content (markdown, without frontmatter)"
+                          className="w-full h-24 px-2 py-1 rounded bg-hub-surface border border-hub text-hub-primary text-sm font-mono resize-none focus:border-hub-accent focus:outline-none"
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <button onClick={() => cancelSkillEdit(idx)}
+                            className="px-2 py-1 text-xs text-hub-muted hover:text-hub-secondary"
+                          >
+                            Cancel
+                          </button>
+                          <button onClick={() => saveSkillEdit(idx)}
+                            disabled={!skill.name || !skill.description || !skill.content}
+                            className="px-3 py-1 text-xs bg-hub-accent text-white rounded hover:bg-hub-accent/90 disabled:opacity-40 transition"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* View mode */
+                      <div className="flex items-center justify-between px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <span className="text-sm font-medium text-hub-primary">{skill.name}</span>
+                          <span className="text-xs text-hub-tertiary ml-2 truncate">{skill.description}</span>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+                          <button onClick={() => startEditSkill(idx)}
+                            className="p-1 rounded hover:bg-hub-hover text-hub-muted hover:text-hub-accent"
+                            title="Edit skill"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => removeSkill(idx)}
+                            className="p-1 rounded hover:bg-hub-hover text-hub-muted hover:text-hub-danger"
+                            title="Delete skill"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add / Upload buttons */}
+            <div className="flex items-center gap-2">
+              <button onClick={addSkill}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded border border-hub-accent/30 text-hub-accent hover:bg-hub-accent/10 transition"
+              >
+                <Plus className="w-3 h-3" /> Add Skill
+              </button>
+              <label className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded border border-hub-accent/30 text-hub-accent hover:bg-hub-accent/10 transition cursor-pointer ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                <Upload className="w-3 h-3" /> {uploading ? 'Validating...' : 'Upload .md'}
+                <input type="file" accept=".md" onChange={handleFileUpload} className="hidden" />
+              </label>
+            </div>
+
+            {/* Upload error */}
+            {uploadError && (
+              <div className="mt-2 p-2 rounded bg-hub-danger/10 border border-hub-danger/20 text-hub-danger text-xs">
+                {uploadError}
+              </div>
+            )}
+          </div>
+
+          {/* Global config notice */}
+          <div className="p-3 rounded-lg bg-hub-link/10 border border-hub-link/20">
+            <p className="text-xs text-hub-link">
+              Modifications apply to the <strong>global agent configuration</strong>.
+              All sessions referencing this agent will use the updated settings.
+            </p>
+          </div>
 
           {/* Error */}
           {error && (

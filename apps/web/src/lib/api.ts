@@ -8,10 +8,11 @@ function getToken(): string | null {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...((options.headers as Record<string, string>) ?? {}),
-  };
+  const headers: Record<string, string> = { ...((options.headers as Record<string, string>) ?? {}) };
+  // Only set Content-Type for non-FormData bodies (let browser set multipart boundary for FormData)
+  if (!(options.body instanceof FormData)) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
@@ -64,8 +65,17 @@ export const api = {
 
   getAgents: () => request<any[]>('/agents'),
 
-  updateAgent: (id: string, body: { displayName?: string; description?: string; systemPrompt?: string }) =>
+  updateAgent: (id: string, body: { displayName?: string; description?: string; systemPrompt?: string; skills?: import('@agenthub/shared').SkillDef[] | null }) =>
     request<any>(`/agents/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
+
+  validateSkillFile: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<import('@agenthub/shared').SkillValidationResult>('/agents/skills/validate', {
+      method: 'POST',
+      body: formData,
+    });
+  },
 
   deleteAgent: (id: string) => request<void>(`/agents/${id}`, { method: 'DELETE' }),
 

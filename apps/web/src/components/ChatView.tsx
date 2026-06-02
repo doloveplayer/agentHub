@@ -15,6 +15,7 @@ import { ConfirmationPanel } from './ConfirmationPanel';
 import { SettingsPanel } from './SettingsPanel';
 import { AddAgentModal } from './AddAgentModal';
 import { RemoveAgentModal } from './RemoveAgentModal';
+import { AgentConfigEditor } from './AgentConfigEditor';
 import { DiffCard } from './DiffCard';
 import { DeployCard } from './DeployCard';
 import { TestReportCard } from './TestReportCard';
@@ -456,6 +457,7 @@ export function ChatView() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showAddAgents, setShowAddAgents] = useState(false);
   const [showRemoveAgents, setShowRemoveAgents] = useState(false);
+  const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [showWorkspaceSelector, setShowWorkspaceSelector] = useState(false);
   const [previewSelection, setPreviewSelection] = useState<{
     text: string;
@@ -636,7 +638,7 @@ export function ChatView() {
             <div className="w-4 h-full -ml-1.5" />
           </div>
           <div className="flex-1 min-w-0">
-            <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} onReplanTask={sendReplan} onPreviewSelection={setPreviewSelection} onForceComplete={forceCompleteTask} onForceFail={forceFailTask} />
+            <AgentStatusPanel sessionAgents={sessionAgents} onStopAgent={stopAgent} onReplanTask={sendReplan} onPreviewSelection={setPreviewSelection} onForceComplete={forceCompleteTask} onForceFail={forceFailTask} onConfigureAgent={setConfigAgentId} />
           </div>
         </div>
       )}
@@ -681,6 +683,13 @@ export function ChatView() {
         </div>
       )}
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {configAgentId && (
+        <AgentConfigEditor
+          agentId={configAgentId}
+          onClose={() => setConfigAgentId(null)}
+          onSaved={() => setConfigAgentId(null)}
+        />
+      )}
       {activeSession?.type === 'group' && (
         <>
           <AddAgentModal sessionId={activeSessionId} open={showAddAgents} onClose={() => setShowAddAgents(false)} />

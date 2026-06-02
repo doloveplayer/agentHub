@@ -15,7 +15,7 @@ agents.get('/', async (c) => {
     select: {
       id: true, name: true, displayName: true, description: true,
       systemPrompt: true, provider: true, providerConfig: true, capabilities: true,
-      type: true, createdBy: true,
+      type: true, createdBy: true, skills: true,
     },
   });
   return c.json(list);
@@ -61,6 +61,12 @@ agents.post('/', async (c) => {
   }
 });
 
+const skillDefSchema = z.object({
+  name: z.string().min(1).regex(/^[a-z0-9-]+$/, 'name must be kebab-case'),
+  description: z.string().min(1),
+  content: z.string().min(1),
+});
+
 const updateSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
   description: z.string().min(1).max(500).optional(),
@@ -69,6 +75,7 @@ const updateSchema = z.object({
   providerConfig: z.record(z.unknown()).optional(),
   capabilities: z.record(z.unknown()).optional(),
   isActive: z.boolean().optional(),
+  skills: z.array(skillDefSchema).nullable().optional(),
 });
 
 // PUT /provider-configs — store encrypted API keys (MUST be before /:id routes to avoid route conflict)
@@ -193,6 +200,68 @@ function getDefaultProviderConfig(provider: string): Record<string, unknown> {
   return {};
 }
 
+// POST /skills/validate — validate an uploaded .md skill file
+agents.post('/skills/validate', async (c) => {
+  try {
+    const formData = await c.req.formData();
+    const file = formData.get('file');
+    if (!file || !(file instanceof File)) {
+      return c.json({ valid: false, errors: [{ field: 'file', message: 'No file uploaded' }] }, 400);
+    }
+
+    if (!file.name.endsWith('.md')) {
+      return c.json({ valid: false, errors: [{ field: 'file', message: 'Only .md files are allowed' }] }, 400);
+    }
+
+    if (file.size > 100 * 1024) {
+      return c.json({ valid: false, errors: [{ field: 'file', message: 'File size exceeds 100KB limit' }] }, 400);
+    }
+
+    const text = await file.text();
+    const fmMatch = text.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+    if (!fmMatch) {
+      return c.json({ valid: false, errors: [{ field: 'file', message: 'Missing or invalid frontmatter. Expected: ---\\nkey: value\\n---\\n...' }] });
+    }
+
+    const frontmatterText = fmMatch[1];
+    const content = fmMatch[2].trim();
+
+    // Parse YAML-like frontmatter
+    const meta: Record<string, string> = {};
+    for (const line of frontmatterText.split('\n')) {
+      const kv = line.match(/^(\w+):\s*(.+)$/);
+      if (kv) meta[kv[1]] = kv[2].trim();
+    }
+
+    const errors: Array<{ field: string; message: string }> = [];
+
+    if (!meta.name || meta.name.length === 0) {
+      errors.push({ field: 'name', message: 'name is required in frontmatter' });
+    } else if (!/^[a-z0-9-]+$/.test(meta.name)) {
+      errors.push({ field: 'name', message: 'name must be kebab-case (lowercase letters, digits, hyphens)' });
+    }
+
+    if (!meta.description || meta.description.length === 0) {
+      errors.push({ field: 'description', message: 'description is required in frontmatter' });
+    }
+
+    if (content.length === 0) {
+      errors.push({ field: 'content', message: 'Skill content (after frontmatter) cannot be empty' });
+    }
+
+    if (errors.length > 0) {
+      return c.json({ valid: false, errors });
+    }
+
+    return c.json({
+      valid: true,
+      skill: { name: meta.name, description: meta.description, content },
+    });
+  } catch (err: any) {
+    return c.json({ valid: false, errors: [{ field: 'file', message: err.message || 'Failed to parse file' }] }, 400);
+  }
+});
+
 // PUT /:id — update agent (MUST be AFTER fixed-path routes)
 agents.put('/:id', async (c) => {
   const id = c.req.param('id');
@@ -208,6 +277,7 @@ agents.put('/:id', async (c) => {
         ...parsed.data,
         providerConfig: parsed.data.providerConfig as any,
         capabilities: parsed.data.capabilities as any,
+        skills: parsed.data.skills as any,
       },
     });
     return c.json(agent);

@@ -473,7 +473,7 @@ async function startReplForTask(
 ): Promise<void> {
   const sandbox = sandboxes.get(sessionId);
   if (!sandbox) return;
-  const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, systemPrompt: true } });
+  const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, systemPrompt: true, skills: true } });
   if (!agent) return;
 
   const taskMsgId = buildTaskMessageId(queue.planId, task.id);
@@ -526,7 +526,7 @@ async function startReplForTask(
     }).catch(() => {});
 
     const agentHomeDir = AgentDirectoryManager.getAgentHome(agent.id);
-    AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt);
+    AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt, agent.skills as any[] | null);
     console.log(`[ws] Task REPL started: agent=${agentName} task=${task.id}`);
     await provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
       agentName, hostWorkDir: sandbox.hostWorkDir, hostSandboxDir: sandbox.hostSandboxDir, agentHomeDir, trustMode: true,

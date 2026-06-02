@@ -4,10 +4,14 @@ import { ChatView } from '../components/ChatView';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/appStore';
 import { useResizablePanel } from '../hooks/useResizablePanel';
+import { useAuth } from '../hooks/useAuth';
 import { Menu, Settings } from 'lucide-react';
 import { SettingsPanel } from '../components/SettingsPanel';
 
 export function ChatPage() {
+  // Ensure user profile is loaded when entering with a cached token
+  // (without this, user stays null and AddAgentModal filters out all agents)
+  useAuth();
   const setAgents = useAppStore((s) => s.setAgents);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);

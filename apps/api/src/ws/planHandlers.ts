@@ -76,10 +76,10 @@ export async function handleConfirmPlan(sessionId: string, data: { planId: strin
 
   const sessionAgents = await prisma.sessionAgent.findMany({
     where: { sessionId },
-    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, providerConfig: true } } },
+    include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, providerConfig: true, skills: true } } },
   });
   for (const sa of sessionAgents) {
-    AgentDirectoryManager.initialize(sandbox.hostSandboxDir, sa.agent.name, sa.agent.systemPrompt, sa.agent.providerConfig as Record<string, unknown> | null);
+    AgentDirectoryManager.initialize(sandbox.hostSandboxDir, sa.agent.name, sa.agent.systemPrompt, sa.agent.providerConfig as Record<string, unknown> | null, undefined, sa.agent.skills as any[] | null);
   }
 
   dispatchTasksToAgents(sessionId, data.planId, tasks, {

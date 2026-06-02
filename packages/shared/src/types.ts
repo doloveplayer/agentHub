@@ -85,6 +85,19 @@ export interface AgentConfig {
   capabilities?: Record<string, unknown> | null;
   type?: 'user' | 'system';
   createdBy?: string | null;
+  skills?: SkillDef[] | null;
+}
+
+export interface SkillDef {
+  name: string;
+  description: string;
+  content: string;
+}
+
+export interface SkillValidationResult {
+  valid: boolean;
+  skill?: SkillDef;
+  errors?: Array<{ field: string; message: string }>;
 }
 
 export interface Mention {
