@@ -116,8 +116,11 @@ export const api = {
     return { blob: await res.blob(), filename: name };
   },
 
-  getHtmlPreviewUrl: (sessionId: string, filePath: string) =>
-    `${BASE_URL}/workspace/${sessionId}/html-preview?path=${encodeURIComponent(filePath)}`,
+  getHtmlPreviewUrl: (sessionId: string, filePath: string) => {
+    const token = getToken();
+    const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+    return `${BASE_URL}/workspace/${sessionId}/html-preview?path=${encodeURIComponent(filePath)}${tokenParam}`;
+  },
   getWorkspaceChanges: (sessionId: string) => request<{ changes: string[] }>(`/workspace/${sessionId}/changes`),
 
   // Workspace configuration

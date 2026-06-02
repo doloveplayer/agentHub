@@ -10,16 +10,15 @@ declare module 'hono' {
 
 export async function authMiddleware(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
-  if (!authHeader) {
-    return c.json({ error: 'Missing authorization header' }, 401);
-  }
+  // Also support token query param for iframe/SSE requests that can't set headers
+  const queryToken = c.req.query('token');
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.slice(7)
+    : queryToken || null;
 
-  const parts = authHeader.split(' ');
-  if (parts.length !== 2 || parts[0] !== 'Bearer') {
-    return c.json({ error: 'Invalid authorization header format' }, 401);
+  if (!token) {
+    return c.json({ error: 'Missing authorization header or token query param' }, 401);
   }
-
-  const token = parts[1];
   try {
     const payload = verifyToken(token);
     // Verify user still exists in DB (defense against DB resets)
