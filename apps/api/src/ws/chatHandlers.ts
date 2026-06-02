@@ -97,14 +97,57 @@ export async function ensureSandboxReady(sessionId: string, sessionType?: string
 
 // ---- Helpers ----
 
-async function buildHistory(sessionId: string): Promise<string | null> {
+/**
+ * Build structured session context for the agent prompt.
+ * Replaces the raw conversation history dump (buildHistory).
+ * Provides agent roster, session mode, and workspace info
+ * that the SDK cannot derive from its own session state.
+ */
+async function buildSessionContext(
+  sessionId: string,
+  currentAgentName: string,
+  workspacePath?: string,
+): Promise<string | null> {
   try {
-    const msgs = await prisma.message.findMany({
-      where: { sessionId, status: 'done' }, orderBy: { createdAt: 'asc' }, take: 20,
+    const session = await prisma.session.findUnique({
+      where: { id: sessionId },
+      select: {
+        type: true,
+        agents: {
+          include: {
+            agent: { select: { name: true, description: true } },
+          },
+        },
+      },
     });
-    if (msgs.length <= 1) return null;
-    return msgs.map(m => `${m.senderType === 'human' ? 'User' : 'Agent'}: ${m.content}`).join('\n');
-  } catch { return null; }
+    if (!session) return null;
+
+    const otherAgents = session.agents
+      .filter(sa => sa.agent.name !== currentAgentName)
+      .map(sa => `- **${sa.agent.name}** — ${sa.agent.description || 'No description'}`);
+
+    if (otherAgents.length === 0 && session.type === 'solo') {
+      return `## Session Context\n\n**Mode**: Solo\n**Workspace**: ${workspacePath || '/workspace'}\n`;
+    }
+
+    const agentCount = session.agents.length;
+    const modeLabel = session.type === 'group' ? `Group (${agentCount} agents)` : `Solo`;
+
+    let block = `## Session Context\n\n`;
+    block += `**Mode**: ${modeLabel}\n`;
+
+    if (otherAgents.length > 0) {
+      block += `**Other Agents**:\n${otherAgents.join('\n')}\n`;
+    }
+
+    if (workspacePath) {
+      block += `**Workspace**: ${workspacePath}\n`;
+    }
+
+    return block;
+  } catch {
+    return null;
+  }
 }
 
 async function resolveDefaultAgentForSession(sessionId: string) {
@@ -246,7 +289,6 @@ export async function handleChatMessage(
     }
 
     let agentPrompt = mention.subPrompt;
-    const history = await buildHistory(sessionId);
     if (!mention.agentId) {
       const defaultAgent = await resolveDefaultAgentForSession(sessionId);
       if (defaultAgent) {
@@ -260,6 +302,9 @@ export async function handleChatMessage(
       ? await prisma.agent.findUnique({ where: { id: mention.agentId } })
       : null;
     const agentNameForProc = agent?.name ?? null;
+    const sessionContext = agent
+      ? await buildSessionContext(sessionId, agent.name, sandbox.hostWorkDir)
+      : null;
 
     if (agent) {
       let sessionMemberBlock = '';
@@ -271,11 +316,11 @@ export async function handleChatMessage(
 3. 每个任务必须包含 risk 字段（low / high），参考 plan skill 中的风险判定规则
 4. 将 plan.json 通过 Write 工具写入 /sandbox/plan.json，Hub 会自动检测并调度\n`;
       }
-      agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostSandboxDir, sessionId) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
+      agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostSandboxDir, sessionId) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${sessionContext ? sessionContext + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
       if (sandbox) AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null, sessionId, agent.skills as any[] | null, agent.id);
       agentNameToType.set(agent.name, agent.name);
     } else {
-      agentPrompt = history ? `${history}\n\n---\n${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}` : `${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}`;
+      agentPrompt = `${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}User: ${mention.subPrompt}`;
     }
 
     // Detect quote context in user message and inject structured guidance
