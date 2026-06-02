@@ -212,3 +212,132 @@ export interface WorkspaceChangedEvent {
   mode: WorkspaceMode;
   timestamp: number;
 }
+
+// ---- Context Bus ----
+
+export type ContextEntryType =
+  | 'known-issue'
+  | 'project-fact'
+  | 'task-handoff'
+  | 'decision'
+  | 'artifact'
+  | 'convention'
+  | 'dependency-map';
+
+export type ContextEntryStatus = 'active' | 'resolved' | 'superseded';
+
+export interface ContextEntry {
+  key: string;
+  value: unknown;
+  type: ContextEntryType;
+  version: number;
+  author: string;
+  taskId?: string;
+  planId?: string;
+  tags: string[];
+  status: ContextEntryStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ---- Archive ----
+
+export interface ArchiveManifest {
+  planId: string;
+  sessionId: string;
+  planTitle: string;
+  completedAt: string;
+  durationMs: number;
+  tasks: Array<{
+    id: string;
+    title: string;
+    agentType: string;
+    status: string;
+    outputFiles: string[];
+    modifiedFiles: string[];
+    outputSummary: string;
+  }>;
+  fileChanges: {
+    added: string[];
+    modified: string[];
+    removed: string[];
+  };
+  contextEntries: Array<{
+    key: string;
+    type: ContextEntryType;
+    status: ContextEntryStatus;
+  }>;
+}
+
+export type ExperienceType =
+  | 'bug-pattern'
+  | 'project-convention'
+  | 'strategy-outcome'
+  | 'dependency-topology'
+  | 'domain-knowledge'
+  | 'tool-pitfall';
+
+export interface ExperienceEntry {
+  type: ExperienceType;
+  title: string;
+  detail: string;
+  agentTypes: string[];
+  tags: string[];
+  sourcePlan?: string;
+  sourceTask?: string;
+  severity: 'high' | 'medium' | 'low';
+}
+
+// ---- Checkpoint ----
+
+export interface AgentSessionState {
+  claudeSessionId: string;
+  lastTaskId: string;
+  status: 'idle' | 'running';
+}
+
+export interface PlanCheckpoint {
+  planId: string;
+  sessionId: string;
+  workspaceGitCommit?: string;
+  contextBusState: string;
+  agentSessions: Record<string, AgentSessionState>;
+  pendingTasks: Array<{
+    id: string;
+    title: string;
+    description: string;
+    agentType: string;
+    dependsOn: string[];
+    expectedOutput: string;
+    priority: string;
+  }>;
+  completedTasks: string[];
+  failedTasks: Array<{
+    id: string;
+    error: string;
+    retryCount: number;
+  }>;
+  timestamp: number;
+}
+
+// ---- Skill Stats ----
+
+export interface SkillUsageRecord {
+  skillName: string;
+  agentName: string;
+  agentId: string;
+  count: number;
+  firstUsed: number;
+  lastUsed: number;
+  associatedTaskIds: string[];
+}
+
+export interface SkillUseEvent {
+  type: 'skill_use';
+  skillName: string;
+  agentName: string;
+  agentId: string;
+  taskId?: string;
+  planId?: string;
+  timestamp: number;
+}
