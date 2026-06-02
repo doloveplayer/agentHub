@@ -91,6 +91,13 @@ export class DagPersistence {
     });
   }
 
+  static async markArchived(sessionId: string, planId: string): Promise<void> {
+    await prisma.planExecution.updateMany({
+      where: { sessionId, planId },
+      data: { status: 'archived' },
+    });
+  }
+
   static async cleanup(sessionId: string): Promise<void> {
     await prisma.planExecution.deleteMany({ where: { sessionId } });
   }
