@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
+import type { ExperienceEntry } from '@agenthub/shared';
 import { config } from '../config.js';
 import { CapabilityInventory } from './CapabilityInventory.js';
 
@@ -39,6 +40,47 @@ ${systemPrompt}
   static getAgentHome(agentId: string): string {
     return resolve(AGENTS_ROOT, agentId);
   }
+
+  /** Write a single experience entry to the agent's memory directory using Claude Code SDK MEMORY.md format. */
+  static writeAgentMemory(homeDir: string, exp: ExperienceEntry): void {
+    const category = exp.type.replace(/-/g, '_');
+    const slug = exp.title
+      .toLowerCase()
+      .replace(/[^a-z0-9一-鿿]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 60);
+    const memoryDir = resolve(homeDir, '.claude', 'memory', category);
+    mkdirSync(memoryDir, { recursive: true });
+
+    const frontmatter = `---
+name: ${slug}
+description: ${exp.detail.slice(0, 120)}
+metadata:
+  type: reference
+  tags: [${exp.tags.join(', ')}]
+  severity: ${exp.severity}
+  sourcePlan: ${exp.sourcePlan || ''}
+  sourceTask: ${exp.sourceTask || ''}
+---
+
+## ${exp.title}
+
+${exp.detail}
+`;
+
+    const filePath = resolve(memoryDir, `${slug}.md`);
+    writeFileSync(filePath, frontmatter, 'utf-8');
+
+    // Update MEMORY.md index
+    const indexPath = resolve(homeDir, '.claude', 'memory', 'MEMORY.md');
+    let index = existsSync(indexPath) ? readFileSync(indexPath, 'utf-8') : '# Agent Memory Index\n\n';
+    const entryLine = `- [${slug}](${category}/${slug}.md) — ${exp.detail.slice(0, 80)}`;
+    if (!index.includes(entryLine)) {
+      index += entryLine + '\n';
+      writeFileSync(indexPath, index, 'utf-8');
+    }
+  }
+
   /**
    * Initialize per-agent directory structure inside the sandbox host dir.
    *
