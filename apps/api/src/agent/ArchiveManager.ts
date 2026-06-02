@@ -32,7 +32,7 @@ export class ArchiveManager {
 
     // Step 3: Write experiences to agent memory
     if (experiences.length > 0) {
-      await ArchiveManager.writeExperiences(experiences);
+      await ArchiveManager.writeExperiences(experiences, sessionId);
     }
 
     // Step 4: Cleanup from ContextBus
@@ -114,8 +114,8 @@ export class ArchiveManager {
     return manifest;
   }
 
-  /** Step 3: Write experiences to agent memory directories. */
-  static async writeExperiences(experiences: ExperienceEntry[]): Promise<void> {
+  /** Step 3: Write experiences to agent memory directories (global + sandbox). */
+  static async writeExperiences(experiences: ExperienceEntry[], sessionId?: string): Promise<void> {
     // Group by agentType
     const byAgent = new Map<string, ExperienceEntry[]>();
     for (const exp of experiences) {
@@ -141,8 +141,12 @@ export class ArchiveManager {
         for (const agent of matched) {
           const homeDir = AgentDirectoryManager.getAgentHome(agent.id);
           AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt);
+          // Derive sandbox memory path for same-session visibility
+          const sandboxMemoryDir = sessionId
+            ? resolve(SANDBOXES_ROOT, sessionId, `_agent_${agent.name}`, '.claude', 'memory')
+            : undefined;
           for (const exp of exps) {
-            AgentDirectoryManager.writeAgentMemory(homeDir, exp);
+            AgentDirectoryManager.writeAgentMemory(homeDir, exp, sandboxMemoryDir);
           }
         }
       } catch (err: any) {

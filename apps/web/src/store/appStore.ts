@@ -107,7 +107,7 @@ interface AppState {
   removeStreamingMessage: (sessionId: string, msgId: string) => void;
   isSessionStreaming: (sessionId: string) => boolean;
   setTaskPlan: (planId: string, tasks: TaskState[]) => void;
-  updateTaskStatus: (planId: string, taskId: string, status: TaskState['status']) => void;
+  removeTaskPlan: (planId: string) => void;  updateTaskStatus: (planId: string, taskId: string, status: TaskState['status']) => void;
   updateTaskField: (planId: string, taskId: string, field: string, value: any) => void;
   addDiffCard: (sessionId: string, card: DiffCardState) => void;
   upsertDeploymentCard: (sessionId: string, card: Omit<DeploymentCardState, 'logs' | 'updatedAt'> & { log?: string; timestamp?: number }) => void;
@@ -327,6 +327,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       taskPlans: { ...state.taskPlans, [planId]: tasks },
     })),
+
+  removeTaskPlan: (planId) =>
+    set((state) => {
+      const next = { ...state.taskPlans };
+      delete next[planId];
+      return { taskPlans: next };
+    }),
 
   setPlanSummary: (planId, summary) =>
     set((state) => ({

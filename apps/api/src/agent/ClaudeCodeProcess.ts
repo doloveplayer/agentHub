@@ -213,16 +213,12 @@ export class ClaudeCodeProcess {
       `cat /workspace/${promptFile} | claude ${claudeArgs}`,
     ];
 
-    // Per-agent CLAUDE_CONFIG_DIR for independent memory/skills
-    if (hostWorkDir) {
-      const configSource = agentHomeDir
-        ? resolve(agentHomeDir, '.claude')
-        : resolve(hostWorkDir, `_agent_${agentConfigTag}`, '.claude');
-      if (!existsSync(configSource)) {
-        mkdirSync(configSource, { recursive: true });
-      }
-      const agentHomeInside = '/home/node/.claude';
-      args.splice(7, 0, '-v', `${configSource}:${agentHomeInside}`, '-e', `CLAUDE_CONFIG_DIR=${agentHomeInside}`);
+    // Per-agent CLAUDE_CONFIG_DIR: uses the sandbox agent directory,
+    // which already contains global skills/memory (copied on init) + session-specific skills.
+    // The directory is available inside the container via the /sandbox bind mount.
+    if (agentConfigTag) {
+      const configPath = `/sandbox/_agent_${agentConfigTag}/.claude`;
+      args.splice(7, 0, '-e', `CLAUDE_CONFIG_DIR=${configPath}`);
     }
 
     console.log(`[agent:spawn] docker ${args.slice(0, 6).join(' ')} ... container=${containerName}`);

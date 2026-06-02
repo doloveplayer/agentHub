@@ -159,7 +159,7 @@ class AgentRuntime {
       containerId = sandbox.containerId;
       hostWorkDir = sandbox.hostWorkDir;
       // Initialize agent directory in the sandbox dir (not user workspace)
-      AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, null, undefined);
+      AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, null, undefined, agentId);
       // Update agent record with session sandbox info
       await prisma.agent.update({
         where: { id: agentId },
@@ -169,7 +169,7 @@ class AgentRuntime {
       // Fallback: create dedicated agent container
       if (!agent.containerId || agent.containerStatus === 'stopped') {
         const info = await AgentContainer.create(agentId, agent.systemPrompt);
-        AgentDirectoryManager.initialize(info.hostWorkDir, agent.name, agent.systemPrompt, null, undefined);
+        AgentDirectoryManager.initialize(info.hostWorkDir, agent.name, agent.systemPrompt, null, undefined, agentId);
         await prisma.agent.update({
           where: { id: agentId },
           data: { containerId: info.containerId, containerStatus: 'running', hostWorkDir: info.hostWorkDir },
@@ -239,10 +239,8 @@ class AgentRuntime {
     switch (event.type) {
       case 'thinking':
         if (event.content) {
-          // Accumulate output for planner agents
-          if (entry.isPlanner) {
-            entry.accumulatedOutput += event.content;
-          }
+          // Accumulate output for all agents so we can persist on completion
+          entry.accumulatedOutput += event.content;
           broadcast(sessionId, { type: 'stream_chunk', content: event.content, agentMessageId });
         }
         break;
@@ -260,7 +258,10 @@ class AgentRuntime {
           clearRunningAgent(sessionId, agentMessageId);
           void prisma.message.updateMany({
             where: { id: agentMessageId, status: 'streaming' },
-            data: { status: 'done' },
+            data: {
+              status: 'done',
+              ...(entry.accumulatedOutput ? { content: entry.accumulatedOutput } : {}),
+            },
           }).catch(() => {});
         }
 
@@ -365,7 +366,10 @@ class AgentRuntime {
         if (agentMessageId) {
           void prisma.message.updateMany({
             where: { id: agentMessageId, status: 'streaming' },
-            data: { status: 'error' },
+            data: {
+              status: 'error',
+              ...(entry.accumulatedOutput ? { content: entry.accumulatedOutput } : {}),
+            },
           }).catch(() => {});
           clearRunningAgent(sessionId, agentMessageId);
           this.tokenUsageMap.delete(agentMessageId);

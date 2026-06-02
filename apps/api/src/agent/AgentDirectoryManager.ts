@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync, cpSync } from 'fs';
 import { resolve } from 'path';
 import type { ExperienceEntry } from '@agenthub/shared';
 import { config } from '../config.js';
@@ -42,7 +42,7 @@ ${systemPrompt}
   }
 
   /** Write a single experience entry to the agent's memory directory using Claude Code SDK MEMORY.md format. */
-  static writeAgentMemory(homeDir: string, exp: ExperienceEntry): void {
+  static writeAgentMemory(homeDir: string, exp: ExperienceEntry, sandboxMemoryDir?: string): void {
     const category = exp.type.replace(/-/g, '_');
     const slug = exp.title
       .toLowerCase()
@@ -87,6 +87,23 @@ ${safeBody}
       index += entryLine + '\n';
       writeFileSync(indexPath, index, 'utf-8');
     }
+
+    // Write to sandbox for same-session visibility (archive phase: global → sandbox)
+    if (sandboxMemoryDir) {
+      try {
+        const sandboxMemDir = resolve(sandboxMemoryDir, category);
+        mkdirSync(sandboxMemDir, { recursive: true });
+        writeFileSync(resolve(sandboxMemDir, `${slug}.md`), frontmatter, 'utf-8');
+        const sandboxIndexPath = resolve(sandboxMemoryDir, 'MEMORY.md');
+        let sandboxIndex = existsSync(sandboxIndexPath) ? readFileSync(sandboxIndexPath, 'utf-8') : '# Agent Memory Index\n\n';
+        if (!sandboxIndex.includes(entryLine)) {
+          sandboxIndex += entryLine + '\n';
+          writeFileSync(sandboxIndexPath, sandboxIndex, 'utf-8');
+        }
+      } catch (err: any) {
+        console.warn(`[AgentDirectory] Failed to write memory to sandbox: ${err.message}`);
+      }
+    }
   }
 
   /**
@@ -97,14 +114,10 @@ ${safeBody}
    *     CLAUDE.md
    *     .claude/
    *       settings.json   (if settings provided)
-   *       memory/
-   *       skills/
+   *       memory/         (copy from global + session-generated)
+   *       skills/         (copy from global + session-specific)
    *
-   * @param sandboxDir - host path to sandbox dir (agent config files go here)
-   * @param agentName - agent name for directory naming
-   * @param systemPrompt - agent's system prompt written to CLAUDE.md
-   * @param settings - optional Claude Code settings.json content
-   * @param sessionId - optional session ID for capability inventory
+   * @param agentId - agent UUID for syncing global persistent content into sandbox
    */
   static initialize(
     sandboxDir: string,
@@ -112,6 +125,7 @@ ${safeBody}
     systemPrompt: string,
     settings?: Record<string, unknown> | null,
     sessionId?: string,
+    agentId?: string,
   ): string {
     const agentDir = resolve(sandboxDir, `_agent_${agentName}`);
     const claudeConfigDir = resolve(agentDir, '.claude');
@@ -120,6 +134,39 @@ ${safeBody}
       mkdirSync(agentDir, { recursive: true });
       mkdirSync(resolve(claudeConfigDir, 'memory'), { recursive: true });
       mkdirSync(resolve(claudeConfigDir, 'skills'), { recursive: true });
+    }
+
+    // Sync global persistent content into sandbox (init phase: global → sandbox)
+    if (agentId) {
+      const globalConfigDir = resolve(AGENTS_ROOT, agentId, '.claude');
+      if (existsSync(globalConfigDir)) {
+        // Copy global skills
+        const globalSkills = resolve(globalConfigDir, 'skills');
+        if (existsSync(globalSkills)) {
+          try {
+            cpSync(globalSkills, resolve(claudeConfigDir, 'skills'), { recursive: true, force: true });
+          } catch (err: any) {
+            console.warn(`[AgentDirectory] Failed to copy global skills: ${err.message}`);
+          }
+        }
+        // Copy global memory
+        const globalMemory = resolve(globalConfigDir, 'memory');
+        if (existsSync(globalMemory)) {
+          try {
+            cpSync(globalMemory, resolve(claudeConfigDir, 'memory'), { recursive: true, force: true });
+          } catch (err: any) {
+            console.warn(`[AgentDirectory] Failed to copy global memory: ${err.message}`);
+          }
+        }
+        // Copy settings.json if no session override provided
+        const globalSettings = resolve(globalConfigDir, 'settings.json');
+        if (!settings && existsSync(globalSettings)) {
+          try {
+            const content = readFileSync(globalSettings, 'utf-8');
+            writeFileSync(resolve(claudeConfigDir, 'settings.json'), content, 'utf-8');
+          } catch { /* non-critical */ }
+        }
+      }
     }
 
     const claudeMd = `# Agent: ${agentName}

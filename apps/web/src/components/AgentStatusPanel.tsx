@@ -23,7 +23,7 @@ interface Props {
 }
 
 type PanelTab = 'Files' | 'Agents' | 'Tasks' | 'Preview';
-type ViewMode = 'detailed' | 'aggregated' | 'errors';
+type ViewMode = 'detailed' | 'aggregated';
 
 export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onPreviewSelection, onForceComplete, onForceFail }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>('Agents');
@@ -64,28 +64,52 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
     return (order[a.status] ?? 3) - (order[b.status] ?? 3);
   });
 
-  // Filter for errors-only mode
-  const filteredAgents = viewMode === 'errors'
-    ? sortedAgents.filter(a => a.events.some(e => e.type === 'permission_request') || a.status !== 'idle')
-    : sortedAgents;
-
   const runningCount = sortedAgents.filter(a => a.status === 'running').length;
   const queuedCount = sortedAgents.filter(a => a.status === 'queued').length;
   const idleCount = sortedAgents.filter(a => a.status === 'idle').length;
-  const runningAgent = sortedAgents.find(a => a.status === 'running');
-  const lastToolEvent = runningAgent
-    ? (agentEvents[Object.keys(agentEvents).find(k => messages.find(m => m.id === k && m.agentId === runningAgent.agent.id)) ?? ''] ?? [])
-        .filter(e => e.type === 'tool_use').slice(-1)[0]
-    : null;
-  const overviewText = runningAgent
-    ? `${runningAgent.agent.displayName} 正在 ${lastToolEvent?.details.toolName || '思考中...'}`
-    : (queuedCount > 0 ? `${queuedCount} 个 agent 排队中` : (runningCount === 0 ? '全部空闲' : ''));
+  const doneCount = sortedAgents.filter(a => a.status === 'done').length;
+
+  // ---- Aggregated stats ----
+  const taskPlans = useAppStore((s) => s.taskPlans);
+  const planSummaries = useAppStore((s) => s.planSummaries);
+  const allPlans = Object.entries(taskPlans);
+
+  // Token totals from all agent messages
+  let totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheCreate = 0;
+  for (const msg of messages) {
+    totalInput += msg.inputTokens ?? 0;
+    totalOutput += msg.outputTokens ?? 0;
+    totalCacheRead += msg.cacheReadTokens ?? 0;
+    totalCacheCreate += msg.cacheCreateTokens ?? 0;
+  }
+
+  // Task stats across all plans
+  let totalTasks = 0, tasksDone = 0, tasksFailed = 0;
+  for (const [, tasks] of allPlans) {
+    totalTasks += tasks.length;
+    tasksDone += tasks.filter(t => t.status === 'done').length;
+    tasksFailed += tasks.filter(t => t.status === 'failed').length;
+  }
+  // Also merge from planSummaries
+  for (const s of Object.values(planSummaries)) {
+    // planSummaries are authoritative for archived plans already removed from taskPlans
+  }
+
+  // Tool & file stats from agent events
+  const allEvents = Object.values(agentEvents).flat();
+  const toolUseCount = allEvents.filter(e => e.type === 'tool_use').length;
+  const fileCount = allEvents.filter(e => e.type === 'file_produced').length;
+
+  // Collect file changes from plan summaries
+  const allFileChanges = new Set<string>();
+  for (const s of Object.values(planSummaries)) {
+    for (const f of s.fileChanges) allFileChanges.add(f);
+  }
 
   const tabs: PanelTab[] = ['Files', 'Agents', 'Tasks', 'Preview'];
   const modes: { key: ViewMode; label: string }[] = [
     { key: 'detailed', label: '详细' },
     { key: 'aggregated', label: '聚合' },
-    { key: 'errors', label: '异常' },
   ];
 
   const downloadWorkspacePath = async (path: string, type: 'file' | 'directory') => {
@@ -123,47 +147,56 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
         ))}
       </div>
       {activeTab === 'Agents' && (
-        <>
-          {/* View mode toggle + overview */}
-          <div className="flex items-center gap-1 px-2 py-1.5 border-b border-hub bg-hub-surface">
-            <div className="flex gap-0.5 mr-auto">
-              {modes.map((m) => (
-                <button
-                  key={m.key}
-                  onClick={() => setViewMode(m.key)}
-                  className={`px-2 py-0.5 text-[10px] rounded font-medium transition ${
-                    viewMode === m.key
-                      ? 'bg-hub-accent/20 text-hub-accent'
-                      : 'text-hub-muted hover:text-hub-secondary'
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
+        <div className="flex items-center gap-1 px-2 py-1.5 border-b border-hub bg-hub-surface">
+          <div className="flex gap-0.5 mr-auto">
+            {modes.map((m) => (
+              <button
+                key={m.key}
+                onClick={() => setViewMode(m.key)}
+                className={`px-2 py-0.5 text-[10px] rounded font-medium transition ${
+                  viewMode === m.key
+                    ? 'bg-hub-accent/20 text-hub-accent'
+                    : 'text-hub-muted hover:text-hub-secondary'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          {viewMode === 'detailed' && (
             <span className="text-[10px] text-hub-muted ml-auto flex-shrink-0">
               {runningCount}/{sortedAgents.length} 运行 · {idleCount} 空闲
             </span>
-          </div>
-          {/* Overview bar */}
-          {viewMode === 'aggregated' && overviewText && (
-            <div className="px-3 py-1.5 text-[10px] text-hub-muted italic border-b border-hub truncate">
-              {overviewText}
-            </div>
           )}
-        </>
+        </div>
       )}
       <div className="flex-1 overflow-y-auto panel-scroll p-3">
-        {activeTab === 'Agents' && (
+        {activeTab === 'Agents' && viewMode === 'aggregated' && (
+          <AggregatedSummary
+            agents={sortedAgents.length}
+            running={runningCount}
+            queued={queuedCount}
+            idle={idleCount}
+            done={doneCount}
+            totalInput={totalInput}
+            totalOutput={totalOutput}
+            totalCacheRead={totalCacheRead}
+            totalCacheCreate={totalCacheCreate}
+            totalTasks={totalTasks}
+            tasksDone={tasksDone}
+            tasksFailed={tasksFailed}
+            toolUseCount={toolUseCount}
+            fileCount={fileCount}
+            fileChanges={[...allFileChanges]}
+          />
+        )}
+        {activeTab === 'Agents' && viewMode === 'detailed' && (
           <>
-            {filteredAgents.length === 0 && (
-              <p className="text-footnote text-hub-muted text-center py-4">
-                {viewMode === 'errors' ? 'No errors or active agents' : 'No agents in this session'}
-              </p>
+            {sortedAgents.length === 0 && (
+              <p className="text-footnote text-hub-muted text-center py-4">No agents in this session</p>
             )}
-            {filteredAgents.map(({ agent, status, events }) => {
+            {sortedAgents.map(({ agent, status, events }) => {
               const runningMsg = messages.find((m) => m.agentId === agent.id && m.status === 'streaming');
-              const collapsed = viewMode === 'aggregated' && status === 'idle';
               return (
               <AgentCard
                 key={agent.id}
@@ -173,7 +206,6 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
                 status={status}
                 events={events}
                 onStop={runningMsg && onStopAgent ? () => onStopAgent(runningMsg.id) : undefined}
-                collapsed={collapsed}
                 provider={agent.provider}
                 messages={messages}
               />
@@ -225,6 +257,90 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
   );
 }
 
+/** Session-level summary dashboard shown in aggregated view mode. */
+function AggregatedSummary({
+  agents, running, queued, idle, done,
+  totalInput, totalOutput, totalCacheRead, totalCacheCreate,
+  totalTasks, tasksDone, tasksFailed,
+  toolUseCount, fileCount, fileChanges,
+}: {
+  agents: number; running: number; queued: number; idle: number; done: number;
+  totalInput: number; totalOutput: number; totalCacheRead: number; totalCacheCreate: number;
+  totalTasks: number; tasksDone: number; tasksFailed: number;
+  toolUseCount: number; fileCount: number; fileChanges: string[];
+}) {
+  const totalCache = totalCacheRead + totalCacheCreate;
+  const totalTokens = totalInput + totalOutput;
+
+  return (
+    <div className="space-y-3 p-3">
+      {/* Agent status bar */}
+      <div className="bg-hub-surface rounded-xl p-3 border border-hub">
+        <h4 className="text-[10px] font-semibold text-hub-muted uppercase tracking-wide mb-2">Agents</h4>
+        <div className="flex gap-2 text-xs">
+          <StatBadge label="总数" value={agents} />
+          <StatBadge label="运行" value={running} color="text-hub-accent" />
+          <StatBadge label="排队" value={queued} color="text-hub-warning" />
+          <StatBadge label="完成" value={done} color="text-hub-success" />
+          <StatBadge label="空闲" value={idle} color="text-hub-muted" />
+        </div>
+      </div>
+
+      {/* Token usage */}
+      <div className="bg-hub-surface rounded-xl p-3 border border-hub">
+        <h4 className="text-[10px] font-semibold text-hub-muted uppercase tracking-wide mb-2">Token 用量</h4>
+        <div className="flex gap-2 flex-wrap text-xs">
+          <StatBadge label="总计" value={formatShortNum(totalTokens)} />
+          <StatBadge label="输入" value={formatShortNum(totalInput)} color="text-blue-400" />
+          <StatBadge label="输出" value={formatShortNum(totalOutput)} color="text-green-400" />
+          <StatBadge label="缓存" value={formatShortNum(totalCache)} color="text-purple-400" />
+        </div>
+      </div>
+
+      {/* Tasks */}
+      <div className="bg-hub-surface rounded-xl p-3 border border-hub">
+        <h4 className="text-[10px] font-semibold text-hub-muted uppercase tracking-wide mb-2">任务</h4>
+        <div className="flex gap-2 text-xs">
+          <StatBadge label="总计" value={totalTasks} />
+          <StatBadge label="完成" value={tasksDone} color="text-hub-success" />
+          <StatBadge label="失败" value={tasksFailed} color="text-hub-danger" />
+        </div>
+      </div>
+
+      {/* Tool & File stats */}
+      <div className="bg-hub-surface rounded-xl p-3 border border-hub">
+        <h4 className="text-[10px] font-semibold text-hub-muted uppercase tracking-wide mb-2">工具 & 文件</h4>
+        <div className="flex gap-2 flex-wrap text-xs">
+          <StatBadge label="工具调用" value={toolUseCount} color="text-hub-accent" />
+          <StatBadge label="产出文件" value={fileCount} color="text-hub-success" />
+        </div>
+        {fileChanges.length > 0 && (
+          <div className="mt-2 text-[10px] text-hub-muted">
+            <span className="font-medium">修改文件: </span>
+            {fileChanges.map(f => (
+              <span key={f} className="inline-block mr-2 mb-1 px-1.5 py-0.5 bg-hub-hover rounded">{f}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatBadge({ label, value, color }: { label: string; value: number | string; color?: string }) {
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md bg-hub-raised`}>
+      <span className="text-hub-muted text-[10px]">{label}</span>
+      <span className={`font-semibold text-xs ${color || 'text-hub-primary'}`}>{value}</span>
+    </span>
+  );
+}
+
+function formatShortNum(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+  return String(n);
+}
 /** Shows the active task plan from the store in the Tasks tab */
 function ActivePlanView({ onReplanTask, onForceComplete, onForceFail }: {
   onReplanTask?: (planId: string, taskId: string) => void;
@@ -233,6 +349,7 @@ function ActivePlanView({ onReplanTask, onForceComplete, onForceFail }: {
 }) {
   const taskPlans = useAppStore((s) => s.taskPlans);
   const planSummaries = useAppStore((s) => s.planSummaries);
+  const removeTaskPlan = useAppStore((s) => s.removeTaskPlan);
   const plans = Object.entries(taskPlans);
   if (plans.length === 0 && Object.keys(planSummaries).length === 0) {
     return <p className="text-footnote text-white/25 text-center py-4">No active task plans</p>;
@@ -245,7 +362,8 @@ function ActivePlanView({ onReplanTask, onForceComplete, onForceFail }: {
             planTitle="Active Plan" summary={`${tasks.length} tasks`} tasks={tasks}
             onReplan={onReplanTask ? (taskId: string) => onReplanTask(planId, taskId) : undefined}
             onForceComplete={onForceComplete ? (taskId: string) => onForceComplete(planId, taskId) : undefined}
-            onForceFail={onForceFail ? (taskId: string) => onForceFail(planId, taskId) : undefined} />
+            onForceFail={onForceFail ? (taskId: string) => onForceFail(planId, taskId) : undefined}
+            onDismiss={removeTaskPlan} />
           {planSummaries[planId] && (
             <div className="mt-1 px-3 py-2 rounded-md bg-hub-surface text-caption">
               <div className="text-hub-secondary font-medium mb-1">Plan Summary</div>

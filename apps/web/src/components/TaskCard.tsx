@@ -12,9 +12,10 @@ interface Props {
   onPause?: () => void;
   onForceComplete?: (taskId: string) => void;
   onForceFail?: (taskId: string) => void;
+  onDismiss?: (planId: string) => void;
 }
 
-export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry, onReplan, onPause, onForceComplete, onForceFail }: Props) {
+export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry, onReplan, onPause, onForceComplete, onForceFail, onDismiss }: Props) {
   const done = tasks.filter(t => t.status === 'done').length;
   const failed = tasks.filter(t => t.status === 'failed').length;
   const running = tasks.filter(t => t.status === 'running').length;
@@ -25,16 +26,25 @@ export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry
     <div className="mx-4 my-3 bg-hub-surface border border-hub rounded-hub-xl overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-hub flex items-center justify-between">
-        <div>
-          <h3 className="text-sm font-semibold text-hub-primary">{planTitle}</h3>
-          <p className="text-xs text-hub-tertiary mt-0.5">{summary}</p>
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-hub-primary truncate">{planTitle}</h3>
+          <p className="text-xs text-hub-tertiary mt-0.5 truncate">{summary}</p>
         </div>
-        <span className="text-xs text-hub-tertiary bg-hub-raised px-2 py-0.5 rounded-full">
-          {done}/{tasks.length} done
-          {running > 0 && ` · ${running} running`}
-          {waiting > 0 && ` · ${waiting} waiting`}
-          {failed > 0 && ` · ${failed} failed`}
-        </span>
+        <div className="flex items-center gap-2 ml-2 shrink-0">
+          <span className="text-xs text-hub-tertiary bg-hub-raised px-2 py-0.5 rounded-full">
+            {done}/{tasks.length} done
+            {running > 0 && ` · ${running} running`}
+            {waiting > 0 && ` · ${waiting} waiting`}
+            {failed > 0 && ` · ${failed} failed`}
+          </span>
+          {onDismiss && (
+            <button onClick={() => onDismiss(planId)}
+              className="text-xs text-hub-muted hover:text-hub-danger hover:bg-hub-danger/10 p-1 rounded transition"
+              title="Dismiss this plan card">
+              ✕
+            </button>
+          )}
+        </div>
       </div>
 
       {/* DAG visualization */}

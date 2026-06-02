@@ -79,7 +79,7 @@ export async function handleConfirmPlan(sessionId: string, data: { planId: strin
     include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, providerConfig: true } } },
   });
   for (const sa of sessionAgents) {
-    AgentDirectoryManager.initialize(sandbox.hostSandboxDir, sa.agent.name, sa.agent.systemPrompt, sa.agent.providerConfig as Record<string, unknown> | null);
+    AgentDirectoryManager.initialize(sandbox.hostSandboxDir, sa.agent.name, sa.agent.systemPrompt, sa.agent.providerConfig as Record<string, unknown> | null, undefined, sa.agent.id);
   }
 
   dispatchTasksToAgents(sessionId, data.planId, tasks, {

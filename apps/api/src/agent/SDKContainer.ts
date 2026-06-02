@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
-import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
-import { resolve, basename } from 'path';
+import { writeFileSync, unlinkSync } from 'fs';
+import { resolve } from 'path';
 
 export interface SDKContainerOptions {
   containerId: string;
@@ -72,19 +72,13 @@ export function spawnSDKInDocker(
     dockerArgs.push('-e', `${k}=${v}`);
   }
 
-  // Per-agent config isolation (settings.json, memory, skills) — stored in agent persistent home
-  if (opts.agentHomeDir && opts.agentConfigTag) {
-    const configDir = resolve(opts.agentHomeDir, '.claude');
-    if (!existsSync(configDir)) {
-      mkdirSync(configDir, { recursive: true });
-    }
-    // agentHomeDir is mounted at /home/agents/<agentId> via SandboxManager
-    // Set CLAUDE_CONFIG_DIR to the container path derived from the UUID-based
-    // agentHomeDir, not from agentConfigTag (which is the display name).
-    const agentDirName = basename(opts.agentHomeDir);
+  // Per-agent config isolation: uses the sandbox agent directory,
+  // which already contains global skills/memory (copied on init) + session-specific skills.
+  // Available inside the container via the /sandbox bind mount.
+  if (opts.agentConfigTag) {
     dockerArgs.push(
       '-e',
-      `CLAUDE_CONFIG_DIR=/home/agents/${agentDirName}/.claude`,
+      `CLAUDE_CONFIG_DIR=/sandbox/_agent_${opts.agentConfigTag}/.claude`,
     );
   }
 

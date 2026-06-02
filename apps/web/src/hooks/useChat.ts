@@ -41,7 +41,7 @@ export function useChat(sessionId: string) {
     const memberIds = new Set(((session as any)?.agents || []).map((sa: any) => sa.agentId));
     return agents.filter((a) => memberIds.has(a.id));
   }, [agents, sessions, sessionId]);
-  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addReviewReport, addToast } = useAppStore();
+  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, removeTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addReviewReport, addToast } = useAppStore();
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {
     if (!token || !sessionId) return Promise.reject(new Error('No token or sessionId'));
@@ -223,6 +223,16 @@ export function useChat(sessionId: string) {
             case 'plan_archived':
               if (data.planId) {
                 addToast(`Plan ${data.planId.slice(0, 8)} 归档完成 · ${data.experienceCount || 0} 条经验`, 'success');
+                // Trim task plans: keep only the latest 3 completed plans
+                const store = useAppStore.getState();
+                const planIds = Object.keys(store.taskPlans);
+                if (planIds.length > 3) {
+                  // Sort by planId (contains timestamp), keep latest 3
+                  planIds.sort().reverse();
+                  for (const pid of planIds.slice(3)) {
+                    store.removeTaskPlan(pid);
+                  }
+                }
               }
               break;
             case 'plan_executing':
