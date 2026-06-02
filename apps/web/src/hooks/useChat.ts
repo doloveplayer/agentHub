@@ -212,25 +212,25 @@ export function useChat(sessionId: string) {
               break;
             case 'plan_result':
               if (data.planId && data.tasks) {
-                setTaskPlan(data.planId, data.tasks);
+                setTaskPlan(sessionId, data.planId, data.tasks);
               }
               break;
             case 'plan_recovered':
               if (data.planId && data.tasks) {
-                setTaskPlan(data.planId, data.tasks);
+                setTaskPlan(sessionId, data.planId, data.tasks);
               }
               break;
             case 'plan_archived':
               if (data.planId) {
                 addToast(`Plan ${data.planId.slice(0, 8)} 归档完成 · ${data.experienceCount || 0} 条经验`, 'success');
-                // Trim task plans: keep only the latest 3 completed plans
+                // Trim task plans: keep only the latest 3 completed plans per session
                 const store = useAppStore.getState();
-                const planIds = Object.keys(store.taskPlans);
+                const sessionPlans = store.taskPlans[sessionId] ?? {};
+                const planIds = Object.keys(sessionPlans);
                 if (planIds.length > 3) {
-                  // Sort by planId (contains timestamp), keep latest 3
                   planIds.sort().reverse();
                   for (const pid of planIds.slice(3)) {
-                    store.removeTaskPlan(pid);
+                    store.removeTaskPlan(sessionId, pid);
                   }
                 }
               }
@@ -464,7 +464,7 @@ export function useChat(sessionId: string) {
               break;
             case 'plan_summary': {
               const store = useAppStore.getState();
-              store.setPlanSummary(data.planId, {
+              store.setPlanSummary(sessionId, data.planId, {
                 total: data.total ?? 0,
                 completed: data.completed ?? 0,
                 failed: data.failed ?? 0,
@@ -746,7 +746,9 @@ export function useChat(sessionId: string) {
   const confirmPlan = useCallback(async (planId: string) => {
     try {
       const ws = await ensureConnection();
-      const tasks = useAppStore.getState().taskPlans[planId] || [];
+      const store = useAppStore.getState();
+      const planSid = store.planSessionMap[planId] ?? sessionId;
+      const tasks = store.taskPlans[planSid]?.[planId] || [];
       ws.send(JSON.stringify({
         type: 'confirm_plan',
         planId,

@@ -9,9 +9,12 @@ import { WorkspaceFileEditor } from './WorkspaceFileEditor';
 import { api } from '../lib/api';
 import { workspaceDownloadName } from '../lib/workspaceFile';
 import type { AgentConfig, Message } from '@agenthub/shared';
-import type { AgentEvent } from '../store/appStore';
+import type { AgentEvent, TaskState } from '../store/appStore';
 
 const EMPTY_ARR: Message[] = [];
+const EMPTY_TASK_PLANS: Record<string, TaskState[]> = {};
+type PlanSummary = { total: number; completed: number; failed: number; fileChanges: string[]; timestamp: number };
+const EMPTY_PLAN_SUMMARIES: Record<string, PlanSummary> = {};
 
 interface Props {
   sessionAgents: AgentConfig[];
@@ -70,9 +73,9 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
   const idleCount = sortedAgents.filter(a => a.status === 'idle').length;
   const doneCount = sortedAgents.filter(a => a.status === 'done').length;
 
-  // ---- Aggregated stats ----
-  const taskPlans = useAppStore((s) => s.taskPlans);
-  const planSummaries = useAppStore((s) => s.planSummaries);
+  // ---- Aggregated stats (session-scoped) ----
+  const taskPlans = useAppStore((s) => activeSessionId ? (s.taskPlans[activeSessionId] ?? EMPTY_TASK_PLANS) : EMPTY_TASK_PLANS);
+  const planSummaries = useAppStore((s) => activeSessionId ? (s.planSummaries[activeSessionId] ?? EMPTY_PLAN_SUMMARIES) : EMPTY_PLAN_SUMMARIES);
   const allPlans = Object.entries(taskPlans);
 
   // Token totals from all agent messages
@@ -101,7 +104,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
   const toolUseCount = allEvents.filter(e => e.type === 'tool_use').length;
   const fileCount = allEvents.filter(e => e.type === 'file_produced').length;
 
-  // Collect file changes from plan summaries
+  // Collect file changes from plan summaries (already session-scoped above)
   const allFileChanges = new Set<string>();
   for (const s of Object.values(planSummaries)) {
     for (const f of s.fileChanges) allFileChanges.add(f);
@@ -349,8 +352,9 @@ function ActivePlanView({ onReplanTask, onForceComplete, onForceFail }: {
   onForceComplete?: (planId: string, taskId: string) => void;
   onForceFail?: (planId: string, taskId: string) => void;
 }) {
-  const taskPlans = useAppStore((s) => s.taskPlans);
-  const planSummaries = useAppStore((s) => s.planSummaries);
+  const activeSessionId = useAppStore((s) => s.activeSessionId);
+  const taskPlans = useAppStore((s) => activeSessionId ? (s.taskPlans[activeSessionId] ?? EMPTY_TASK_PLANS) : EMPTY_TASK_PLANS);
+  const planSummaries = useAppStore((s) => activeSessionId ? (s.planSummaries[activeSessionId] ?? EMPTY_PLAN_SUMMARIES) : EMPTY_PLAN_SUMMARIES);
   const removeTaskPlan = useAppStore((s) => s.removeTaskPlan);
   const plans = Object.entries(taskPlans);
   if (plans.length === 0 && Object.keys(planSummaries).length === 0) {
@@ -365,7 +369,7 @@ function ActivePlanView({ onReplanTask, onForceComplete, onForceFail }: {
             onReplan={onReplanTask ? (taskId: string) => onReplanTask(planId, taskId) : undefined}
             onForceComplete={onForceComplete ? (taskId: string) => onForceComplete(planId, taskId) : undefined}
             onForceFail={onForceFail ? (taskId: string) => onForceFail(planId, taskId) : undefined}
-            onDismiss={removeTaskPlan} />
+            onDismiss={activeSessionId ? (pid: string) => removeTaskPlan(activeSessionId, pid) : undefined} />
           {planSummaries[planId] && (
             <div className="mt-1 px-3 py-2 rounded-md bg-hub-surface text-caption">
               <div className="text-hub-secondary font-medium mb-1">Plan Summary</div>

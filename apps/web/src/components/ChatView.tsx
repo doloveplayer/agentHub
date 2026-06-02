@@ -28,6 +28,7 @@ import type { Message, AgentConfig } from '@agenthub/shared';
 import { safeContent, formatTokens } from '../lib/text';
 
 const EMPTY_MESSAGES: Message[] = [];
+const EMPTY_PLANS: Record<string, any[]> = {};
 const EMPTY_DIFF_CARDS: any[] = [];
 const EMPTY_DEPLOYMENT_CARDS: any[] = [];
 const EMPTY_TEST_REPORTS: any[] = [];
@@ -35,13 +36,14 @@ const EMPTY_REVIEW_REPORTS: any[] = [];
 
 /** Renders ConfirmationPanel below a Planner agent's message (DAG lives in sidebar Tasks tab) */
 function PlanRenderer({
-  planFromMessage, taskPlans, confirmedPlans, setConfirmedPlans, setTaskPlan, confirmPlan, renderedPlanIds,
+  planFromMessage, sessionId, taskPlans, confirmedPlans, setConfirmedPlans, setTaskPlan, confirmPlan, renderedPlanIds,
 }: {
   planFromMessage: any;
+  sessionId: string;
   taskPlans: Record<string, any[]>;
   confirmedPlans: Set<string>;
   setConfirmedPlans: React.Dispatch<React.SetStateAction<Set<string>>>;
-  setTaskPlan: (planId: string, tasks: any[]) => void;
+  setTaskPlan: (sessionId: string, planId: string, tasks: any[]) => void;
   confirmPlan: (planId: string) => void;
   renderedPlanIds: React.MutableRefObject<Set<string>>;
 }) {
@@ -70,20 +72,18 @@ function PlanRenderer({
             confirmPlan(planId);
           }}
           onUpdateTask={(taskId, newDescription) => {
-            setTaskPlan(planId, tasks.map((t: any) =>
+            setTaskPlan(sessionId, planId, tasks.map((t: any) =>
               t.taskId === taskId ? { ...t, description: newDescription } : t));
           }}
           onUpdateField={(taskId, field, value) => {
             const resolved = field === 'dependsOn' && typeof value === 'string'
               ? value.split(',').map((s: string) => s.trim()).filter(Boolean)
               : value;
-            setTaskPlan(planId, tasks.map((t: any) =>
+            setTaskPlan(sessionId, planId, tasks.map((t: any) =>
               t.taskId === taskId ? { ...t, [field]: resolved } : t));
           }}
           onCancel={() => {
-            const newPlans = { ...taskPlans };
-            delete newPlans[planId];
-            useAppStore.setState({ taskPlans: newPlans });
+            useAppStore.getState().removeTaskPlan(sessionId, planId);
           }}
         />
       ))}
@@ -302,7 +302,7 @@ export function ChatView() {
   // useShallow: batch selectors to avoid re-render on reference change when content is same
   const [messages, taskPlans] = useAppStore(useShallow((s) => [
     activeSessionId ? (s.messages[activeSessionId] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES,
-    s.taskPlans,
+    activeSessionId ? (s.taskPlans[activeSessionId] ?? EMPTY_PLANS) : EMPTY_PLANS,
   ]));
 
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
@@ -599,7 +599,7 @@ export function ChatView() {
               {msg.senderType === 'agent' && msg.agentId
                 && (agentMap.get(msg.agentId)?.name === 'planner' || agentMap.get(msg.agentId)?.name?.startsWith('planner-'))
                 && msg.status === 'done' && (
-                <PlanRenderer planFromMessage={msg} taskPlans={taskPlans} confirmedPlans={confirmedPlans}
+                <PlanRenderer planFromMessage={msg} sessionId={activeSessionId!} taskPlans={taskPlans} confirmedPlans={confirmedPlans}
                   setConfirmedPlans={setConfirmedPlans} setTaskPlan={setTaskPlan} confirmPlan={confirmPlan}
                   renderedPlanIds={renderedPlanIds} />
               )}

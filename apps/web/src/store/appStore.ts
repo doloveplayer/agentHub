@@ -81,13 +81,14 @@ interface AppState {
   sessionPermissionModes: Record<string, string>;
   orchestrationMode: 'parallel' | 'sequential';
   setOrchestrationMode: (mode: 'parallel' | 'sequential') => void;
-  taskPlans: Record<string, TaskState[]>;
-  planSummaries: Record<string, { total: number; completed: number; failed: number; fileChanges: string[]; timestamp: number }>;
+  taskPlans: Record<string, Record<string, TaskState[]>>;   // sessionId → planId → tasks
+  planSummaries: Record<string, Record<string, { total: number; completed: number; failed: number; fileChanges: string[]; timestamp: number }>>; // sessionId → planId → summary
   diffCards: Record<string, DiffCardState[]>;
   deploymentCards: Record<string, DeploymentCardState[]>;
   testReports: Record<string, TestReportState[]>;
   reviewReports: Record<string, ReviewReportState[]>;
-  setPlanSummary: (planId: string, summary: { total: number; completed: number; failed: number; fileChanges: string[]; timestamp: number }) => void;
+  setPlanSummary: (sessionId: string, planId: string, summary: { total: number; completed: number; failed: number; fileChanges: string[]; timestamp: number }) => void;
+  planSessionMap: Record<string, string>; // planId → sessionId (reverse index for update methods)
 
   setToken: (token: string | null) => void;
   setUser: (user: any) => void;
@@ -106,8 +107,9 @@ interface AppState {
   removeAgentFromSession: (sessionId: string, agentId: string) => void;
   removeStreamingMessage: (sessionId: string, msgId: string) => void;
   isSessionStreaming: (sessionId: string) => boolean;
-  setTaskPlan: (planId: string, tasks: TaskState[]) => void;
-  removeTaskPlan: (planId: string) => void;  updateTaskStatus: (planId: string, taskId: string, status: TaskState['status']) => void;
+  setTaskPlan: (sessionId: string, planId: string, tasks: TaskState[]) => void;
+  removeTaskPlan: (sessionId: string, planId: string) => void;
+  updateTaskStatus: (planId: string, taskId: string, status: TaskState['status']) => void;
   updateTaskField: (planId: string, taskId: string, field: string, value: any) => void;
   addDiffCard: (sessionId: string, card: DiffCardState) => void;
   upsertDeploymentCard: (sessionId: string, card: Omit<DeploymentCardState, 'logs' | 'updatedAt'> & { log?: string; timestamp?: number }) => void;
@@ -162,6 +164,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   orchestrationMode: 'parallel' as const,
   taskPlans: {},
   planSummaries: {},
+  planSessionMap: {},
   diffCards: {},
   deploymentCards: {},
   testReports: {},
@@ -323,21 +326,32 @@ export const useAppStore = create<AppState>((set, get) => ({
       return { agentEvents: nextAgentEvents };
     }),
 
-  setTaskPlan: (planId, tasks) =>
+  setTaskPlan: (sessionId, planId, tasks) =>
     set((state) => ({
-      taskPlans: { ...state.taskPlans, [planId]: tasks },
+      taskPlans: {
+        ...state.taskPlans,
+        [sessionId]: { ...(state.taskPlans[sessionId] ?? {}), [planId]: tasks },
+      },
+      planSessionMap: { ...state.planSessionMap, [planId]: sessionId },
     })),
 
-  removeTaskPlan: (planId) =>
+  removeTaskPlan: (sessionId, planId) =>
     set((state) => {
-      const next = { ...state.taskPlans };
-      delete next[planId];
-      return { taskPlans: next };
+      const sessionPlans = { ...(state.taskPlans[sessionId] ?? {}) };
+      delete sessionPlans[planId];
+      const next = { ...state.taskPlans, [sessionId]: sessionPlans };
+      if (Object.keys(sessionPlans).length === 0) delete next[sessionId];
+      const nextMap = { ...state.planSessionMap };
+      delete nextMap[planId];
+      return { taskPlans: next, planSessionMap: nextMap };
     }),
 
-  setPlanSummary: (planId, summary) =>
+  setPlanSummary: (sessionId, planId, summary) =>
     set((state) => ({
-      planSummaries: { ...state.planSummaries, [planId]: summary },
+      planSummaries: {
+        ...state.planSummaries,
+        [sessionId]: { ...(state.planSummaries[sessionId] ?? {}), [planId]: summary },
+      },
     })),
 
   addDiffCard: (sessionId, card) =>
@@ -388,19 +402,26 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   updateTaskStatus: (planId, taskId, status) =>
     set((state) => {
-      const tasks = state.taskPlans[planId];
+      const sessionId = state.planSessionMap[planId];
+      if (!sessionId) return state;
+      const tasks = state.taskPlans[sessionId]?.[planId];
       if (!tasks) return state;
       return {
         taskPlans: {
           ...state.taskPlans,
-          [planId]: tasks.map((t) => t.taskId === taskId ? { ...t, status } : t),
+          [sessionId]: {
+            ...(state.taskPlans[sessionId] ?? {}),
+            [planId]: tasks.map((t) => t.taskId === taskId ? { ...t, status } : t),
+          },
         },
       };
     }),
 
   updateTaskField: (planId, taskId, field, value) =>
     set((state) => {
-      const tasks = state.taskPlans[planId];
+      const sessionId = state.planSessionMap[planId];
+      if (!sessionId) return state;
+      const tasks = state.taskPlans[sessionId]?.[planId];
       if (!tasks) return state;
       const resolvedValue = field === 'dependsOn'
         ? (typeof value === 'string' ? value.split(',').map((s: string) => s.trim()).filter(Boolean) : value)
@@ -408,25 +429,33 @@ export const useAppStore = create<AppState>((set, get) => ({
       return {
         taskPlans: {
           ...state.taskPlans,
-          [planId]: tasks.map((t) =>
-            t.taskId === taskId ? { ...t, [field]: resolvedValue } : t
-          ),
+          [sessionId]: {
+            ...(state.taskPlans[sessionId] ?? {}),
+            [planId]: tasks.map((t) =>
+              t.taskId === taskId ? { ...t, [field]: resolvedValue } : t
+            ),
+          },
         },
       };
     }),
 
   setTaskAgent: (planId, taskId, agentId, agentName) =>
     set((state) => {
-      const tasks = state.taskPlans[planId];
+      const sessionId = state.planSessionMap[planId];
+      if (!sessionId) return state;
+      const tasks = state.taskPlans[sessionId]?.[planId];
       if (!tasks) return state;
       const task = tasks.find(t => t.taskId === taskId);
       if (!task) return state;
       return {
         taskPlans: {
           ...state.taskPlans,
-          [planId]: tasks.map((t) => t.taskId === taskId
-            ? { ...t, assignedAgentId: agentId, assignedAgentName: agentName, status: 'running' as const }
-            : t),
+          [sessionId]: {
+            ...(state.taskPlans[sessionId] ?? {}),
+            [planId]: tasks.map((t) => t.taskId === taskId
+              ? { ...t, assignedAgentId: agentId, assignedAgentName: agentName, status: 'running' as const }
+              : t),
+          },
         },
         agentCurrentTask: {
           ...state.agentCurrentTask,
