@@ -134,6 +134,37 @@ model PlanExecution {
   @@index([planId])
 }
 
+model ContextEntryRecord {
+  id        String   @id
+  sessionId String
+  key       String
+  value     String
+  type      String
+  version   Int      @default(1)
+  author    String
+  taskId    String?
+  planId    String?
+  tags      Json     @default("[]")
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sessionId, key])
+  @@index([sessionId])
+  @@index([planId])
+}
+
+model SessionCheckpoint {
+  id        String   @id
+  sessionId String
+  planId    String
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@unique([sessionId, planId])
+  @@index([sessionId])
+}
+
 model UserSettings {
   id                   String   @id @default(uuid())
   userId               String   @unique
