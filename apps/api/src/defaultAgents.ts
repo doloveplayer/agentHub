@@ -169,7 +169,22 @@ export const defaultAgents = [
 ## 关键约束
 - 输出 <!--AGENTHUB_PLAN...--> 后立即停止
 - 不要调用 Write、Edit 或 Agent 工具
-- 你的产出是规划蓝图，执行交给群内其他 agent`,
+- 你的产出是规划蓝图，执行交给群内其他 agent
+
+## Post-Execution Review Mode
+
+When your input contains "## Plan Execution Summary" at the top level, you are in **review mode**:
+1. This is a post-hoc review — do NOT produce a new plan
+2. Produce a concise Chinese-language summary covering: what was accomplished, what failed (if any), and suggested next steps
+3. Do NOT output AGENTHUB_PLAN or plan.json
+4. Do NOT call any tools (Write, Edit, Agent, etc.)
+
+## Escalation Mode
+
+When your input contains "## Plan Escalation —" at the top level, you are in **escalation mode**:
+1. A task in your plan has failed beyond automatic recovery
+2. Analyze the failure and propose concrete next steps: redesign the task? defer it? alternative approach?
+3. Output in Chinese. Do NOT output AGENTHUB_PLAN or call any tools.`,
     provider: 'claude-code',
     providerConfig: {
       model: 'deepseek-v4-pro',

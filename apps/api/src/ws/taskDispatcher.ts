@@ -9,6 +9,7 @@ import { config } from '../config.js';
 import { DagPersistence } from '../agent/DagPersistence.js';
 import { agentCoordinator } from '../agent/AgentCoordinator.js';
 import { getManagerLoop } from '../agent/ManagerLoop.js';
+import { agentRuntime } from '../agent/AgentRuntime.js';
 import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
 import { getApprovalGate } from '../agent/ApprovalGate.js';
 import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDetection.js';
@@ -81,6 +82,7 @@ import {
   markTaskRetryQueued,
   markTaskRunning,
   type DagExecutionState,
+  type DagExecutionItem,
   type DagTaskAssignment,
 } from './dagExecution.js';
 import {
@@ -797,6 +799,13 @@ export async function handleDispatchedTaskFinished(
                   retryCount: currentRetryCount,
                 },
               });
+              if (sandbox) {
+                dispatchEscalationToPlanner(sessionId, planId, taskId, {
+                  taskId, title: failedTask?.task.title ?? taskId,
+                  agentType: failedTask?.task.agentType ?? 'unknown',
+                  error: decision.reason, retryCount: currentRetryCount,
+                }, sandbox).catch((err: any) => console.error(`[dag] Planner escalation failed: ${err.message}`));
+              }
               for (const item of blocked) {
                 broadcast(sessionId, {
                   type: "task_blocked", planId, taskId: item.task.id,
@@ -822,6 +831,13 @@ export async function handleDispatchedTaskFinished(
                 retryCount: currentRetryCount,
               },
             });
+            if (sandbox) {
+              dispatchEscalationToPlanner(sessionId, planId, taskId, {
+                taskId, title: failedTask?.task.title ?? taskId,
+                agentType: failedTask?.task.agentType ?? 'unknown',
+                error: decision.reason, retryCount: currentRetryCount,
+              }, sandbox).catch((err: any) => console.error(`[dag] Planner escalation failed: ${err.message}`));
+            }
             for (const item of blocked) {
               broadcast(sessionId, {
                 type: "task_blocked", planId, taskId: item.task.id,
@@ -848,6 +864,13 @@ export async function handleDispatchedTaskFinished(
             retryCount: currentRetryCount,
           },
         });
+        if (sandbox) {
+          dispatchEscalationToPlanner(sessionId, planId, taskId, {
+            taskId, title: failedTask?.task.title ?? taskId,
+            agentType: failedTask?.task.agentType ?? 'unknown',
+            error: `ManagerLoop unavailable: ${err.message}`, retryCount: currentRetryCount,
+          }, sandbox).catch((err: any) => console.error(`[dag] Planner escalation failed: ${err.message}`));
+        }
         for (const item of blocked) {
           broadcast(sessionId, {
             type: "task_blocked", planId, taskId: item.task.id,
@@ -1123,9 +1146,15 @@ function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionSta
   });
   execution.summaryBroadcasted = true;
 
+  const sandbox = sandboxes.get(sessionId);
+  // Send summary to planner for post-execution review
+  if (sandbox) {
+    dispatchPlanSummaryToPlanner(sessionId, execution, items, completed, failed, sandbox)
+      .catch((err: any) => console.error(`[dag] Failed to dispatch plan summary to planner: ${err.message}`));
+  }
+
   // Archive pipeline: when all tasks are done, archive the plan for future experience extraction
-  if (allDone) {
-    const sandbox = sandboxes.get(sessionId);
+  if (allDone && sandbox) {
     const archiveStartTime = Date.now();
     import('../agent/ArchiveManager.js').then(({ ArchiveManager }) => {
       const archiveTasks = items.map(item => ({
@@ -1165,6 +1194,125 @@ function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionSta
       }).catch(err => console.error(`[archive] Plan ${execution.planId} archive failed:`, err));
     }).catch((err: any) => console.error('[dag] ArchiveManager dynamic import failed:', err.message));
   }
+}
+
+/**
+ * After all plan tasks complete, send a structured summary to the planner agent
+ * for post-execution review. The planner produces a natural-language summary
+ * of accomplishments, failures, and suggested next steps.
+ */
+async function dispatchPlanSummaryToPlanner(
+  sessionId: string,
+  execution: DagExecutionState,
+  items: DagExecutionItem[],
+  completed: number,
+  failed: number,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string; sandboxDir: string; hostSandboxDir: string },
+): Promise<void> {
+  const plannerSA = await prisma.sessionAgent.findFirst({
+    where: { sessionId, agent: { name: { startsWith: 'planner' } } },
+    select: { agent: { select: { id: true, name: true } } },
+  });
+  if (!plannerSA) return;
+
+  const bus = getSessionContextBus(sessionId);
+  const taskLines: string[] = [];
+  for (const item of items) {
+    const outputEntry = bus.get(`task:${item.task.id}:output-summary`);
+    const outputStr = outputEntry
+      ? (typeof outputEntry.value === 'string'
+          ? outputEntry.value.slice(0, 300)
+          : JSON.stringify(outputEntry.value).slice(0, 300))
+      : '(no output recorded)';
+    const icon = item.status === 'done' ? 'DONE' : item.status === 'failed' ? 'FAIL' : 'SKIP';
+    taskLines.push(`- [${icon}] **${item.task.title}** (${item.task.agentType})\n  ${outputStr}`);
+  }
+
+  const planTitle = execution.planTitle || execution.planId;
+  const summaryPrompt = [
+    '## Plan Execution Summary',
+    '',
+    `The task plan **${planTitle}** has fully completed.`,
+    '',
+    `Results: ${completed}/${items.length} succeeded, ${failed}/${items.length} failed`,
+    '',
+    'Task breakdown:',
+    ...taskLines,
+    '',
+    'Please produce a concise post-execution review in Chinese covering:',
+    '1. **Accomplished** -- what goals were completed overall',
+    '2. **Failures** -- if any tasks failed, analyze why',
+    '3. **Next steps** -- suggest what to do next (fix failures, iterate on features, or wrap up)',
+    '',
+    'This is a review-only request. Output a plain-text summary. Do NOT output AGENTHUB_PLAN or plan.json.',
+  ].join('\n');
+
+  const messageId = `plan-summary-${execution.planId}-${Date.now()}`;
+  try {
+    await prisma.message.create({
+      data: { id: messageId, sessionId, senderType: 'agent', agentId: plannerSA.agent.id, content: '', status: 'streaming' },
+    });
+  } catch { return; }
+
+  const fullPrompt = [
+    '[Group - Multi-Agent Collaboration]',
+    '',
+    summaryPrompt,
+  ].join('\n');
+
+  await agentRuntime.sendPrompt(plannerSA.agent.id, sessionId, fullPrompt, messageId, sandbox);
+}
+
+/**
+ * When a task has exhausted all recovery strategies (auto-retry + ManagerLoop),
+ * notify the planner so it can analyze the failure and suggest alternatives.
+ */
+async function dispatchEscalationToPlanner(
+  sessionId: string,
+  planId: string,
+  failedTaskId: string,
+  failedTask: { taskId: string; title: string; agentType: string; error: string; retryCount: number },
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string; sandboxDir: string; hostSandboxDir: string },
+): Promise<void> {
+  const plannerSA = await prisma.sessionAgent.findFirst({
+    where: { sessionId, agent: { name: { startsWith: 'planner' } } },
+    select: { agent: { select: { id: true, name: true } } },
+  });
+  if (!plannerSA) return;
+
+  const escalationPrompt = [
+    '## Plan Escalation — Task Failed Beyond Recovery',
+    '',
+    `A task in your plan has failed after exhausting all recovery strategies:`,
+    '',
+    `- **Plan**: ${planId}`,
+    `- **Failed Task**: ${failedTask.title} (${failedTask.agentType})`,
+    `- **Error**: ${failedTask.error}`,
+    `- **Retries**: ${failedTask.retryCount} attempts`,
+    '',
+    'Auto-retry and ManagerLoop review have both been exhausted.',
+    'Please analyze the failure and propose next steps:',
+    '1. **Why did it fail?** — diagnose the root cause',
+    '2. **Impact** — which downstream tasks are now blocked?',
+    '3. **Next steps** — should the approach be changed? Should the task be redesigned or deferred?',
+    '',
+    'This is an escalation review. Output in Chinese. Do NOT output AGENTHUB_PLAN or call any tools.',
+  ].join('\n');
+
+  const messageId = `escalation-${planId}-${Date.now()}`;
+  try {
+    await prisma.message.create({
+      data: { id: messageId, sessionId, senderType: 'agent', agentId: plannerSA.agent.id, content: '', status: 'streaming' },
+    });
+  } catch { return; }
+
+  const fullPrompt = [
+    '[Group - Multi-Agent Collaboration]',
+    '',
+    escalationPrompt,
+  ].join('\n');
+
+  await agentRuntime.sendPrompt(plannerSA.agent.id, sessionId, fullPrompt, messageId, sandbox);
 }
 
 async function persistState(sessionId: string, planId: string, state: DagExecutionState): Promise<void> {
