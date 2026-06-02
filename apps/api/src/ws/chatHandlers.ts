@@ -106,7 +106,6 @@ export async function ensureSandboxReady(sessionId: string, sessionType?: string
 async function buildSessionContext(
   sessionId: string,
   currentAgentName: string,
-  workspacePath?: string,
 ): Promise<string | null> {
   try {
     const session = await prisma.session.findUnique({
@@ -127,7 +126,7 @@ async function buildSessionContext(
       .map(sa => `- **${sa.agent.name}** — ${sa.agent.description || 'No description'}`);
 
     if (otherAgents.length === 0 && session.type === 'solo') {
-      return `## Session Context\n\n**Mode**: Solo\n**Workspace**: ${workspacePath || '/workspace'}\n`;
+      return `## Session Context\n\n**Mode**: Solo\n**Workspace**: /workspace\n`;
     }
 
     const agentCount = session.agents.length;
@@ -140,9 +139,7 @@ async function buildSessionContext(
       block += `**Other Agents**:\n${otherAgents.join('\n')}\n`;
     }
 
-    if (workspacePath) {
-      block += `**Workspace**: ${workspacePath}\n`;
-    }
+    block += `**Workspace**: /workspace\n`;
 
     return block;
   } catch {
@@ -303,7 +300,7 @@ export async function handleChatMessage(
       : null;
     const agentNameForProc = agent?.name ?? null;
     const sessionContext = agent
-      ? await buildSessionContext(sessionId, agent.name, sandbox.hostWorkDir)
+      ? await buildSessionContext(sessionId, agent.name)
       : null;
 
     if (agent) {
