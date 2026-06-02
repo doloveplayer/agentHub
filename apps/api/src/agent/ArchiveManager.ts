@@ -1,5 +1,5 @@
-import { mkdirSync, writeFileSync } from 'fs';
-import { resolve } from 'path';
+import { mkdirSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { resolve, dirname } from 'path';
 import { execSync } from 'child_process';
 import { prisma } from '../db/prisma.js';
 import { DagPersistence } from './DagPersistence.js';
@@ -38,6 +38,9 @@ export class ArchiveManager {
     // Step 4: Cleanup from ContextBus
     bus.archive(planId);
     bus.clearNewKeys();
+
+    // Step 5: Remove plan.json to prevent stale re-dispatch on restart
+    ArchiveManager.cleanupPlanFile(sessionId, hostWorkDir);
 
     return { manifest, experiences };
   }
@@ -144,6 +147,27 @@ export class ArchiveManager {
         }
       } catch (err: any) {
         console.error(`[ArchiveManager] Failed to write memory for ${agentType}: ${err.message}`);
+      }
+    }
+  }
+
+  /** Remove plan.json from workspace and sandbox dirs after archiving. */
+  private static cleanupPlanFile(sessionId: string, hostWorkDir: string): void {
+    // The sandbox dir is typically the parent of hostWorkDir (when workspace is mounted at /workspace)
+    const sandboxDir = resolve(SANDBOXES_ROOT, sessionId);
+    const candidates = [
+      resolve(hostWorkDir, 'plan.json'),
+      resolve(sandboxDir, 'plan.json'),
+    ];
+
+    for (const path of candidates) {
+      if (existsSync(path)) {
+        try {
+          unlinkSync(path);
+          console.log(`[ArchiveManager] Cleaned up plan.json: ${path}`);
+        } catch (err: any) {
+          console.warn(`[ArchiveManager] Failed to remove plan.json (${path}): ${err.message}`);
+        }
       }
     }
   }

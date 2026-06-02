@@ -9,6 +9,7 @@ import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { config, runtimeConfig } from './config.js';
 import { attachWebSocket, broadcast } from './ws/handler.js';
+import { SessionCommLog } from './agent/SessionCommLog.js';
 import { ProviderFactory } from './agent/providers/factory.js';
 import { SandboxManager } from './agent/SandboxManager.js';
 import { prisma } from './db/prisma.js';
@@ -198,5 +199,8 @@ nodeServer.on('upgrade', (req, socket, head) => {
   handlePreviewUpgrade(req, socket as net.Socket, head).catch(() => {});
 });
 attachWebSocket(nodeServer);
+
+// Initialize SessionCommLog with broadcast function for real-time log streaming
+SessionCommLog.setBroadcast(broadcast);
 
 export default app;

@@ -6,7 +6,7 @@ import { parseMentions } from '../lib/mentionParser';
 import { safeContent } from '../lib/text';
 import type { Message, AgentConfig } from '@agenthub/shared';
 
-const socketPool = new Map<string, WebSocket>();
+export const socketPool = new Map<string, WebSocket>();
 
 function findMessageSessionId(agentMessageId: string | undefined, fallback: string): string {
   if (!agentMessageId) return fallback;
@@ -519,6 +519,29 @@ export function useChat(sessionId: string) {
                   report: data.report,
                   timestamp: data.timestamp || Date.now(),
                 });
+              }
+              break;
+            case 'plan_recovery_available':
+              {
+                const store = useAppStore.getState();
+                const existing = store.planRecoveries[sessionId] ?? [];
+                store.setRecoveryPlans(sessionId, [...existing, {
+                  planId: data.planId,
+                  planTitle: data.planTitle || 'Unknown Plan',
+                  pendingCount: data.pendingCount,
+                  pendingTasks: data.pendingTasks ?? [],
+                }]);
+              }
+              break;
+            case 'plan_recovery_confirmed':
+              useAppStore.getState().removeRecoveryPlan(sessionId, data.planId);
+              break;
+            case 'plan_recovery_discarded':
+              useAppStore.getState().removeRecoveryPlan(sessionId, data.planId);
+              break;
+            case 'comm_log':
+              if (data.entry) {
+                window.dispatchEvent(new CustomEvent('comm_log', { detail: data.entry }));
               }
               break;
           }

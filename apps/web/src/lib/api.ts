@@ -234,4 +234,7 @@ export const api = {
 
   getQuoteReferences: (messageId: string) =>
     request<{ quotedFrom: any[]; quotedBy: any[] }>(`/quote-references?messageId=${encodeURIComponent(messageId)}`),
+
+  getCommLog: (sessionId: string) =>
+    request<{ entries: any[] }>(`/sessions/${sessionId}/comm-log`),
 };

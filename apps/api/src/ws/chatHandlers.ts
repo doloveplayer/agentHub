@@ -12,6 +12,7 @@ import { parseReviewReport, parseTestOutput } from '../artifacts/ArtifactTools.j
 import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDetection.js';
 import { agentRuntime } from '../agent/AgentRuntime.js';
 
+import { pendingRecoveries } from './handler.js';
 import {
   sessionPermissionModes, agentStates, agentProcesses, sandboxes,
   runningAgentCount, incRunningAgentCount, decRunningAgentCount,
@@ -60,31 +61,30 @@ export async function ensureSandboxReady(sessionId: string, sessionType?: string
   });
   startStaleTaskChecker(sessionId, sb);
 
-  // Recovery: check for incomplete plans on reconnect
+  // Recovery: check for incomplete plans on reconnect — ask user instead of auto-dispatching
   import('../agent/CheckpointManager.js').then(({ CheckpointManager }) => {
     CheckpointManager.getIncompleteForSession(sessionId).then(checkpoints => {
       for (const cp of checkpoints) {
         if (cp.pendingTasks.length > 0) {
-          console.log(`[recovery] Restoring plan ${cp.planId} with ${cp.pendingTasks.length} pending tasks`);
-          // Restore ContextBus
+          console.log(`[recovery] Incomplete plan ${cp.planId} — ${cp.pendingTasks.length} pending tasks, asking user`);
+          // Restore ContextBus so agent state is available
           CheckpointManager.restoreContextBus(sessionId, cp);
-          // Re-dispatch pending tasks
-          const sandbox = sandboxes.get(sessionId);
-          if (sandbox) {
-            import('./taskDispatcher.js').then(({ enqueueTaskAssignments }) => {
-              enqueueTaskAssignments(sessionId, cp.planId, cp.pendingTasks.map(t => ({
-                task: { ...t, priority: t.priority as 'high' | 'medium' | 'low' },
-                agentName: t.agentType,
-                agentId: '',
-              })), sandbox).catch((err: any) =>
-                console.error(`[recovery] Re-dispatch failed: ${err.message}`)
-              );
-            }).catch((err: any) => console.error('[recovery] Task dispatcher import failed:', err.message));
-          }
+          // Store for user decision
+          pendingRecoveries.set(`${sessionId}:${cp.planId}`, {
+            planId: cp.planId,
+            pendingTasks: cp.pendingTasks,
+          });
+          // Don't auto-dispatch — let user decide
           broadcast(sessionId, {
-            type: 'plan_recovered',
+            type: 'plan_recovery_available',
             planId: cp.planId,
             pendingCount: cp.pendingTasks.length,
+            planTitle: cp.pendingTasks[0]?.title || 'Unknown',
+            pendingTasks: cp.pendingTasks.map(t => ({
+              id: t.id,
+              title: t.title,
+              agentType: t.agentType,
+            })),
           });
         }
       }
@@ -271,7 +271,7 @@ export async function handleChatMessage(
 3. 每个任务必须包含 risk 字段（low / high），参考 plan skill 中的风险判定规则
 4. 将 plan.json 通过 Write 工具写入 /sandbox/plan.json，Hub 会自动检测并调度\n`;
       }
-      agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostSandboxDir) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
+      agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${sandbox ? InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostSandboxDir, sessionId) : ''}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${history ? history + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
       if (sandbox) AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null, sessionId);
       agentNameToType.set(agent.name, agent.name);
     } else {

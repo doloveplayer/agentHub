@@ -348,7 +348,7 @@ sessions.patch('/:id', async (c) => {
             summary: `Session renamed to "${parsed.data.title}". Updated group context:\n\n${groupCtx}`,
             risk: 'low',
             timestamp: Date.now(),
-          });
+          }, sessionId);
         }
       }
     }
@@ -500,6 +500,14 @@ sessions.get('/:id/agents/:agentId', async (c) => {
     systemPromptOverride: sessionAgent.systemPromptOverride,
     globalSystemPrompt: sessionAgent.agent.systemPrompt,
   });
+});
+
+// GET /:id/comm-log — read session communication log
+sessions.get('/:id/comm-log', async (c) => {
+  const sessionId = c.req.param('id');
+  const { SessionCommLog } = await import('../agent/SessionCommLog.js');
+  const entries = SessionCommLog.readAll(sessionId);
+  return c.json({ entries });
 });
 
 export default sessions;

@@ -37,8 +37,8 @@ export class InboxWakeup {
    * Build the inbox injection prompt for an agent that's about to start.
    * Reads and clears the inbox, injecting messages directly into the prompt.
    */
-  static buildInboxPrompt(agentName: string, hostWorkDir: string): string {
-    const entries = InboxManager.read(hostWorkDir, agentName);
+  static buildInboxPrompt(agentName: string, hostWorkDir: string, sessionId?: string): string {
+    const entries = InboxManager.read(hostWorkDir, agentName, sessionId);
     if (entries.length === 0) return '';
 
     const highRisk = entries.filter(e => e.risk === 'high');

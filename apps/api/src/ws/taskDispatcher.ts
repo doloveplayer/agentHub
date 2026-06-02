@@ -310,6 +310,11 @@ function handleProviderTaskEvent(
         agentName,
         output: output.slice(0, 200),
       });
+      import('../agent/SessionCommLog.js').then(({ SessionCommLog }) => {
+        SessionCommLog.log(sessionId, 'task', succeeded ? 'completed' : 'failed', {
+          planId: queue.planId, taskId: task.id, agentName, exitCode,
+        });
+      }).catch(() => {});
       stateTracker.setDone(taskMessageId);
       if (succeeded && output) {
         const bus = getSessionContextBus(sessionId);
@@ -446,6 +451,9 @@ export async function processNextInQueue(
       task,
     });
     broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: procInfo.agentId, taskMessageId });
+    import('../agent/SessionCommLog.js').then(({ SessionCommLog }) => {
+      SessionCommLog.log(sessionId, 'task', 'assigned', { planId: queue.planId, taskId: task.id, agentName });
+    }).catch(() => {});
     procInfo.provider.sendPrompt(taskPrompt);
   } else {
     // No REPL provider running — start one, then sendPrompt
@@ -513,6 +521,9 @@ async function startReplForTask(
       task,
     });
     broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
+    import('../agent/SessionCommLog.js').then(({ SessionCommLog }) => {
+      SessionCommLog.log(sessionId, 'task', 'assigned', { planId: queue.planId, taskId: task.id, agentName });
+    }).catch(() => {});
 
     const agentHomeDir = AgentDirectoryManager.getAgentHome(agent.id);
     AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt);
@@ -627,6 +638,11 @@ export async function dispatchTasksToAgents(
 
   const execution = createDagExecutionState(planId, assignments, planTitle);
   setPlanExecution(sessionId, planId, execution);
+  import('../agent/SessionCommLog.js').then(({ SessionCommLog }) => {
+    SessionCommLog.log(sessionId, 'plan', 'created', {
+      planId, planTitle, taskCount: assignments.length, agentTypes: [...new Set(assignments.map(a => a.task.agentType))],
+    });
+  }).catch(() => {});
   await enqueueTaskAssignments(sessionId, planId, consumeReadyTasks(execution), sandbox);
 }
 
@@ -1141,6 +1157,11 @@ function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionSta
           experienceCount: experiences.length,
           manifestPath: `.sandboxes/${sessionId}/archive/${execution.planId}/manifest.json`,
         });
+        import('../agent/SessionCommLog.js').then(({ SessionCommLog }) => {
+          SessionCommLog.log(sessionId, 'plan', 'archived', {
+            planId: execution.planId, taskCount: manifest.tasks.length, experienceCount: experiences.length,
+          });
+        }).catch(() => {});
       }).catch(err => console.error(`[archive] Plan ${execution.planId} archive failed:`, err));
     }).catch((err: any) => console.error('[dag] ArchiveManager dynamic import failed:', err.message));
   }

@@ -37,7 +37,7 @@ export class InboxManager {
    * Write an entry to an agent's inbox file.
    * Inbox files live at {hostWorkDir}/_inbox_{agentName}.jsonl
    */
-  static write(hostWorkDir: string, targetAgentName: string, entry: InboxEntry): void {
+  static write(hostWorkDir: string, targetAgentName: string, entry: InboxEntry, sessionId?: string): void {
     if (entry.summary && entry.summary.length > 500) {
       console.warn(`[inbox] Large summary (${entry.summary.length} chars) from ${entry.from} to ${targetAgentName}`);
     }
@@ -48,13 +48,26 @@ export class InboxManager {
     } catch (err: any) {
       console.error(`[inbox] Failed to write to ${targetAgentName}: ${err.message}`);
     }
+
+    // Log to SessionCommLog
+    if (sessionId) {
+      import('./SessionCommLog.js').then(({ SessionCommLog }) => {
+        SessionCommLog.log(sessionId, 'inbox', 'write', {
+          from: entry.from,
+          to: targetAgentName,
+          type: entry.type,
+          summary: entry.summary?.slice(0, 200),
+          risk: entry.risk,
+        });
+      }).catch(() => {});
+    }
   }
 
   /**
    * Read all unprocessed entries from an agent's inbox.
    * Returns entries and clears the file.
    */
-  static read(hostWorkDir: string, agentName: string): InboxEntry[] {
+  static read(hostWorkDir: string, agentName: string, sessionId?: string): InboxEntry[] {
     const inboxPath = resolve(hostWorkDir, `_inbox_${norm(agentName)}.jsonl`);
     if (!existsSync(inboxPath)) return [];
 
@@ -62,7 +75,7 @@ export class InboxManager {
       const raw = readFileSync(inboxPath, 'utf-8');
       // Clear after reading to prevent re-processing
       writeFileSync(inboxPath, '', 'utf-8');
-      return raw
+      const entries = raw
         .split('\n')
         .filter(Boolean)
         .map(line => {
@@ -70,6 +83,19 @@ export class InboxManager {
           catch { return null; }
         })
         .filter((e): e is InboxEntry => e !== null);
+
+      // Log to SessionCommLog
+      if (sessionId && entries.length > 0) {
+        import('./SessionCommLog.js').then(({ SessionCommLog }) => {
+          SessionCommLog.log(sessionId, 'inbox', 'read', {
+            agentName,
+            entryCount: entries.length,
+            fromAgents: entries.map(e => e.from),
+          });
+        }).catch(() => {});
+      }
+
+      return entries;
     } catch {
       return [];
     }

@@ -42,7 +42,7 @@ export class AgentCoordinator {
             summary: `${ctx.agentName} attempted ${event.toolName} on ${filePathStr || 'unknown'} but was blocked. Delegating to you.`,
             risk: 'high',
             timestamp: Date.now(),
-          });
+          }, ctx.sessionId);
         }
       }
 
@@ -60,7 +60,7 @@ export class AgentCoordinator {
     for (const { targetType, entry } of deliveries) {
       const targetAgentName = ctx.resolveAgent(targetType);
       if (targetAgentName && targetAgentName !== ctx.agentName) {
-        InboxManager.write(ctx.hostWorkDir, targetAgentName, entry);
+        InboxManager.write(ctx.hostWorkDir, targetAgentName, entry, ctx.sessionId);
       }
     }
 
@@ -78,7 +78,7 @@ export class AgentCoordinator {
     for (const { targetType, entry } of deliveries) {
       const targetAgentName = ctx.resolveAgent(targetType);
       if (targetAgentName && targetAgentName !== ctx.agentName) {
-        InboxManager.write(ctx.hostWorkDir, targetAgentName, entry);
+        InboxManager.write(ctx.hostWorkDir, targetAgentName, entry, ctx.sessionId);
       }
     }
   }
@@ -96,7 +96,7 @@ export class AgentCoordinator {
     for (const { targetType, entry } of deliveries) {
       const targetAgentName = ctx.resolveAgent(targetType);
       if (targetAgentName && targetAgentName !== ctx.agentName) {
-        InboxManager.write(ctx.hostWorkDir, targetAgentName, entry);
+        InboxManager.write(ctx.hostWorkDir, targetAgentName, entry, ctx.sessionId);
       }
     }
 
@@ -111,7 +111,7 @@ export class AgentCoordinator {
   buildCoordinationPrompt(ctx: CoordinationContext): string {
     const prompt = InboxManager.hubModePrompt(ctx.agentName);
 
-    const entries = InboxManager.read(ctx.hostWorkDir, ctx.agentName);
+    const entries = InboxManager.read(ctx.hostWorkDir, ctx.agentName, ctx.sessionId);
     if (entries.length === 0) return prompt;
 
     const highRisk = entries.filter((e) => e.risk === 'high');

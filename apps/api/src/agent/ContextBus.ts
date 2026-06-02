@@ -24,6 +24,8 @@ export class ContextBus {
   private store = new Map<string, ContextEntry>();
   private newKeys = new Set<string>();
   private maxEntries: number;
+  /** Session ID for logging — set by getSessionContextBus(). */
+  sessionId: string | null = null;
 
   constructor(maxEntries = 500) {
     this.maxEntries = maxEntries;
@@ -47,6 +49,20 @@ export class ContextBus {
     };
     this.store.set(opts.key, entry);
     this.newKeys.add(opts.key);
+
+    // Log to SessionCommLog for observability
+    if (this.sessionId) {
+      import('./SessionCommLog.js').then(({ SessionCommLog }) => {
+        SessionCommLog.log(this.sessionId!, 'contextbus', 'set', {
+          key: opts.key,
+          type: opts.type,
+          value: opts.value,
+          author: opts.author,
+          tags: opts.tags,
+          status: opts.status,
+        });
+      }).catch(() => {});
+    }
 
     if (this.store.size > this.maxEntries) {
       const sorted = [...this.store.entries()]
@@ -233,6 +249,7 @@ export function getSessionContextBus(sessionId: string): ContextBus {
   let bus = sessionBuses.get(sessionId);
   if (!bus) {
     bus = new ContextBus();
+    bus.sessionId = sessionId;
     sessionBuses.set(sessionId, bus);
   }
   return bus;

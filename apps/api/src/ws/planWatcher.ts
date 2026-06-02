@@ -1,8 +1,9 @@
-import { watch, readFileSync, existsSync, statSync, FSWatcher } from 'fs';
+import { watch, readFileSync, existsSync, statSync, unlinkSync, FSWatcher } from 'fs';
 import { resolve } from 'path';
 import { normalizePlan, validateBasic, assessRisk, planHash } from '../agent/PlanNormalizer.js';
 import { broadcast } from './state.js';
 import type { TaskDispatchNode } from './state.js';
+import { DagPersistence } from '../agent/DagPersistence.js';
 
 const watchers = new Map<string, FSWatcher>();
 const processedHashes = new Map<string, string>();
@@ -94,8 +95,26 @@ async function handlePlanFile(
   sessionId: string,
   planPath: string,
   sandbox: SandboxInfo,
+  isExisting = false,
 ): Promise<void> {
   if (!existsSync(planPath)) return;
+
+  // Defense: on startup, if all plans for this session are archived,
+  // this is a stale plan.json from a previous cycle — clean it up.
+  if (isExisting) {
+    try {
+      const dbPlans = await DagPersistence.recover(sessionId);
+      const hasArchived = dbPlans.some(p => p.status === 'archived');
+      const hasLive = dbPlans.some(p => p.status === 'executing');
+      if (hasArchived && !hasLive) {
+        console.log(`[PlanWatcher] Stale plan.json detected for ${sessionId.slice(0, 8)} (all plans archived), removing`);
+        try { unlinkSync(planPath); } catch { /* best effort */ }
+        return;
+      }
+    } catch {
+      // DB unavailable — proceed normally
+    }
+  }
 
   let raw: string;
   try {
@@ -245,7 +264,7 @@ function scheduleExistingPlanRead(
 ): void {
   setTimeout(() => {
     if (!hasWatcherForSession(sessionId) && !pollingIntervals.has(sessionId)) return;
-    handlePlanFile(sessionId, planPath, sandbox).catch((err) => {
+    handlePlanFile(sessionId, planPath, sandbox, true).catch((err) => {
       console.error(`[PlanWatcher] Error handling existing plan for ${sessionId.slice(0, 8)}:`, err.message);
     });
   }, 100);

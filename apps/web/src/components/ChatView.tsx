@@ -21,6 +21,8 @@ import { TestReportCard } from './TestReportCard';
 import { ReviewCard } from './ReviewCard';
 import { WorkspaceSelector } from './WorkspaceSelector';
 import { PptxCard } from './PptxCard';
+import { SessionLogPanel } from './SessionLogPanel';
+import { RecoveryBanner } from './RecoveryBanner';
 import type { Message, AgentConfig } from '@agenthub/shared';
 import { safeContent, formatTokens } from '../lib/text';
 
@@ -314,6 +316,26 @@ export function ChatView() {
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
   const renderedPlanIds = useRef(new Set<string>());
 
+  // Session Log tab state
+  const [activeTab, setActiveTab] = useState<'chat' | 'log'>('chat');
+  const [commLogEntries, setCommLogEntries] = useState<any[]>([]);
+
+  // Listen for real-time comm_log events from WebSocket
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const entry = (e as CustomEvent).detail;
+      if (entry) setCommLogEntries(prev => [...prev, entry]);
+    };
+    window.addEventListener('comm_log', handler);
+    return () => window.removeEventListener('comm_log', handler);
+  }, []);
+
+  // Clear comm log entries when session changes
+  useEffect(() => {
+    setCommLogEntries([]);
+    setActiveTab('chat');
+  }, [activeSessionId]);
+
   // Workspace PPTX detection — only show the single newest file
   const [latestPptx, setLatestPptx] = useState<{ path: string; name: string } | null>(null);
   const [dismissedPptxPath, setDismissedPptxPath] = useState<string | null>(null);
@@ -532,7 +554,26 @@ export function ChatView() {
           onWorkspaceOpen={() => setShowWorkspaceSelector(true)}
           hasMessages={messages.length > 0}
         />
+        {/* Tab bar */}
+        <div className="flex border-b border-hub bg-hub-raised/50 text-xs">
+          <button
+            className={`px-4 py-1.5 font-medium transition-colors ${activeTab === 'chat' ? 'text-hub-accent border-b-2 border-hub-accent' : 'text-hub-muted hover:text-hub-secondary'}`}
+            onClick={() => setActiveTab('chat')}
+          >
+            Chat
+          </button>
+          <button
+            className={`px-4 py-1.5 font-medium transition-colors ${activeTab === 'log' ? 'text-hub-accent border-b-2 border-hub-accent' : 'text-hub-muted hover:text-hub-secondary'}`}
+            onClick={() => setActiveTab('log')}
+          >
+            Session Log
+          </button>
+        </div>
+        {activeTab === 'log' ? (
+          <SessionLogPanel sessionId={activeSessionId!} wsEntries={commLogEntries} />
+        ) : (
         <div className="flex-1 overflow-y-auto chat-scroll" ref={scrollContainerRef} onScroll={handleChatScroll}>
+          <RecoveryBanner sessionId={activeSessionId!} />
           {showScrollButton && (
             <div className="sticky top-2 z-10 flex justify-center">
               <button onClick={scrollToBottom}
@@ -575,8 +616,13 @@ export function ChatView() {
           )}
           <div ref={bottomRef} />
         </div>
-        <MessageInput onSend={send} disabled={hasRunningAgent} mentionableAgents={mentionableAgents} />
-        <QuoteToolbar selection={previewSelection} onDismiss={() => setPreviewSelection(null)} />
+        )}
+        {activeTab === 'chat' && (
+          <>
+            <MessageInput onSend={send} disabled={hasRunningAgent} mentionableAgents={mentionableAgents} />
+            <QuoteToolbar selection={previewSelection} onDismiss={() => setPreviewSelection(null)} />
+          </>
+        )}
       </div>
 
       {/* Agent status panel — resizable right sidebar */}

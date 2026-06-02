@@ -57,7 +57,7 @@ export class CapabilityInventory {
           to: agentName,
           summary: 'Agent capability inventory has been updated. Please re-read cap-inventory.md skill.',
           timestamp: Date.now(),
-        });
+        }, sessionId);
       } catch {
         // Non-critical — Planner will pick up updated skill on next message
       }

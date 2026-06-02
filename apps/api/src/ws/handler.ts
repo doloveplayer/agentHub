@@ -217,6 +217,8 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'approval_approve': handleApprovalApprove(sessionId, ws, data); break;
     case 'approval_reject': handleApprovalReject(sessionId, ws, data); break;
     case 'approval_reply': handleApprovalReply(sessionId, ws, data); break;
+    case 'recover_plan': handleRecoverPlan(sessionId, data, ws); break;
+    case 'discard_plan': handleDiscardPlan(sessionId, data, ws); break;
     default: sendTo(ws, { type: 'error', message: `Unknown message type: ${data.type}` });
   }
 }
@@ -234,6 +236,58 @@ function handleDeployToPlatform(sessionId: string, data: { target?: string; prod
     return;
   }
   startDeployment(sessionId, sandbox.hostWorkDir, target);
+}
+
+// ---- Plan recovery ----
+
+/** Pending recovery checkpoints, keyed by sessionId:planId. Stored on reconnect for user decision. */
+export const pendingRecoveries = new Map<string, { planId: string; pendingTasks: any[] }>();
+
+function handleRecoverPlan(sessionId: string, data: { planId: string }, ws: WebSocket): void {
+  const key = `${sessionId}:${data.planId}`;
+  const recovery = pendingRecoveries.get(key);
+  if (!recovery) {
+    sendTo(ws, { type: 'stream_error', error: `Recovery data not found for plan ${data.planId}` });
+    return;
+  }
+  const sb = sandboxes.get(sessionId);
+  if (!sb) {
+    sendTo(ws, { type: 'stream_error', error: 'No active sandbox' });
+    return;
+  }
+
+  console.log(`[recovery] User confirmed — re-dispatching plan ${data.planId}`);
+  import('./taskDispatcher.js').then(({ enqueueTaskAssignments }) => {
+    enqueueTaskAssignments(sessionId, data.planId, recovery.pendingTasks.map((t: any) => ({
+      task: { ...t, priority: t.priority || 'medium' },
+      agentName: t.agentType,
+      agentId: '',
+    })), sb).catch((err: any) =>
+      console.error(`[recovery] Re-dispatch failed: ${err.message}`)
+    );
+  }).catch((err: any) => console.error('[recovery] Task dispatcher import failed:', err.message));
+
+  pendingRecoveries.delete(key);
+  broadcast(sessionId, { type: 'plan_recovery_confirmed', planId: data.planId });
+}
+
+function handleDiscardPlan(sessionId: string, data: { planId: string }, ws: WebSocket): void {
+  const key = `${sessionId}:${data.planId}`;
+  const recovery = pendingRecoveries.get(key);
+  if (!recovery) {
+    sendTo(ws, { type: 'stream_error', error: `Recovery data not found for plan ${data.planId}` });
+    return;
+  }
+
+  console.log(`[recovery] User discarded plan ${data.planId}`);
+  pendingRecoveries.delete(key);
+
+  // Clean up checkpoint and mark plan as failed
+  import('../agent/DagPersistence.js').then(({ DagPersistence }) => {
+    DagPersistence.markFailed(sessionId, data.planId).catch(() => {});
+  }).catch(() => {});
+
+  broadcast(sessionId, { type: 'plan_recovery_discarded', planId: data.planId });
 }
 
 // ---- Attach to HTTP server ----

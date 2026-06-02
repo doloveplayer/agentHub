@@ -341,3 +341,15 @@ export interface SkillUseEvent {
   planId?: string;
   timestamp: number;
 }
+
+// ---- Session Communication Log ----
+
+export type CommLogCategory = 'contextbus' | 'inbox' | 'task' | 'plan' | 'agent';
+
+export interface CommLogEntry {
+  ts: number;
+  category: CommLogCategory;
+  action: string;
+  sessionId: string;
+  payload: Record<string, unknown>;
+}

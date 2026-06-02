@@ -128,6 +128,9 @@ interface AppState {
   deleteMessage: (sessionId: string, msgId: string) => void;
   removeToast: (id: string) => void;
   skillStats: Record<string, { skillName: string; count: number }[]>;
+  planRecoveries: Record<string, { planId: string; planTitle: string; pendingCount: number; pendingTasks: { id: string; title: string; agentType: string }[] }[]>;
+  setRecoveryPlans: (sessionId: string, plans: { planId: string; planTitle: string; pendingCount: number; pendingTasks: { id: string; title: string; agentType: string }[] }[]) => void;
+  removeRecoveryPlan: (sessionId: string, planId: string) => void;
 }
 
 export interface TaskState {
@@ -169,6 +172,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   inboxNotifications: {},
   toasts: [],
   skillStats: {},
+  planRecoveries: {},
 
   setToken: (token) => {
     if (token) localStorage.setItem('agenthub_token', token);
@@ -490,4 +494,20 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
     })),
+
+  setRecoveryPlans: (sessionId, plans) =>
+    set((state) => ({
+      planRecoveries: { ...state.planRecoveries, [sessionId]: plans },
+    })),
+
+  removeRecoveryPlan: (sessionId, planId) =>
+    set((state) => {
+      const sessionRecoveries = state.planRecoveries[sessionId] ?? [];
+      return {
+        planRecoveries: {
+          ...state.planRecoveries,
+          [sessionId]: sessionRecoveries.filter(p => p.planId !== planId),
+        },
+      };
+    }),
 }));
