@@ -144,17 +144,24 @@ export function FileTree({ sessionId, onSelectFile, onOpenFile, onDownloadPath }
         </div>
       </div>
 
+      {/* Workspace path indicator — always visible when bound */}
+      {workspaceDir && (
+        <div
+          className="flex items-center gap-1.5 px-3 py-1.5 border-b border-hub bg-blue-500/5 text-[10px]"
+          title={`Bound workspace: ${workspaceDir}`}
+        >
+          <HardDrive size={10} className="text-blue-400 shrink-0" />
+          <span className="text-hub-tertiary whitespace-nowrap select-none">Workspace:</span>
+          <span className="text-blue-300 truncate select-all font-mono">{workspaceDir}</span>
+        </div>
+      )}
+
       {/* Legend */}
       {!isEmpty && (
         <div className="flex items-center gap-3 px-3 py-1.5 border-b border-hub bg-hub-surface/50 text-[10px] text-hub-tertiary">
           <span className="flex items-center gap-1">
             <Box size={10} className="text-yellow-500" /> Sandbox
           </span>
-          {workspaceDir && (
-            <span className="flex items-center gap-1">
-              <HardDrive size={10} className="text-blue-400" /> Workspace
-            </span>
-          )}
         </div>
       )}
 

@@ -282,6 +282,10 @@ function handleProviderTaskEvent(
         agentMessageId: taskMessageId,
         error: event.message || 'Unknown error',
       });
+      void prisma.message.update({
+        where: { id: taskMessageId },
+        data: { status: 'error' },
+      }).catch(() => {});
       agentCurrentTask.delete(agentName);
       agentCurrentMessage.delete(agentName);
       clearActiveTaskRun(sessionId, agentName, taskMessageId);
@@ -440,6 +444,7 @@ async function startReplForTask(
   } catch (err: any) {
     console.error(`[ws] Task REPL start failed: ${err.message}`);
     broadcast(sessionId, { type: 'task_failed', planId: queue.planId, taskId: task.id, agentName, output: `Failed to start: ${err.message}` });
+    void prisma.message.update({ where: { id: taskMsgId }, data: { status: 'error' } }).catch(() => {});
     agentCurrentTask.delete(agentName);
     agentCurrentMessage.delete(agentName);
     clearActiveTaskRun(sessionId, agentName, taskMsgId);

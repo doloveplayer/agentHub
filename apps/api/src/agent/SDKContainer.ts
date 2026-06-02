@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
-import { resolve } from 'path';
+import { resolve, basename } from 'path';
 
 export interface SDKContainerOptions {
   containerId: string;
@@ -79,11 +79,12 @@ export function spawnSDKInDocker(
       mkdirSync(configDir, { recursive: true });
     }
     // agentHomeDir is mounted at /home/agents/<agentId> via SandboxManager
-    // Set CLAUDE_CONFIG_DIR to the container path
-    const agentId = opts.agentConfigTag.startsWith('agent-') ? opts.agentConfigTag.slice(6) : opts.agentConfigTag;
+    // Set CLAUDE_CONFIG_DIR to the container path derived from the UUID-based
+    // agentHomeDir, not from agentConfigTag (which is the display name).
+    const agentDirName = basename(opts.agentHomeDir);
     dockerArgs.push(
       '-e',
-      `CLAUDE_CONFIG_DIR=/home/agents/${agentId}/.claude`,
+      `CLAUDE_CONFIG_DIR=/home/agents/${agentDirName}/.claude`,
     );
   }
 

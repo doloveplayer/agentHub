@@ -14,17 +14,44 @@ function stripSessionSuffix(agentType: string): string {
 /**
  * Normalize raw plan JSON into a standardized Plan object.
  * Handles field name variations and agentType suffix stripping.
+ *
+ * Supports two formats:
+ * 1. Flat: { planTitle, summary, tasks: [...] }
+ * 2. Phased: { title, description, phases: [{ tasks: [...] }] }
+ *    → flattened into a single tasks array with phase prefix in task id.
  */
 export function normalizePlan(raw: Record<string, unknown>): Plan {
-  return {
-    planTitle: String(
-      raw.planTitle || raw.title || raw.project || raw.planId || raw.name || 'Untitled Plan'
-    ),
-    summary: String(raw.summary || raw.description || ''),
-    tasks: Array.isArray(raw.tasks)
-      ? raw.tasks.map((t: Record<string, unknown>) => normalizeTask(t))
-      : [],
-  };
+  const planTitle = String(
+    raw.planTitle || raw.title || raw.project || raw.planId || raw.name || 'Untitled Plan'
+  );
+  const summary = String(raw.summary || raw.description || '');
+
+  // Check for flat tasks array first
+  if (Array.isArray(raw.tasks)) {
+    return {
+      planTitle,
+      summary,
+      tasks: raw.tasks.map((t: Record<string, unknown>) => normalizeTask(t)),
+    };
+  }
+
+  // Check for phased structure: { phases: [{ tasks: [...] }] }
+  if (Array.isArray(raw.phases)) {
+    const allTasks: PlanTask[] = [];
+    for (const phase of raw.phases as Array<Record<string, unknown>>) {
+      if (Array.isArray(phase.tasks)) {
+        for (const t of phase.tasks as Array<Record<string, unknown>>) {
+          allTasks.push(normalizeTask(t));
+        }
+      }
+    }
+    if (allTasks.length > 0) {
+      return { planTitle, summary, tasks: allTasks };
+    }
+  }
+
+  // No recognizable task structure
+  return { planTitle, summary, tasks: [] };
 }
 
 function normalizeTask(t: Record<string, unknown>): PlanTask {
@@ -35,6 +62,7 @@ function normalizeTask(t: Record<string, unknown>): PlanTask {
     agentType: stripSessionSuffix(String(t.agentType || t.agent_type || t.agent || '')),
     dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn.map(String)
       : Array.isArray(t.dependencies) ? t.dependencies.map(String)
+      : Array.isArray(t.depends_on) ? t.depends_on.map(String)
       : [],
     expectedOutput: String(t.expectedOutput || t.expected_output || t.output || ''),
     risk: t.risk === 'high' ? 'high' : 'low',

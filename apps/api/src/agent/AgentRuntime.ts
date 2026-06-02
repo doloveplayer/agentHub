@@ -254,7 +254,13 @@ class AgentRuntime {
         break;
       case 'done':
         broadcast(sessionId, { type: 'stream_end', exitCode: event.exitCode ?? 0, agentMessageId });
-        if (agentMessageId) clearRunningAgent(sessionId, agentMessageId);
+        if (agentMessageId) {
+          clearRunningAgent(sessionId, agentMessageId);
+          void prisma.message.updateMany({
+            where: { id: agentMessageId, status: 'streaming' },
+            data: { status: 'done' },
+          }).catch(() => {});
+        }
 
         // Parse planner output and broadcast plan_result.
         // Primary path: plan.json written by Planner (detected by PlanWatcher).
@@ -354,10 +360,12 @@ class AgentRuntime {
         break;
       case 'error':
         broadcast(sessionId, { type: 'stream_error', error: event.message, agentMessageId });
-        // Clean up agent state on error (same as done case)
         if (agentMessageId) {
+          void prisma.message.updateMany({
+            where: { id: agentMessageId, status: 'streaming' },
+            data: { status: 'error' },
+          }).catch(() => {});
           clearRunningAgent(sessionId, agentMessageId);
-          // Clean up token usage map
           this.tokenUsageMap.delete(agentMessageId);
         }
         // Reset planner accumulated output

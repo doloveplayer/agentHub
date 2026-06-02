@@ -321,6 +321,20 @@ export function cleanupSessionResources(sessionId: string): void {
     DagPersistence.cleanup(sessionId).catch(() => {})
   );
 
+  // Finalize all streaming messages for this session to 'done'.
+  // When the last client disconnects, all providers are stopped with
+  // killed=true which prevents normal 'done' events. Without this,
+  // messages stay 'streaming' forever and appear as "Agent is replying..."
+  // on next page load.
+  import('../db/prisma.js').then(({ prisma }) =>
+    prisma.message.updateMany({
+      where: { sessionId, status: 'streaming' },
+      data: { status: 'done' },
+    }).then((r) => {
+      if (r.count > 0) console.log(`[ws] Finalized ${r.count} streaming message(s) for session ${sessionId.slice(0, 8)}`);
+    }).catch(() => {})
+  );
+
   perSessionPendingQueues.delete(sessionId);
   realWorkspacePaths.delete(sessionId);
   workspaceModes.delete(sessionId);
