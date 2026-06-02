@@ -2,9 +2,25 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 快速了解项目结构
+
+项目配置了 **CodeGraph MCP**（`codegraph_*` 工具），基于 tree-sitter 解析的知识图谱。
+**优先使用 codegraph 而非 grep/read** 来理解代码结构：
+
+| 问题 | 工具 |
+|------|------|
+| "X 在哪里定义？" | `codegraph_search` |
+| "谁调用了 Y？" / "Y 调用了谁？" | `codegraph_callers` / `codegraph_callees` |
+| "从 A 到 B 的调用链路？" | `codegraph_trace` |
+| "改 Z 会影响什么？" | `codegraph_impact` |
+| "给我 X 的源码/签名" | `codegraph_node` |
+| "src/ 下有什么文件？" | `codegraph_files` |
+
+详细用法见 `.claude/CLAUDE.md` 中的 CodeGraph 章节。
+
 ## Project overview
 
-AgentHub is an IM-style web chat app that serves as a **smart collaboration hub** for multiple AI coding agents. Users log in via GitHub OAuth, create sessions (solo or group), and interact with agents from multiple platforms (Claude Code, Codex, OpenCode, and user-registered agents) through a WebSocket-driven streaming interface. Each session gets an isolated Docker sandbox with a bind-mounted workspace at `.sandboxes/{sessionId}/`.
+AgentHub is an IM-style web chat app that serves as a **smart collaboration hub** for multiple AI coding agents. Users log in via username/password, create sessions (solo or group), and interact with agents from multiple platforms (Claude Code, Codex, and user-registered agents) through a WebSocket-driven streaming interface. Each session gets an isolated Docker sandbox with a bind-mounted workspace.
 
 ### Core design philosophy
 
@@ -12,29 +28,36 @@ AgentHub is a **Smart Hub** — it actively coordinates, orchestrates, and manag
 
 What AgentHub owns as a platform:
 - **Interaction experience**: conversation list, solo/group chat modes, deployment status cards, artifact preview/edit/re-interaction, message operations, context management
-- **Main Agent coordination**: a PM/PMO-style orchestrator that understands user intent, decomposes complex tasks, dispatches to sub-agents, handles parallel scheduling, failure degradation, and code conflict resolution
-- **Multi-agent integration**: provider-agnostic agent接入层, supports at least Claude Code + one other mainstream platform (Codex/OpenCode), plus user-registered custom agents. Each agent has avatar, display name, and capability tags in the chat interface
-- **Artifact preview & editing**: inline preview and editing of agent-produced artifacts — web pages, rendered documents, PPT browsing, code with diff view and version history. Users can quote document passages and hand them to agents for further processing
-- **Session & sandbox management**: Docker sandbox lifecycle, WebSocket multiplexing, message persistence, permission proxy
-- **Task orchestration**: DAG-based task decomposition, BullMQ scheduling, parallel execution, failure retry/downgrade, result aggregation
+- **Main Agent coordination**: a Planner agent that understands user intent, decomposes complex tasks into DAG plans, and dispatches to sub-agents with dependency-aware scheduling
+- **Multi-agent integration**: provider-agnostic agent layer (AbstractProvider + ProviderFactory). Supports Claude Code (SDK via docker exec). Codex provider 已有框架，待后续完成。 User-registered custom agents have persistent identity, skills, and memory across sessions
+- **Artifact preview & editing**: inline preview of agent-produced artifacts — web pages, rendered documents, PPT browsing, code with diff view and version history. Users can quote document passages for incremental editing
+- **Session & sandbox management**: Docker sandbox lifecycle per session (container `agenthub-sandbox-{sessionId}`), WebSocket multiplexing, message persistence, permission proxy
+- **Task orchestration**: DAG-based task decomposition, in-process dispatch (ws/taskDispatcher.ts), parallel execution, dependency resolution, failure retry/replan
 
 What AgentHub does NOT reimplement:
-- Code generation, editing, file operations — those are the agent CLI tools' job
+- Code generation, editing, file operations — those are the agent CLI/SDK tools' job
 - Shell command execution, git operations — executed by agents inside sandboxes
 - Language-specific analysis (linting, type-checking, vulnerability scanning) — delegated to agents
 
-In short: AgentHub is a **smart hub with a chat UI**. The intelligence is distributed — coordination lives in the hub, execution lives in the agents.
+### Key directories
 
-## Code navigation
+```
+.agents/{agentId}/          — agent 持久化主目录（CLAUDE.md、memory、skills），跨 session 共享
+.sandboxes/{sessionId}/     — 会话运行时（plan.json、agent 配置、inbox）
+apps/api/src/               — 后端：Hono + Prisma + Dockerode + WebSocket
+apps/web/src/               — 前端：React + Vite + Zustand + Tailwind
+packages/shared/src/        — 前后端共享类型
+docker/                     — sandbox 镜像 + sdk-runner
+```
 
-When you need to understand or query the codebase (find where something is defined, trace relationships between files, identify which layer a component belongs to), **first consult the knowledge graph** at `.understand-anything/knowledge-graph.json`. The graph contains:
+### Agent model
 
-- **Nodes**: 119 files across 9 architectural layers (Frontend, Backend API, Agent Engine, WebSocket, Backend Infra, Shared Types, Docker, Docs, Config)
-- **Edges**: import and dependency relationships between files
-- **Layers**: which layer each file belongs to
-- **Tour**: 7-step guided walkthrough of the architecture
-
-Use it to answer questions like "what files import X?", "which layer does Y belong to?", or "what's the dependency chain from A to B?" before falling back to grep/find. This reduces token consumption and speeds up lookups.
+| 属性 | System agent | User agent |
+|------|-------------|------------|
+| 创建方式 | 群聊自动从 AgentTemplate 生成 | 用户手动创建或 solo 默认 |
+| contextMode | `isolated` (per-session) | `shared` (跨 session) |
+| 持久化 | `.agents/{agentId}/` (system agent 天然 session-scoped) | `.agents/{agentId}/` (跨所有 session 累计) |
+| 典型 name | `code-agent-{sessionId[:8]}` | `code-agent` 或自定义 |
 
 ## Commands
 
@@ -102,9 +125,20 @@ git remote set-url origin git@github.com:doloveplayer/agentHub.git
 
 1. **检查日志**：优先查看 `logs/` 目录下的 `backend.log`、`frontend.log`
 2. **检查沙箱输出**：`.sandboxes/{sessionId}/` 下可能有 agent 的实际输出和错误日志
-3. **检查模型实际输出**：通过沙箱日志确认 Claude Code CLI 的真实 stdout/stderr
-4. **复现问题**：复现测试消息触发实际流程，从日志和截图中定位错误
-5. **复杂 bug**：启用 `/systematic-debugging` 技能进行系统化排查
+3. **检查 Agent 持久化目录**：`.agents/{agentId}/` 下有 agent 的 CLAUDE.md、memory、skills
+4. **检查工作目录**：确认 session 绑定的 workspace 目录内容和版本追踪 `.agenthub/versions.json`
+5. **检查 Docker 容器状态**：`docker inspect <container>` 验证挂载是否正确（`/workspace`, `/sandbox`, `/home/agents`）
+6. **检查模型实际输出**：通过沙箱日志确认 Claude Code CLI 的真实 stdout/stderr
+7. **复现问题**：复现测试消息触发实际流程，从日志和截图中定位错误
+8. **复杂 bug**：启用 `/systematic-debugging` 技能进行系统化排查
+
+## Code Writing Rule
+
+**任何涉及编写代码的操作必须遵循 `/karpathy-guidelines`**：
+- Think before coding — 先分析再动手
+- Simplicity first — 最小代码解决问题，不过度抽象
+- Surgical changes — 只改需要改的，不顺手重构
+- Goal-driven — 定义可验证的成功标准
 
 ## Visual Testing
 
@@ -113,13 +147,12 @@ git remote set-url origin git@github.com:doloveplayer/agentHub.git
 **浏览器自动化**（`document-skills:webapp-testing`）：
 - 启动后端 `cd apps/api && npx tsx src/index.ts` + 前端 `cd apps/web && npx vite`
 - 编写 Python Playwright 脚本截图、检查 DOM、验证交互
-- 模板见 `/tmp/agentHub_e2e_test.py` 等历史脚本
 
 **图片分析 MCP**：
 | 工具 | 用途 |
 |------|------|
 | `mcp__zai-mcp-server__analyze_image` | 通用图片理解：UI 布局评估、元素识别、异常检测 |
-| `mcp__zai-mcp-server__ui_to_artifact` | UI 截图 → 代码/设计稿（`output_type: 'code'\|'spec'\|'description'`） |
+| `mcp__zai-mcp-server__ui_to_artifact` | UI 截图 → 代码/设计稿 |
 | `mcp__zai-mcp-server__ui_diff_check` | 两张截图对比，找出视觉差异 |
 
 **典型测试流程**：
@@ -133,7 +166,7 @@ git remote set-url origin git@github.com:doloveplayer/agentHub.git
 
 ## E2E Testing with Auth Bypass
 
-AgentHub requires GitHub OAuth login for all authenticated API calls. For automated E2E testing without real GitHub credentials, use the dev-token bypass endpoint:
+AgentHub uses username/password auth for all authenticated API calls. For automated E2E testing without real credentials, use the dev-token bypass endpoint:
 
 ### Setup
 
@@ -145,7 +178,6 @@ cd apps/api && NODE_ENV=development npx tsx src/index.ts
 ### Get a test token
 
 ```bash
-# Returns a signed JWT for the first user in GITHUB_ALLOWED_USERS
 curl http://localhost:3000/api/auth/dev-token | python3 -m json.tool
 # → { "token": "eyJ...", "userId": "...", "login": "doloveplayer" }
 ```
@@ -165,13 +197,12 @@ await page.evaluate(f"""() => {{
 }}""")
 
 # 3. Reload — now authenticated
-await page.goto("http://localhost:5173", wait_until="networkidle")
+await page.goto("http://localhost:5175", wait_until="networkidle")
 ```
 
 ### API calls
 
 ```bash
-# All authenticated endpoints accept Bearer token
 TOKEN=$(curl -s http://localhost:3000/api/auth/dev-token | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/agents
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/auth/me
@@ -179,4 +210,4 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/auth/me
 
 ### Security
 
-The dev-token endpoint is **disabled in production** (`NODE_ENV=production` returns 403). It creates a synthetic user with `githubId: 0` — no real GitHub account needed. Only usable when `GITHUB_ALLOWED_USERS` has at least one entry.
+The dev-token endpoint is **disabled in production** (`NODE_ENV=production` returns 403). It returns a signed JWT for the default admin user without password verification.

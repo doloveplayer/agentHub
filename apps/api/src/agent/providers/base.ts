@@ -28,6 +28,7 @@ export interface ProviderConfig {
   agentName?: string;
   hostWorkDir?: string;
   hostSandboxDir?: string;
+  agentHomeDir?: string;
   trustMode?: boolean;
 }
 

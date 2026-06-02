@@ -318,16 +318,6 @@ export function useChat(sessionId: string) {
                 api.getSession(data.sessionId).then((s: any) => {
                   useAppStore.getState().updateSessionInList(data.sessionId, { agents: s.agents });
                 }).catch(() => {});
-                // Add a system notification message
-                useAppStore.getState().addMessage(data.sessionId, {
-                  id: 'sys-' + Date.now(),
-                  sessionId: data.sessionId,
-                  senderType: 'agent',
-                  agentId: undefined,
-                  content: 'An agent was added to the group.',
-                  status: 'done',
-                  createdAt: new Date().toISOString(),
-                });
               }
               break;
             case 'agent_removed':
@@ -518,6 +508,14 @@ export function useChat(sessionId: string) {
       ws.onclose = (evt) => {
         console.log('[WS] Connection closed:', evt.code, evt.reason);
         if (socketPool.get(sessionId) === ws) socketPool.delete(sessionId);
+        // Auto-reconnect on non-manual close (not 1000=normal, 4001=user not found, 4003=access denied)
+        if (evt.code !== 1000 && evt.code !== 4001 && evt.code !== 4003) {
+          setTimeout(() => {
+            if (sessionId === useAppStore.getState().activeSessionId) {
+              ensureConnection().catch(() => {});
+            }
+          }, 3000);
+        }
       };
     });
   }, [sessionId, token, appendToMessage, setMessageStatus, addAgentEvent, removeStreamingMessage, addToast]);

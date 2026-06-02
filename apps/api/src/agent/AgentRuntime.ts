@@ -79,12 +79,45 @@ class AgentRuntime {
     cacheCreate: number;
   }>();
 
+  constructor() {
+    // Periodic cleanup: evict stale tokenUsageMap entries to prevent memory leaks
+    // (entries may linger if agent crashes and 'done' event never fires)
+    setInterval(() => {
+      if (this.tokenUsageMap.size > 1000) {
+        const entries = [...this.tokenUsageMap.entries()];
+        const cutoff = entries.length - 500;
+        for (let i = 0; i < cutoff; i++) {
+          this.tokenUsageMap.delete(entries[i][0]);
+        }
+        console.log(`[AgentRuntime] Cleaned ${cutoff} stale tokenUsageMap entries`);
+      }
+    }, 5 * 60 * 1000);
+  }
+
   /** Send a prompt to an agent. Queues if busy, starts container if stopped. */
   async sendPrompt(agentId: string, sessionId: string, prompt: string, agentMessageId?: string, sandbox?: SandboxInfo): Promise<void> {
     let entry = this.agents.get(agentId);
 
     if (!entry) {
       entry = await this.ensureRunning(agentId, sandbox);
+    }
+
+    // Detect container mismatch: agent was running in a different session's container.
+    // Only switch when agent is idle — if busy, queue the request.
+    if (sandbox && entry.containerId !== sandbox.containerId) {
+      if (entry.currentSession !== null && entry.currentSession !== sessionId) {
+        // Agent is busy with another session — queue
+        entry.queue.push({ sessionId, prompt, agentMessageId });
+        broadcast(sessionId, {
+          type: 'agent_queued',
+          agentId,
+          agentMessageId,
+          message: `Agent is busy. Position in queue: ${entry.queue.length}`,
+        });
+        return;
+      }
+      // Agent is idle but in wrong container — switch containers
+      await this.rehomeAgent(agentId, entry, sandbox);
     }
 
     if (entry.currentSession !== null && entry.currentSession !== sessionId) {
@@ -146,8 +179,12 @@ class AgentRuntime {
       hostWorkDir = agent.hostWorkDir!;
     }
 
+    // Ensure agent persistent home exists at .agents/<agentId>/
+    AgentDirectoryManager.ensureAgentHome(agentId, agent.name, agent.systemPrompt);
+
     const provider = ProviderFactory.create(agent.provider);
     const hostSandboxDir = sandbox ? sandbox.hostSandboxDir : hostWorkDir;
+    const agentHomeDir = AgentDirectoryManager.getAgentHome(agentId);
     await provider.start(
       'agent-' + agentId,
       'Standby — waiting for tasks',
@@ -158,6 +195,7 @@ class AgentRuntime {
         model: (agent.providerConfig as any)?.model,
         hostWorkDir,
         hostSandboxDir,
+        agentHomeDir,
         trustMode: true,
       },
     );
@@ -439,6 +477,49 @@ class AgentRuntime {
   /** Check if agent is currently running */
   isRunning(agentId: string): boolean {
     return this.agents.has(agentId);
+  }
+
+  /** Switch agent to a different session's container without losing persistent identity. */
+  private async rehomeAgent(agentId: string, entry: AgentEntry, sandbox: SandboxInfo): Promise<void> {
+    const agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
+
+    console.log(`[AgentRuntime] Rehome agent ${agent.name}: container ${entry.containerId.slice(0, 12)} → ${sandbox.containerId.slice(0, 12)}`);
+
+    // Stop current provider
+    try { entry.provider.stop(); } catch { /* best effort */ }
+
+    // Create new provider in target container
+    const provider = ProviderFactory.create(agent.provider);
+    const agentHomeDir = AgentDirectoryManager.getAgentHome(agentId);
+    await provider.start(
+      'agent-' + agentId,
+      'Standby — waiting for tasks',
+      sandbox.containerId,
+      '/workspace',
+      {
+        apiKey: (agent.providerConfig as any)?.apiKey,
+        model: (agent.providerConfig as any)?.model,
+        hostWorkDir: sandbox.hostWorkDir,
+        hostSandboxDir: sandbox.hostSandboxDir,
+        agentHomeDir,
+        trustMode: true,
+      },
+    );
+
+    provider.onEvent((event: UnifiedAgentEvent) => {
+      this.handleAgentEvent(agentId, entry, event);
+    });
+
+    // Update entry to point to new container
+    entry.provider = provider;
+    entry.containerId = sandbox.containerId;
+    entry.hostWorkDir = sandbox.hostWorkDir;
+
+    // Update DB
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { containerId: sandbox.containerId, containerStatus: 'running', hostWorkDir: sandbox.hostWorkDir },
+    }).catch((e) => console.error('[AgentRuntime] Failed to update agent after rehome:', e));
   }
 
   /** Stop current task processing for an agent. Provider stays alive for next task. */

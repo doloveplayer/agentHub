@@ -9,6 +9,7 @@ export interface DiffFile {
   hunks: { id: string; header: string; lines: string[]; oldStart?: number; oldLines?: number; newStart?: number; newLines?: number }[];
   baseVersionId?: string;
   conflict?: { filePath: string; agents: string[]; ranges: { start: number; end: number }[] };
+  classification?: 'expected' | 'system' | 'review';
 }
 
 interface Props {
@@ -85,6 +86,12 @@ export function DiffCard({ sessionId, files, title = 'File changes' }: Props) {
                   {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                 </button>
                 <span className="min-w-0 flex-1 truncate font-mono text-xs text-hub-secondary">{file.path}</span>
+                {file.classification === 'system' && (
+                  <span className="rounded bg-hub-surface px-1.5 py-0.5 text-[11px] text-hub-tertiary">系统</span>
+                )}
+                {file.classification === 'review' && (
+                  <span className="rounded bg-hub-warning/15 px-1.5 py-0.5 text-[11px] text-hub-warning">待审查</span>
+                )}
                 {file.conflict && (
                   <span className="rounded bg-hub-warning/15 px-1.5 py-0.5 text-[11px] text-hub-warning">
                     conflict: {file.conflict.agents.join(', ')}

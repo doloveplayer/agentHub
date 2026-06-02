@@ -8,6 +8,7 @@ import { config } from '../config.js';
 import { DagPersistence } from '../agent/DagPersistence.js';
 import { agentCoordinator } from '../agent/AgentCoordinator.js';
 import { getManagerLoop } from '../agent/ManagerLoop.js';
+import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
 import { getApprovalGate } from '../agent/ApprovalGate.js';
 import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDetection.js';
 import { forceTaskDone, forceTaskFailed, touchTask, checkStaleTasks } from './dagExecution.js';
@@ -267,7 +268,7 @@ function handleProviderTaskEvent(
       clearActiveTaskRun(sessionId, agentName, taskMessageId);
       queue.current = null;
       clearRunningAgent(sessionId, taskMessageId);
-      import('./handler.js').then(({ drainPendingQueue, drainPerSessionQueue }) => {
+      import('./chatHandlers.js').then(({ drainPendingQueue, drainPerSessionQueue }) => {
         drainPendingQueue();
         drainPerSessionQueue(sessionId);
       }).catch(() => {});
@@ -286,7 +287,7 @@ function handleProviderTaskEvent(
       clearActiveTaskRun(sessionId, agentName, taskMessageId);
       queue.current = null;
       clearRunningAgent(sessionId, taskMessageId);
-      import('./handler.js').then(({ drainPendingQueue, drainPerSessionQueue }) => {
+      import('./chatHandlers.js').then(({ drainPendingQueue, drainPerSessionQueue }) => {
         drainPendingQueue();
         drainPerSessionQueue(sessionId);
       }).catch(() => {});
@@ -430,9 +431,11 @@ async function startReplForTask(
     });
     broadcast(sessionId, { type: 'task_assigned', planId: queue.planId, taskId: task.id, agentName, agentId: agent.id, taskMessageId: taskMsgId });
 
+    const agentHomeDir = AgentDirectoryManager.getAgentHome(agent.id);
+    AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt);
     console.log(`[ws] Task REPL started: agent=${agentName} task=${task.id}`);
     await provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
-      agentName, hostWorkDir: sandbox.hostWorkDir, hostSandboxDir: sandbox.hostSandboxDir, trustMode: true,
+      agentName, hostWorkDir: sandbox.hostWorkDir, hostSandboxDir: sandbox.hostSandboxDir, agentHomeDir, trustMode: true,
     });
   } catch (err: any) {
     console.error(`[ws] Task REPL start failed: ${err.message}`);

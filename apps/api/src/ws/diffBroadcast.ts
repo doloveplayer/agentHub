@@ -1,6 +1,14 @@
 import { WorkspaceManager, type AgentFileDiff, type WorkspaceVersion, type MergeResult } from '../agent/WorkspaceManager.js';
 import { broadcast } from './state.js';
 
+function classifyFile(path: string): 'expected' | 'system' | 'review' {
+  if (path.startsWith('.agenthub/') || path.startsWith('.git/') || path === '.gitignore')
+    return 'system';
+  if (path.startsWith('.'))
+    return 'review';
+  return 'expected';
+}
+
 const beforeVersions = new Map<string, WorkspaceVersion | null>();
 const sessionAgentDiffs = new Map<string, AgentFileDiff[]>();
 const sessionAgentRefs = new Map<string, Map<string, string>>();   // sessionId -> (agentName -> afterVersion ref)
@@ -126,6 +134,7 @@ export function broadcastDiffSummary(
   const filesWithConflicts = files.map((file) => ({
     ...file,
     conflict: conflictByFile.get(file.path),
+    classification: classifyFile(file.path),
   }));
 
   if (conflicts.length > 0) {

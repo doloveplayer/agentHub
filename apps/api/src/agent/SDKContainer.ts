@@ -7,6 +7,7 @@ export interface SDKContainerOptions {
   prompt: string;
   hostWorkDir: string;
   hostSandboxDir: string;  // host path to sandbox dir (agent config + runtime files)
+  agentHomeDir?: string;   // host path to agent persistent home (.agents/<agentId>)
   agentTag: string;
   agentConfigTag?: string;
   permissionMode: string;
@@ -71,15 +72,18 @@ export function spawnSDKInDocker(
     dockerArgs.push('-e', `${k}=${v}`);
   }
 
-  // Per-agent config isolation (settings.json, memory, skills) — stored in sandbox dir
-  if (opts.agentConfigTag) {
-    const configDir = resolve(opts.hostSandboxDir, `_agent_${opts.agentConfigTag}`, '.claude');
+  // Per-agent config isolation (settings.json, memory, skills) — stored in agent persistent home
+  if (opts.agentHomeDir && opts.agentConfigTag) {
+    const configDir = resolve(opts.agentHomeDir, '.claude');
     if (!existsSync(configDir)) {
       mkdirSync(configDir, { recursive: true });
     }
+    // agentHomeDir is mounted at /home/agents/<agentId> via SandboxManager
+    // Set CLAUDE_CONFIG_DIR to the container path
+    const agentId = opts.agentConfigTag.startsWith('agent-') ? opts.agentConfigTag.slice(6) : opts.agentConfigTag;
     dockerArgs.push(
       '-e',
-      `CLAUDE_CONFIG_DIR=/sandbox/_agent_${opts.agentConfigTag}/.claude`,
+      `CLAUDE_CONFIG_DIR=/home/agents/${agentId}/.claude`,
     );
   }
 

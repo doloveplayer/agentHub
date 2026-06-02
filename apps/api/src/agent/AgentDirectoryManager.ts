@@ -1,8 +1,44 @@
 import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
+import { config } from '../config.js';
 import { CapabilityInventory } from './CapabilityInventory.js';
 
+const AGENTS_ROOT = config.agentContainer.hostRoot;
+
 export class AgentDirectoryManager {
+
+  /** Ensure agent persistent home directory exists at .agents/<agentId>/ */
+  static ensureAgentHome(agentId: string, agentName: string, systemPrompt: string): string {
+    const homeDir = resolve(AGENTS_ROOT, agentId);
+    const claudeConfigDir = resolve(homeDir, '.claude');
+
+    if (!existsSync(homeDir)) {
+      mkdirSync(homeDir, { recursive: true });
+      mkdirSync(resolve(claudeConfigDir, 'memory'), { recursive: true });
+      mkdirSync(resolve(claudeConfigDir, 'skills'), { recursive: true });
+
+      const claudeMd = `# Agent: ${agentName}
+
+${systemPrompt}
+
+## Collaboration Rules
+- You are a pluggable agent with persistent identity and memory.
+- Your working directory is /workspace — write all user-facing code and files here.
+- Your personal files (memory, config, skills) are at /home/agent/.claude/ — do NOT write config files to /workspace.
+- When you complete a significant phase, note it in your output.
+- This CLAUDE.md defines your persistent identity and behavior rules.
+`;
+
+      writeFileSync(resolve(homeDir, 'CLAUDE.md'), claudeMd, 'utf-8');
+    }
+
+    return homeDir;
+  }
+
+  /** Get the host path to an agent's persistent home directory */
+  static getAgentHome(agentId: string): string {
+    return resolve(AGENTS_ROOT, agentId);
+  }
   /**
    * Initialize per-agent directory structure inside the sandbox host dir.
    *

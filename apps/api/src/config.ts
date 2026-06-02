@@ -178,4 +178,4 @@ export const config = {
     contextWindowTokens: optionalInt('AGENT_CONTEXT_WINDOW_TOKENS', 200_000), // Claude Sonnet 4 default
   },
 
-} as const;
+};

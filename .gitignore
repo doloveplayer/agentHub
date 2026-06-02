@@ -54,4 +54,4 @@ memory.md
 PRD.backup.*.md
 
 .superpowers/*
-.testAgent/*
+testAgent/

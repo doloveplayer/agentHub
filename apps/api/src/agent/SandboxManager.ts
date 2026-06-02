@@ -49,10 +49,15 @@ export class SandboxManager {
 
     const mem = memoryMb ?? config.sandbox.soloMemoryMb;
 
-    // Dual mount: sandbox dir for agent config, user workspace for actual work
+    // Binds: sandbox dir (agent runtime), workspace (user files), agents home (persistent identity)
     const binds = [`${hostSandboxDir}:/sandbox`];
     if (hostWorkDir !== hostSandboxDir) {
       binds.push(`${hostWorkDir}:/workspace`);
+    }
+    // Mount entire agents directory for per-agent persistent homes
+    const agentsRoot = config.agentContainer.hostRoot;
+    if (existsSync(agentsRoot)) {
+      binds.push(`${agentsRoot}:/home/agents`);
     }
 
     const container = await docker.createContainer({
@@ -136,6 +141,7 @@ export class SandboxManager {
     // stdout response frames (e.g., cat echoing stdin) will be lost.
     const demuxReady = new Promise<void>((resolve, reject) => {
       let buf = Buffer.alloc(0);
+      let settled = false;
       const onData = (chunk: Buffer) => {
         buf = Buffer.concat([buf, chunk]);
         while (buf.length >= 8) {
@@ -150,8 +156,8 @@ export class SandboxManager {
         }
       };
       (stream as any).on('data', onData);
-      stream.on('end', resolve);
-      stream.on('error', reject);
+      stream.on('end', () => { if (!settled) { settled = true; resolve(); } });
+      stream.on('error', (err) => { if (!settled) { settled = true; reject(err); } });
     });
 
     // Now write stdin data AFTER the demux is listening

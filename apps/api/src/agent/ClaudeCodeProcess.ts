@@ -40,6 +40,7 @@ interface RunOptions {
   sessionId: string;
   workDir: string;
   hostWorkDir?: string;
+  agentHomeDir?: string;
   promptFile: string;
   containerName: string;
   agentConfigTag: string;
@@ -128,6 +129,7 @@ export class ClaudeCodeProcess {
     promptFileId?: string,
     claudeSessionId?: string,    // for --resume: continue previous Claude session
     agentConfigId?: string,      // stable per Agent so --resume can find prior session state
+    agentHomeDir?: string,       // persistent agent home (.agents/<agentId>)
   ): Promise<void> {
     this.doneEmitted = false;
     this.killed = false;
@@ -153,6 +155,7 @@ export class ClaudeCodeProcess {
       sessionId,
       workDir,
       hostWorkDir,
+      agentHomeDir,
       promptFile,
       containerName,
       agentConfigTag,
@@ -171,6 +174,7 @@ export class ClaudeCodeProcess {
       sessionId,
       workDir,
       hostWorkDir,
+      agentHomeDir,
       promptFile,
       containerName,
       agentConfigTag,
@@ -209,16 +213,16 @@ export class ClaudeCodeProcess {
       `cat /workspace/${promptFile} | claude ${claudeArgs}`,
     ];
 
-    // Per-agent CLAUDE_CONFIG_DIR for independent memory/skills (only when hostWorkDir is set)
+    // Per-agent CLAUDE_CONFIG_DIR for independent memory/skills
     if (hostWorkDir) {
-      const agentConfigDir = resolve(hostWorkDir, `_agent_${agentConfigTag}`, '.claude');
-      // Pre-create directory so it's owned by the host user, not root (Docker would create it as root)
-      if (!existsSync(agentConfigDir)) {
-        mkdirSync(agentConfigDir, { recursive: true });
+      const configSource = agentHomeDir
+        ? resolve(agentHomeDir, '.claude')
+        : resolve(hostWorkDir, `_agent_${agentConfigTag}`, '.claude');
+      if (!existsSync(configSource)) {
+        mkdirSync(configSource, { recursive: true });
       }
       const agentHomeInside = '/home/node/.claude';
-      // Insert CLAUDE_CONFIG_DIR mount + env after the workspace -v pair
-      args.splice(7, 0, '-v', `${agentConfigDir}:${agentHomeInside}`, '-e', `CLAUDE_CONFIG_DIR=${agentHomeInside}`);
+      args.splice(7, 0, '-v', `${configSource}:${agentHomeInside}`, '-e', `CLAUDE_CONFIG_DIR=${agentHomeInside}`);
     }
 
     console.log(`[agent:spawn] docker ${args.slice(0, 6).join(' ')} ... container=${containerName}`);

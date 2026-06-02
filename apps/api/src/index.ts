@@ -38,8 +38,13 @@ try {
   console.log('[startup] Cleaned orphaned containers');
 } catch { /* no orphaned containers */ }
 try {
-  execSync(`rm -rf ${config.sandbox.root}/* 2>/dev/null`, { encoding: 'utf8' });
-  console.log('[startup] Cleaned orphaned sandbox directories');
+  const sandboxRoot = config.sandbox.root;
+  if (!sandboxRoot.includes('.sandboxes')) {
+    console.error('[startup] Refusing to clean non-sandbox directory:', sandboxRoot);
+  } else {
+    execSync(`rm -rf ${sandboxRoot}/* 2>/dev/null`, { encoding: 'utf8' });
+    console.log('[startup] Cleaned orphaned sandbox directories');
+  }
 } catch { /* nothing to clean */ }
 
 // Clean up stale streaming messages from previous run
@@ -91,9 +96,13 @@ app.use(
   }),
 );
 
-// Static uploads (avatars etc.)
+// Static uploads (avatars etc.) — path traversal protected
+const uploadsRoot = resolve(process.cwd(), 'uploads');
 app.get('/uploads/*', (c) => {
   const filePath = resolve(process.cwd(), c.req.path.slice(1));
+  if (!filePath.startsWith(uploadsRoot + '/') && filePath !== uploadsRoot) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
   if (!existsSync(filePath)) return c.notFound();
   const buf = readFileSync(filePath);
   const ext = filePath.split('.').pop()?.toLowerCase();
