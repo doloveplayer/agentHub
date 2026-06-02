@@ -15,9 +15,10 @@ function stripSessionSuffix(agentType: string): string {
  * Normalize raw plan JSON into a standardized Plan object.
  * Handles field name variations and agentType suffix stripping.
  *
- * Supports two formats:
+ * Supports formats:
  * 1. Flat: { planTitle, summary, tasks: [...] }
- * 2. Phased: { title, description, phases: [{ tasks: [...] }] }
+ * 2. Dag: { project, description, dag: [...] } (planGen.mjs output)
+ * 3. Phased: { title, description, phases: [{ tasks: [...] }] }
  *    → flattened into a single tasks array with phase prefix in task id.
  */
 export function normalizePlan(raw: Record<string, unknown>): Plan {
@@ -26,12 +27,16 @@ export function normalizePlan(raw: Record<string, unknown>): Plan {
   );
   const summary = String(raw.summary || raw.description || '');
 
-  // Check for flat tasks array first
-  if (Array.isArray(raw.tasks)) {
+  // Resolve task array from known field names (planGen.mjs uses "dag")
+  const rawTasks = Array.isArray(raw.tasks) ? raw.tasks
+    : Array.isArray(raw.dag) ? raw.dag
+    : null;
+
+  if (rawTasks) {
     return {
       planTitle,
       summary,
-      tasks: raw.tasks.map((t: Record<string, unknown>) => normalizeTask(t)),
+      tasks: rawTasks.map((t: Record<string, unknown>) => normalizeTask(t)),
     };
   }
 

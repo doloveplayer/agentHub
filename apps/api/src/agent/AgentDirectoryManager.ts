@@ -180,10 +180,37 @@ ${safeBody}
       }
     }
 
+    // Inject plan-and-dispatch skill for Planner agents BEFORE writing CLAUDE.md
+    // so the CLAUDE.md can reference the skill file path.
+    let plannerSkillsBlock = '';
+    if (agentName === 'planner' || agentName.startsWith('planner-')) {
+      const __dirname = new URL('.', import.meta.url).pathname;
+      const skillTemplatePath = resolve(__dirname, 'skills', 'plan-and-dispatch.md');
+      try {
+        const skillContent = readFileSync(skillTemplatePath, 'utf-8');
+        writeFileSync(resolve(claudeConfigDir, 'skills', 'plan-and-dispatch.md'), skillContent, 'utf-8');
+      } catch (err: any) {
+        console.warn(`[AgentDirectory] Could not write plan skill for ${agentName}: ${err.message}`);
+      }
+      plannerSkillsBlock = `
+## Skills
+
+Your configuration directory is /sandbox/_agent_${agentName}/.claude/
+Skills are in the skills/ subdirectory. Load them before planning:
+
+1. **cap-inventory.md** — lists ALL agents in this session with their agentType values.
+   Read it BEFORE planning: \`cat /sandbox/_agent_${agentName}/.claude/skills/cap-inventory.md\`
+2. **plan-and-dispatch.md** — defines the planning workflow and plan.json format.
+   Read it BEFORE writing plan.json: \`cat /sandbox/_agent_${agentName}/.claude/skills/plan-and-dispatch.md\`
+
+CRITICAL: Always use agentType values from cap-inventory.md. Use planGen.mjs to generate plan.json as specified in plan-and-dispatch.md.
+`;
+    }
+
     const claudeMd = `# Agent: ${agentName}
 
 ${systemPrompt}
-
+${plannerSkillsBlock}
 ## Collaboration Rules
 - You are part of a multi-agent session. Other agents may observe your work.
 - Your working directory is /workspace — write all user-facing code and files here.
@@ -194,18 +221,6 @@ ${systemPrompt}
 `;
 
     writeFileSync(resolve(agentDir, 'CLAUDE.md'), claudeMd, 'utf-8');
-
-    // Inject plan-and-dispatch skill for Planner agents
-    if (agentName === 'planner' || agentName.startsWith('planner-')) {
-      const __dirname = new URL('.', import.meta.url).pathname;
-      const skillTemplatePath = resolve(__dirname, 'skills', 'plan-and-dispatch.md');
-      try {
-        const skillContent = readFileSync(skillTemplatePath, 'utf-8');
-        writeFileSync(resolve(claudeConfigDir, 'skills', 'plan-and-dispatch.md'), skillContent, 'utf-8');
-      } catch (err: any) {
-        console.warn(`[AgentDirectory] Could not write plan skill for ${agentName}: ${err.message}`);
-      }
-    }
 
     // Write Claude Code settings.json if provided (model, permissions, etc.)
     if (settings) {

@@ -9,6 +9,7 @@ import { InboxManager } from '../agent/InboxManager.js';
 import { buildGroupContext } from '../agent/groupContext.js';
 import { config } from '../config.js';
 import * as path from 'path';
+import { existsSync, rmSync } from 'fs';
 import * as fs from 'fs';
 
 const sessions = new Hono();
@@ -292,6 +293,33 @@ sessions.delete('/:id', async (c) => {
   }
 
   await prisma.session.delete({ where: { id: sessionId } });
+
+  // Cleanup orphaned system agents: group-chat agents that are no longer
+  // in any session should be removed. Solo agents (type='user') are kept —
+  // they are reused across solo sessions.
+  try {
+    const orphanedAgents = await prisma.agent.findMany({
+      where: {
+        type: 'system',
+        sessionAgents: { none: {} },
+      },
+      select: { id: true, name: true },
+    });
+    for (const agent of orphanedAgents) {
+      await prisma.agent.delete({ where: { id: agent.id } });
+      const homeDir = path.resolve('.agents', agent.id);
+      if (existsSync(homeDir)) {
+        try { rmSync(homeDir, { recursive: true, force: true }); } catch { /* ignore */ }
+      }
+      console.log(`[cleanup] Removed orphaned system agent: ${agent.name} (${agent.id.slice(0, 8)})`);
+    }
+    if (orphanedAgents.length > 0) {
+      console.log(`[cleanup] Removed ${orphanedAgents.length} orphaned system agent(s)`);
+    }
+  } catch (err: any) {
+    console.error(`[cleanup] Agent cleanup failed: ${err.message}`);
+  }
+
   return c.body(null, 204);
 });
 
