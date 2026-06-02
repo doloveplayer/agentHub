@@ -95,6 +95,7 @@ model Agent {
   provider        String         @default("claude-code")
   providerConfig  Json?          // merged: model, tools, endpoint, apiKey, skill config, etc.
   capabilities    Json?          // user-defined agent capability profiles (optional)
+  skills          Json?          // custom skill definitions [{ name, description, content }]
   isActive        Boolean        @default(true)
   type            String         @default("user")    // "user" | "system"
   templateId      String?                             // 指向 AgentTemplate.id（system agent 特有）

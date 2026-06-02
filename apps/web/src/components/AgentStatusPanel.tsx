@@ -20,12 +20,13 @@ interface Props {
   onPreviewSelection?: (selection: { text: string; rect: { top: number; left: number; width: number; height: number }; url: string } | null) => void;
   onForceComplete?: (planId: string, taskId: string) => void;
   onForceFail?: (planId: string, taskId: string) => void;
+  onConfigureAgent?: (agentId: string) => void;
 }
 
 type PanelTab = 'Files' | 'Agents' | 'Tasks' | 'Preview';
 type ViewMode = 'detailed' | 'aggregated';
 
-export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onPreviewSelection, onForceComplete, onForceFail }: Props) {
+export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onPreviewSelection, onForceComplete, onForceFail, onConfigureAgent }: Props) {
   const [activeTab, setActiveTab] = useState<PanelTab>('Agents');
   const [viewMode, setViewMode] = useState<ViewMode>('detailed');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
@@ -208,6 +209,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
                 onStop={runningMsg && onStopAgent ? () => onStopAgent(runningMsg.id) : undefined}
                 provider={agent.provider}
                 messages={messages}
+                onConfigure={onConfigureAgent ? () => onConfigureAgent(agent.id) : undefined}
               />
               );
             })}

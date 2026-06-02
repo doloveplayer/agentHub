@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync, existsSync, readFileSync, cpSync } from 'fs';
 import { resolve } from 'path';
-import type { ExperienceEntry } from '@agenthub/shared';
+import type { ExperienceEntry, SkillDef } from '@agenthub/shared';
 import { config } from '../config.js';
 import { CapabilityInventory } from './CapabilityInventory.js';
 
@@ -9,7 +9,7 @@ const AGENTS_ROOT = config.agentContainer.hostRoot;
 export class AgentDirectoryManager {
 
   /** Ensure agent persistent home directory exists at .agents/<agentId>/ */
-  static ensureAgentHome(agentId: string, agentName: string, systemPrompt: string): string {
+  static ensureAgentHome(agentId: string, agentName: string, systemPrompt: string, skills?: SkillDef[] | null): string {
     const homeDir = resolve(AGENTS_ROOT, agentId);
     const claudeConfigDir = resolve(homeDir, '.claude');
 
@@ -31,6 +31,16 @@ ${systemPrompt}
 `;
 
       writeFileSync(resolve(homeDir, 'CLAUDE.md'), claudeMd, 'utf-8');
+    }
+
+    // Write custom skills (only if home dir was just created or skills changed)
+    if (skills && skills.length > 0) {
+      const skillsDir = resolve(claudeConfigDir, 'skills');
+      mkdirSync(skillsDir, { recursive: true });
+      for (const skill of skills) {
+        const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
+        writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+      }
     }
 
     return homeDir;
@@ -125,6 +135,7 @@ ${safeBody}
     systemPrompt: string,
     settings?: Record<string, unknown> | null,
     sessionId?: string,
+    skills?: SkillDef[] | null,
     agentId?: string,
   ): string {
     const agentDir = resolve(sandboxDir, `_agent_${agentName}`);
@@ -199,6 +210,16 @@ ${systemPrompt}
     // Write Claude Code settings.json if provided (model, permissions, etc.)
     if (settings) {
       writeFileSync(resolve(claudeConfigDir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf-8');
+    }
+
+    // Write custom skills files
+    if (skills && skills.length > 0) {
+      const skillsDir = resolve(claudeConfigDir, 'skills');
+      mkdirSync(skillsDir, { recursive: true });
+      for (const skill of skills) {
+        const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
+        writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+      }
     }
 
     // Regenerate capability inventory for Planner agents when any agent is added.

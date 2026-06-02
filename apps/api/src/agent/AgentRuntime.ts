@@ -159,7 +159,7 @@ class AgentRuntime {
       containerId = sandbox.containerId;
       hostWorkDir = sandbox.hostWorkDir;
       // Initialize agent directory in the sandbox dir (not user workspace)
-      AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, null, undefined, agentId);
+      AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, null, undefined, agent.skills as any[] | null, agentId);
       // Update agent record with session sandbox info
       await prisma.agent.update({
         where: { id: agentId },
@@ -169,7 +169,7 @@ class AgentRuntime {
       // Fallback: create dedicated agent container
       if (!agent.containerId || agent.containerStatus === 'stopped') {
         const info = await AgentContainer.create(agentId, agent.systemPrompt);
-        AgentDirectoryManager.initialize(info.hostWorkDir, agent.name, agent.systemPrompt, null, undefined, agentId);
+        AgentDirectoryManager.initialize(info.hostWorkDir, agent.name, agent.systemPrompt, null, undefined, agent.skills as any[] | null, agentId);
         await prisma.agent.update({
           where: { id: agentId },
           data: { containerId: info.containerId, containerStatus: 'running', hostWorkDir: info.hostWorkDir },
@@ -182,7 +182,7 @@ class AgentRuntime {
     }
 
     // Ensure agent persistent home exists at .agents/<agentId>/
-    AgentDirectoryManager.ensureAgentHome(agentId, agent.name, agent.systemPrompt);
+    AgentDirectoryManager.ensureAgentHome(agentId, agent.name, agent.systemPrompt, agent.skills as any[] | null);
 
     const provider = ProviderFactory.create(agent.provider);
     const hostSandboxDir = sandbox ? sandbox.hostSandboxDir : hostWorkDir;
