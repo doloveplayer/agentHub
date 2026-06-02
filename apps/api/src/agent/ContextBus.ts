@@ -50,7 +50,7 @@ export class ContextBus {
 
     if (this.store.size > this.maxEntries) {
       const sorted = [...this.store.entries()]
-        .sort((a, b) => a[1].createdAt - b[1].createdAt);
+        .sort((a, b) => a[1].updatedAt - b[1].updatedAt);
       for (let i = 0; i < sorted.length - this.maxEntries; i++) {
         this.store.delete(sorted[i][0]);
         this.newKeys.delete(sorted[i][0]);
@@ -107,7 +107,7 @@ export class ContextBus {
     const active = this.query({ status: 'active' });
     if (active.length === 0) return '';
 
-    const maxChars = maxTokens;
+    const maxChars = maxTokens * 4;
     let digest = '## Project State\n\n';
     let remaining = maxChars - digest.length;
 
