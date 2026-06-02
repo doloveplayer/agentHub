@@ -177,13 +177,13 @@ export interface SkillUseEvent {
 }
 ```
 
-- [ ] **Step 2: 编译检查**
+- [x] **Step 2: 编译检查**
 
 ```bash
 cd packages/shared && npx tsc --noEmit
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add packages/shared/src/types.ts
@@ -198,7 +198,7 @@ git commit -m "feat: add ContextBus, Archive, Checkpoint, and SkillStats shared 
 - Create: `apps/api/src/agent/ContextBus.ts`
 - Create: `apps/api/src/agent/ContextBus.test.ts`
 
-- [ ] **Step 1: 编写 ContextBus 测试**
+- [x] **Step 1: 编写 ContextBus 测试**
 
 创建 `apps/api/src/agent/ContextBus.test.ts`：
 
@@ -339,14 +339,14 @@ describe('ContextBus', () => {
 });
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 ```bash
 cd apps/api && npx vitest run src/agent/ContextBus.test.ts
 ```
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: 实现 ContextBus**
+- [x] **Step 3: 实现 ContextBus**
 
 创建 `apps/api/src/agent/ContextBus.ts`：
 
@@ -598,14 +598,14 @@ export function destroySessionContextBus(sessionId: string): void {
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 ```bash
 cd apps/api && npx vitest run src/agent/ContextBus.test.ts
 ```
 Expected: all 10 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/agent/ContextBus.ts apps/api/src/agent/ContextBus.test.ts
@@ -619,7 +619,7 @@ git commit -m "feat: add ContextBus — per-session key-value state blackboard"
 **Files:**
 - Modify: `apps/api/src/ws/taskDispatcher.ts`
 
-- [ ] **Step 1: 修改 buildTaskPrompt，注入上下文**
+- [x] **Step 1: 修改 buildTaskPrompt，注入上下文**
 
 在 `apps/api/src/ws/taskDispatcher.ts` 顶部新增 import：
 
@@ -648,7 +648,7 @@ Execute this task now. Output results to the specified files.`;
 }
 ```
 
-- [ ] **Step 2: 更新所有调用 buildTaskPrompt 的地方**
+- [x] **Step 2: 更新所有调用 buildTaskPrompt 的地方**
 
 在 `processNextInQueue` 中（约第 347 行），将 `buildTaskPrompt(task)` 改为 `buildTaskPrompt(task, sessionId)`。
 
@@ -656,7 +656,7 @@ Execute this task now. Output results to the specified files.`;
 
 在 `handleDispatchedTaskFinished` 的 ManagerLoop 部分（约第 603 行），将 `buildTaskPrompt(failedTask.task)` 改为 `buildTaskPrompt(failedTask.task, sessionId)`。
 
-- [ ] **Step 3: Task 完成时写入 Context Bus handoff**
+- [x] **Step 3: Task 完成时写入 Context Bus handoff**
 
 在 `handleProviderTaskEvent` 的 `'done'` case 中（约第 249-277 行），succeeded 分支追加：
 
@@ -694,13 +694,13 @@ bus.set({
 });
 ```
 
-- [ ] **Step 4: 编译检查**
+- [x] **Step 4: 编译检查**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/ws/taskDispatcher.ts
@@ -715,7 +715,7 @@ git commit -m "feat: inject ContextBus digest and experience into task prompts"
 - Modify: `apps/api/prisma/schema.prisma`
 - Create: `apps/api/src/agent/ContextBusPersistence.ts`
 
-- [ ] **Step 1: 新增 Prisma 模型**
+- [x] **Step 1: 新增 Prisma 模型**
 
 在 `apps/api/prisma/schema.prisma` 的 `PlanExecution` 模型之后添加：
 
@@ -752,13 +752,13 @@ model SessionCheckpoint {
 }
 ```
 
-- [ ] **Step 2: 运行迁移**
+- [x] **Step 2: 运行迁移**
 
 ```bash
 cd apps/api && npx prisma migrate dev --name add_context_entry_and_checkpoint
 ```
 
-- [ ] **Step 3: 实现 ContextBusPersistence**
+- [x] **Step 3: 实现 ContextBusPersistence**
 
 创建 `apps/api/src/agent/ContextBusPersistence.ts`：
 
@@ -833,7 +833,7 @@ export class ContextBusPersistence {
 }
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/api/prisma/schema.prisma apps/api/src/agent/ContextBusPersistence.ts
@@ -848,7 +848,7 @@ git commit -m "feat: add ContextBus DB persistence with Prisma"
 - Create: `apps/api/src/agent/ExperienceExtractor.ts`
 - Create: `apps/api/src/agent/ExperienceExtractor.test.ts`
 
-- [ ] **Step 1: 编写测试**
+- [x] **Step 1: 编写测试**
 
 创建 `apps/api/src/agent/ExperienceExtractor.test.ts`：
 
@@ -926,7 +926,7 @@ describe('ExperienceExtractor', () => {
 });
 ```
 
-- [ ] **Step 2: 实现 ExperienceExtractor**
+- [x] **Step 2: 实现 ExperienceExtractor**
 
 创建 `apps/api/src/agent/ExperienceExtractor.ts`：
 
@@ -1080,14 +1080,14 @@ export class ExperienceExtractor {
 }
 ```
 
-- [ ] **Step 3: 运行测试**
+- [x] **Step 3: 运行测试**
 
 ```bash
 cd apps/api && npx vitest run src/agent/ExperienceExtractor.test.ts
 ```
 Expected: 4 tests PASS.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/api/src/agent/ExperienceExtractor.ts apps/api/src/agent/ExperienceExtractor.test.ts
@@ -1101,7 +1101,7 @@ git commit -m "feat: add ExperienceExtractor rule engine for plan completion"
 **Files:**
 - Create: `apps/api/src/agent/ArchiveManager.ts`
 
-- [ ] **Step 1: 实现 ArchiveManager**
+- [x] **Step 1: 实现 ArchiveManager**
 
 创建 `apps/api/src/agent/ArchiveManager.ts`：
 
@@ -1255,13 +1255,13 @@ export class ArchiveManager {
 }
 ```
 
-- [ ] **Step 2: 编译检查**
+- [x] **Step 2: 编译检查**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/api/src/agent/ArchiveManager.ts
@@ -1275,7 +1275,7 @@ git commit -m "feat: add ArchiveManager — product snapshot + experience extrac
 **Files:**
 - Modify: `apps/api/src/agent/AgentDirectoryManager.ts`
 
-- [ ] **Step 1: 新增 writeAgentMemory 方法**
+- [x] **Step 1: 新增 writeAgentMemory 方法**
 
 在 `AgentDirectoryManager` 类中追加：
 
@@ -1323,13 +1323,13 @@ ${exp.detail}
 }
 ```
 
-- [ ] **Step 2: 编译检查**
+- [x] **Step 2: 编译检查**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/api/src/agent/AgentDirectoryManager.ts
@@ -1343,7 +1343,7 @@ git commit -m "feat: add writeAgentMemory to AgentDirectoryManager"
 **Files:**
 - Modify: `apps/api/src/ws/taskDispatcher.ts`
 
-- [ ] **Step 1: 在 maybeBroadcastPlanSummary 中触发归档**
+- [x] **Step 1: 在 maybeBroadcastPlanSummary 中触发归档**
 
 在 `maybeBroadcastPlanSummary` 函数（约第 944 行）中，`plan_summary` 广播后追加归档调用：
 
@@ -1387,13 +1387,13 @@ if (allDone) {
 }
 ```
 
-- [ ] **Step 2: 编译检查**
+- [x] **Step 2: 编译检查**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/api/src/ws/taskDispatcher.ts
@@ -1407,7 +1407,7 @@ git commit -m "feat: trigger ArchiveManager on plan completion"
 **Files:**
 - Create: `apps/api/src/agent/skills/archive-experience.md`
 
-- [ ] **Step 1: 创建 Skill 模板**
+- [x] **Step 1: 创建 Skill 模板**
 
 创建 `apps/api/src/agent/skills/archive-experience.md`：
 
@@ -1471,7 +1471,7 @@ description: 在 Plan 执行完成后，从执行日志和 Context Bus 黑板状
 - 每条经验分配合理 severity：high = 会导致编译/运行时错误，medium = 代码质量/约定违反，low = 效率优化建议。
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/api/src/agent/skills/archive-experience.md
@@ -1485,7 +1485,7 @@ git commit -m "feat: add archive-experience skill template for semantic extracti
 **Files:**
 - Create: `apps/api/src/agent/CheckpointManager.ts`
 
-- [ ] **Step 1: 实现 CheckpointManager**
+- [x] **Step 1: 实现 CheckpointManager**
 
 创建 `apps/api/src/agent/CheckpointManager.ts`：
 
@@ -1628,7 +1628,7 @@ export class CheckpointManager {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/api/src/agent/CheckpointManager.ts
@@ -1642,7 +1642,7 @@ git commit -m "feat: add CheckpointManager for plan checkpoint save/restore"
 **Files:**
 - Modify: `apps/api/src/ws/taskDispatcher.ts`
 
-- [ ] **Step 1: L1 重试注入失败原因**
+- [x] **Step 1: L1 重试注入失败原因**
 
 在 `handleDispatchedTaskFinished` 失败分支的 auto-retry 逻辑中（约第 606-621 行），修改重试 prompt：
 
@@ -1660,7 +1660,7 @@ const basePrompt = buildTaskPrompt(task, sessionId);
 const taskPrompt = basePrompt + retryNote;
 ```
 
-- [ ] **Step 2: Checkpoint 更新集成**
+- [x] **Step 2: Checkpoint 更新集成**
 
 在 `handleDispatchedTaskFinished` 末尾（Plan 状态变更点），追加 checkpoint 保存：
 
@@ -1689,7 +1689,7 @@ import('../agent/CheckpointManager.js').then(({ CheckpointManager }) => {
 }).catch(() => {});
 ```
 
-- [ ] **Step 3: Task 开始时创建初始 Checkpoint**
+- [x] **Step 3: Task 开始时创建初始 Checkpoint**
 
 在 `enqueueTaskAssignments` 中（Plan 首次 dispatch 时），创建初始 checkpoint：
 
@@ -1712,13 +1712,13 @@ if (tasks.length > 0) {
 }
 ```
 
-- [ ] **Step 4: 编译检查**
+- [x] **Step 4: 编译检查**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/api/src/ws/taskDispatcher.ts
@@ -1732,7 +1732,7 @@ git commit -m "feat: add retry failure injection and checkpoint save in task dis
 **Files:**
 - Modify: `apps/api/src/agent/providers/claude-code.ts`
 
-- [ ] **Step 1: 新增持久化回调**
+- [x] **Step 1: 新增持久化回调**
 
 在 `ClaudeCodeProvider` 类顶部新增可选回调字段：
 
@@ -1757,7 +1757,7 @@ if (event.type === 'system' && event.sessionId) {
 }
 ```
 
-- [ ] **Step 2: 在 taskDispatcher 中连接回调**
+- [x] **Step 2: 在 taskDispatcher 中连接回调**
 
 在 `startReplForTask` 中（provider 创建之后），注册回调：
 
@@ -1770,13 +1770,13 @@ provider.setSessionIdCallback((sid: string) => {
 });
 ```
 
-- [ ] **Step 3: 编译检查**
+- [x] **Step 3: 编译检查**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add apps/api/src/agent/providers/claude-code.ts apps/api/src/ws/taskDispatcher.ts
@@ -1790,7 +1790,7 @@ git commit -m "feat: persist claudeSessionId to checkpoint on SDK session emit"
 **Files:**
 - Modify: `apps/api/src/ws/chatHandlers.ts`
 
-- [ ] **Step 1: 在 ensureSandboxReady 中添加恢复逻辑**
+- [x] **Step 1: 在 ensureSandboxReady 中添加恢复逻辑**
 
 在 `ensureSandboxReady` 函数末尾（sandbox 初始化完成后），追加恢复检测：
 
@@ -1827,13 +1827,13 @@ import('../agent/CheckpointManager.js').then(({ CheckpointManager }) => {
 }).catch(() => {});
 ```
 
-- [ ] **Step 2: 编译检查**
+- [x] **Step 2: 编译检查**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/api/src/ws/chatHandlers.ts
@@ -1847,7 +1847,7 @@ git commit -m "feat: add plan checkpoint recovery on WebSocket reconnect"
 **Files:**
 - Modify: `apps/api/src/agent/DagPersistence.ts`
 
-- [ ] **Step 1: 新增 markArchived 方法**
+- [x] **Step 1: 新增 markArchived 方法**
 
 在 `DagPersistence` 类中追加：
 
@@ -1860,7 +1860,7 @@ static async markArchived(sessionId: string, planId: string): Promise<void> {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/api/src/agent/DagPersistence.ts
@@ -1874,7 +1874,7 @@ git commit -m "feat: add markArchived to DagPersistence"
 **Files:**
 - Modify: `apps/api/src/agent/StateTracker.ts`
 
-- [ ] **Step 1: 新增 Skill 追踪方法**
+- [x] **Step 1: 新增 Skill 追踪方法**
 
 在 `StateTracker` 类中追加：
 
@@ -1934,7 +1934,7 @@ getSessionSkillStats(agentNames: string[]): SkillUsageRecord[] {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/api/src/agent/StateTracker.ts
@@ -1948,7 +1948,7 @@ git commit -m "feat: add skill usage tracking to StateTracker"
 **Files:**
 - Modify: `apps/api/src/ws/taskDispatcher.ts`
 
-- [ ] **Step 1: 在 handleProviderTaskEvent 中新增 skill_use case**
+- [x] **Step 1: 在 handleProviderTaskEvent 中新增 skill_use case**
 
 在 `handleProviderTaskEvent` 的 switch 中（约第 190-300 行），在 `case 'done':` 之前追加：
 
@@ -1975,13 +1975,13 @@ case 'skill_use': {
 }
 ```
 
-- [ ] **Step 2: 编译检查**
+- [x] **Step 2: 编译检查**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add apps/api/src/ws/taskDispatcher.ts
@@ -1997,7 +1997,7 @@ git commit -m "feat: handle skill_use events in task dispatcher"
 - Modify: `apps/web/src/components/AgentCard.tsx`
 - Modify: `apps/web/src/store/appStore.ts`
 
-- [ ] **Step 1: 更新 appStore — 新增 skill 事件类型和存储**
+- [x] **Step 1: 更新 appStore — 新增 skill 事件类型和存储**
 
 在 `apps/web/src/store/appStore.ts` 中，修改 `AgentEvent.type` 联合类型，新增 `'skill_use'`：
 
@@ -2048,7 +2048,7 @@ case 'skill_use': {
 }
 ```
 
-- [ ] **Step 2: 新增 FaceSkillStats 组件**
+- [x] **Step 2: 新增 FaceSkillStats 组件**
 
 在 `apps/web/src/components/AgentCardFaces.tsx` 末尾追加：
 
@@ -2092,7 +2092,7 @@ export function FaceSkillStats({
 }
 ```
 
-- [ ] **Step 3: 修改 AgentCard — 4 个 dot 指示器 + 第 4 页**
+- [x] **Step 3: 修改 AgentCard — 4 个 dot 指示器 + 第 4 页**
 
 在 `apps/web/src/components/AgentCard.tsx` 中：
 
@@ -2128,13 +2128,13 @@ title={['摘要', '日志', '仪表盘', 'Skills'][face]}
 import { FaceBusinessCard, FaceTerminalLog, FaceDashboard, FaceSkillStats } from './AgentCardFaces';
 ```
 
-- [ ] **Step 4: 编译检查**
+- [x] **Step 4: 编译检查**
 
 ```bash
 cd apps/web && npx tsc --noEmit -p tsconfig.json
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/components/AgentCardFaces.tsx apps/web/src/components/AgentCard.tsx apps/web/src/store/appStore.ts
@@ -2148,13 +2148,13 @@ git commit -m "feat: add 4th AgentCard face — skill usage statistics"
 **Files:**
 - Modify: 无（验证任务）
 
-- [ ] **Step 1: 启动完整环境**
+- [x] **Step 1: 启动完整环境**
 
 ```bash
 bash scripts/startup.sh
 ```
 
-- [ ] **Step 2: 编译后端 + 前端**
+- [x] **Step 2: 编译后端 + 前端**
 
 ```bash
 cd apps/api && npx tsc --noEmit -p tsconfig.json
@@ -2162,35 +2162,35 @@ cd apps/web && npx tsc --noEmit -p tsconfig.json
 ```
 Expected: both pass without errors.
 
-- [ ] **Step 3: 运行所有现有测试**
+- [x] **Step 3: 运行所有现有测试**
 
 ```bash
 cd apps/api && npx vitest run
 ```
 Expected: all tests pass (existing + new ContextBus + ExperienceExtractor tests).
 
-- [ ] **Step 4: 验证 Context Bus 上下文注入**
+- [x] **Step 4: 验证 Context Bus 上下文注入**
 
 1. 创建一个包含 DAG Plan 的 session
 2. 在 Plan 执行前手动向 ContextBus 写入一个 convention 条目
 3. 启动 task，检查 agent prompt 是否包含该 convention
 4. 通过后端日志确认 `buildTaskPrompt` 产出了 context block
 
-- [ ] **Step 5: 验证归档**
+- [x] **Step 5: 验证归档**
 
 1. 完成一个 DAG Plan（所有 task done）
 2. 检查 `plan_archived` 事件是否广播
 3. 检查 `.sandboxes/{sessionId}/archive/{planId}/manifest.json` 和 `diff.patch` 是否生成
 4. 检查 `.agents/{agentId}/.claude/memory/` 下是否有新文件
 
-- [ ] **Step 6: 验证 Checkpoint 恢复**
+- [x] **Step 6: 验证 Checkpoint 恢复**
 
 1. 在 Plan 执行中途断开 WebSocket
 2. 重新连接
 3. 检查 `plan_recovered` 事件是否广播
 4. 确认 pending tasks 继续执行
 
-- [ ] **Step 7: 验证 Skill 统计**
+- [x] **Step 7: 验证 Skill 统计**
 
 1. 完成一个使用了 skills 的 task
 2. 打开 AgentCard，切换到第 4 页（Skills）
