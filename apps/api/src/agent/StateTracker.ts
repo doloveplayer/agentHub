@@ -1,3 +1,5 @@
+import type { SkillUsageRecord } from '@agenthub/shared';
+
 export interface AgentSnapshot {
   agentId: string;
   agentMessageId: string;
@@ -79,6 +81,55 @@ export class StateTracker {
 
   remove(agentMessageId: string): void {
     this.snapshots.delete(agentMessageId);
+  }
+
+  // ---- Skill usage tracking ----
+
+  private skillRecords = new Map<string, SkillUsageRecord>();
+
+  recordSkillUse(info: {
+    skillName: string;
+    agentName: string;
+    agentId: string;
+    taskId?: string;
+    planId?: string;
+  }): void {
+    const key = `${info.agentName}:${info.skillName}`;
+    const existing = this.skillRecords.get(key);
+    const now = Date.now();
+    if (existing) {
+      existing.count++;
+      existing.lastUsed = now;
+      if (info.taskId && !existing.associatedTaskIds.includes(info.taskId)) {
+        existing.associatedTaskIds.push(info.taskId);
+      }
+    } else {
+      this.skillRecords.set(key, {
+        skillName: info.skillName,
+        agentName: info.agentName,
+        agentId: info.agentId,
+        count: 1,
+        firstUsed: now,
+        lastUsed: now,
+        associatedTaskIds: info.taskId ? [info.taskId] : [],
+      });
+    }
+  }
+
+  getAgentSkillStats(agentName: string): SkillUsageRecord[] {
+    const results: SkillUsageRecord[] = [];
+    for (const record of this.skillRecords.values()) {
+      if (record.agentName === agentName) results.push(record);
+    }
+    return results.sort((a, b) => b.lastUsed - a.lastUsed);
+  }
+
+  getSessionSkillStats(agentNames: string[]): SkillUsageRecord[] {
+    const results: SkillUsageRecord[] = [];
+    for (const record of this.skillRecords.values()) {
+      if (agentNames.includes(record.agentName)) results.push(record);
+    }
+    return results.sort((a, b) => b.lastUsed - a.lastUsed);
   }
 }
 
