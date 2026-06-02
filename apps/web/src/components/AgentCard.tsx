@@ -5,6 +5,9 @@ import type { AgentEvent } from '../store/appStore';
 import { FaceBusinessCard, FaceTerminalLog, FaceDashboard, FaceSkillStats } from './AgentCardFaces';
 import type { AgentProvider } from '@agenthub/shared';
 
+/** Stable empty array reference — prevents Zustand infinite re-render loop when skillStats[key] is undefined */
+const EMPTY_SKILLS: { skillName: string; count: number }[] = [];
+
 /** Derive capability tags from agent name / display name. */
 function deriveCapabilityTags(agentName?: string, displayName?: string): string[] {
   const name = (agentName || displayName || '').toLowerCase();
@@ -101,7 +104,8 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const thinkingLevel = pConfig.thinking ? 'high' : 'off';
 
   // Skill stats for 4th face — must be at top level (Rules of Hooks)
-  const skillStats = useAppStore(s => s.skillStats[agentName || displayName] || []);
+  // Use ?? EMPTY_SKILLS (not || []) to keep a stable reference and avoid Zustand infinite re-render
+  const skillStats = useAppStore(s => s.skillStats[agentName || displayName] ?? EMPTY_SKILLS);
 
   const isCollapsed = collapsed && !expanded;
 
