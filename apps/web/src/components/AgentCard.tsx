@@ -100,6 +100,9 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const model = pConfig.model || 'unknown';
   const thinkingLevel = pConfig.thinking ? 'high' : 'off';
 
+  // Skill stats for 4th face — must be at top level (Rules of Hooks)
+  const skillStats = useAppStore(s => s.skillStats[agentName || displayName] || []);
+
   const isCollapsed = collapsed && !expanded;
 
   const switchFace = (face: number) => {
@@ -228,12 +231,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
           />
         )}
         {activeFace === 3 && (
-          <FaceSkillStats
-            skills={useAppStore(s => {
-              const stats = s.skillStats[agentName || displayName] || [];
-              return stats;
-            })}
-          />
+          <FaceSkillStats skills={skillStats} />
         )}
       </div>
     </div>
