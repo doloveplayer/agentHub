@@ -1,7 +1,7 @@
 export interface UnifiedAgentEvent {
   type: 'thinking' | 'tool_use' | 'tool_result' | 'subagent_start'
       | 'subagent_result' | 'permission_request' | 'milestone'
-      | 'blocked' | 'done' | 'error' | 'token_usage';
+      | 'blocked' | 'done' | 'error' | 'token_usage' | 'skill_use';
   content?: string;
   toolName?: string;
   toolInput?: Record<string, unknown>;
@@ -18,6 +18,8 @@ export interface UnifiedAgentEvent {
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheCreateTokens?: number;
+  // Skill use fields (REPL)
+  skillName?: string;
 }
 
 export interface ProviderConfig {
@@ -59,5 +61,6 @@ export interface AbstractProvider {
   isAlive(): boolean;
   getAgentHome(): string;
   updateTrustMode(mode: boolean): void;
+  setSessionIdCallback?(cb: (sessionId: string) => void): void;
   stopChild?(): void;
 }

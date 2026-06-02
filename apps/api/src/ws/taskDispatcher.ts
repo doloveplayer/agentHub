@@ -256,6 +256,26 @@ function handleProviderTaskEvent(
         timestamp: Date.now(),
       });
       break;
+    case 'skill_use': {
+      const skillEvent = event as any;
+      stateTracker.recordSkillUse({
+        skillName: skillEvent.skillName || 'unknown',
+        agentName,
+        agentId: run.task?.agentType || agentName,
+        taskId: task.id,
+        planId: queue.planId,
+      });
+      broadcast(sessionId, {
+        type: 'skill_use',
+        skillName: skillEvent.skillName,
+        agentName,
+        agentId: run.task?.agentType || agentName,
+        taskId: task.id,
+        planId: queue.planId,
+        timestamp: Date.now(),
+      });
+      break;
+    }
     case 'done': {
       const exitCode = event.exitCode ?? 0;
       const succeeded = exitCode === 0;
@@ -379,7 +399,14 @@ export async function processNextInQueue(
 
   if (procInfo && procInfo.provider.isAlive()) {
     registerProviderTaskEventHandler(sessionId, agentName, procInfo.provider);
-    const taskPrompt = buildTaskPrompt(task, sessionId);
+    // Inject retry context from execution state
+    const execution = planExecutions.get(planKey(sessionId, queue.planId));
+    const dagItem = execution?.tasks.get(task.id);
+    const retryNote = dagItem && dagItem.retryCount > 0
+      ? `\n\n⚠️ 上次执行失败 (attempt ${dagItem.retryCount}): 请避免重复相同操作。`
+      : '';
+    const basePrompt = buildTaskPrompt(task, sessionId);
+    const taskPrompt = basePrompt + retryNote;
     const taskMessageId = buildTaskMessageId(queue.planId, task.id);
     recordMessageBeforeVersion(
       taskMessageId,
@@ -442,6 +469,13 @@ async function startReplForTask(
   try {
     const { ProviderFactory } = await import('../agent/providers/factory.js');
     const provider = ProviderFactory.create('claude-code');
+    if (provider.setSessionIdCallback) {
+      provider.setSessionIdCallback((sid: string) => {
+        import('../agent/CheckpointManager.js').then(({ CheckpointManager }) => {
+          CheckpointManager.updateAgentSession(sessionId, queue.planId, agentName, sid);
+        }).catch(() => {});
+      });
+    }
     registerProviderTaskEventHandler(sessionId, agentName, provider);
 
     // Create message and register state BEFORE provider.start(),
@@ -802,6 +836,27 @@ export async function handleDispatchedTaskFinished(
   maybeBroadcastPlanSummary(sessionId, execution);
   persistState(sessionId, planId, execution).catch((err) =>
     console.error(`[dag] Persist error on task finish: ${err.message}`));
+
+  // Save checkpoint after any state change
+  import('../agent/CheckpointManager.js').then(({ CheckpointManager }) => {
+    const pending = [...execution.tasks.values()]
+      .filter(item => item.status === 'waiting' || item.status === 'queued' || item.status === 'running')
+      .map(item => ({
+        id: item.task.id, title: item.task.title, description: item.task.description,
+        agentType: item.task.agentType, dependsOn: item.task.dependsOn,
+        expectedOutput: item.task.expectedOutput, priority: item.task.priority,
+      }));
+    const completed = [...execution.tasks.values()]
+      .filter(item => item.status === 'done')
+      .map(item => item.task.id);
+    const failed = [...execution.tasks.values()]
+      .filter(item => item.status === 'failed' || item.status === 'blocked')
+      .map(item => ({ id: item.task.id, error: item.lastError || '', retryCount: item.retryCount || 0 }));
+
+    CheckpointManager.save(
+      sessionId, planId, pending, completed, failed, {},
+    );
+  }).catch(() => {});
 }
 
 /**
@@ -933,7 +988,7 @@ export async function handleReplanFailedTask(
     console.error(`[dag] Persist error after replan: ${err.message}`));
 }
 
-async function enqueueTaskAssignments(
+export async function enqueueTaskAssignments(
   sessionId: string,
   planId: string,
   assignments: DagTaskAssignment[],
@@ -961,6 +1016,22 @@ async function enqueueTaskAssignments(
     if (!queue || queue.current) continue;
     const agent = agentsByName.get(agentName);
     if (agent) await startTaskAgent(sessionId, agent, sandbox);
+  }
+
+  // Create initial checkpoint on first dispatch
+  const execution = planExecutions.get(planKey(sessionId, planId));
+  if (execution) {
+    import('../agent/CheckpointManager.js').then(({ CheckpointManager }) => {
+      const allTasks = execution.tasks;
+      const pending = [...allTasks.values()]
+        .filter(item => item.status !== 'done' && item.status !== 'failed')
+        .map(item => ({
+          id: item.task.id, title: item.task.title, description: item.task.description,
+          agentType: item.task.agentType, dependsOn: item.task.dependsOn,
+          expectedOutput: item.task.expectedOutput, priority: item.task.priority,
+        }));
+      CheckpointManager.save(sessionId, planId, pending, [], [], {});
+    }).catch(() => {});
   }
 }
 
@@ -1005,6 +1076,44 @@ function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionSta
     fileChanges: [],
   });
   execution.summaryBroadcasted = true;
+
+  // Archive pipeline: when all tasks are done, archive the plan for future experience extraction
+  if (allDone) {
+    const sandbox = sandboxes.get(sessionId);
+    const archiveStartTime = Date.now();
+    import('../agent/ArchiveManager.js').then(({ ArchiveManager }) => {
+      const archiveTasks = items.map(item => ({
+        id: item.task.id,
+        title: item.task.title,
+        agentType: item.task.agentType,
+        status: item.status,
+        outputSummary: item.task.expectedOutput || '',
+        outputFiles: [],
+        modifiedFiles: [],
+      }));
+      const failedArchiveTasks = items
+        .filter(item => item.status === 'failed' || item.status === 'blocked')
+        .map(item => ({
+          taskId: item.task.id,
+          agentType: item.task.agentType,
+          error: item.lastError || 'Unknown error',
+          retryCount: item.retryCount || 0,
+        }));
+      ArchiveManager.archivePlan(
+        sessionId, execution.planId, execution.planTitle || '',
+        archiveTasks, failedArchiveTasks,
+        sandbox?.hostWorkDir || '', archiveStartTime,
+      ).then(({ manifest, experiences }) => {
+        console.log(`[archive] Plan ${execution.planId} archived: ${manifest.tasks.length} tasks, ${experiences.length} experiences`);
+        broadcast(sessionId, {
+          type: 'plan_archived',
+          planId: execution.planId,
+          experienceCount: experiences.length,
+          manifestPath: `.sandboxes/${sessionId}/archive/${execution.planId}/manifest.json`,
+        });
+      }).catch(err => console.error(`[archive] Plan ${execution.planId} archive failed:`, err));
+    }).catch(() => {});
+  }
 }
 
 async function persistState(sessionId: string, planId: string, state: DagExecutionState): Promise<void> {

@@ -60,6 +60,37 @@ export async function ensureSandboxReady(sessionId: string, sessionType?: string
   });
   startStaleTaskChecker(sessionId, sb);
 
+  // Recovery: check for incomplete plans on reconnect
+  import('../agent/CheckpointManager.js').then(({ CheckpointManager }) => {
+    CheckpointManager.getIncompleteForSession(sessionId).then(checkpoints => {
+      for (const cp of checkpoints) {
+        if (cp.pendingTasks.length > 0) {
+          console.log(`[recovery] Restoring plan ${cp.planId} with ${cp.pendingTasks.length} pending tasks`);
+          // Restore ContextBus
+          CheckpointManager.restoreContextBus(sessionId, cp);
+          // Re-dispatch pending tasks
+          const sandbox = sandboxes.get(sessionId);
+          if (sandbox) {
+            import('./taskDispatcher.js').then(({ enqueueTaskAssignments }) => {
+              enqueueTaskAssignments(sessionId, cp.planId, cp.pendingTasks.map(t => ({
+                task: { ...t, priority: t.priority as 'high' | 'medium' | 'low' },
+                agentName: t.agentType,
+                agentId: '',
+              })), sandbox).catch((err: any) =>
+                console.error(`[recovery] Re-dispatch failed: ${err.message}`)
+              );
+            }).catch(() => {});
+          }
+          broadcast(sessionId, {
+            type: 'plan_recovered',
+            planId: cp.planId,
+            pendingCount: cp.pendingTasks.length,
+          });
+        }
+      }
+    }).catch(() => {});
+  }).catch(() => {});
+
   sandboxInitialized.add(sessionId);
   return sb;
 }

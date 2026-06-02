@@ -32,6 +32,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
   private partialLine = '';
   private runSeq = 0;
   private eventParser: EventParser = new EventParser();
+  private onSessionIdChange?: (sessionId: string) => void;
 
   onEvent(handler: EventHandler): void { this.handlers.push(handler); }
 
@@ -49,6 +50,10 @@ export class ClaudeCodeProvider implements AbstractProvider {
 
   isAlive(): boolean {
     return !this.killed && this.childProc !== null;
+  }
+
+  setSessionIdCallback(cb: (sessionId: string) => void): void {
+    this.onSessionIdChange = cb;
   }
 
   updateTrustMode(mode: boolean): void {
@@ -123,6 +128,9 @@ export class ClaudeCodeProvider implements AbstractProvider {
           for (const event of events) {
             if (event.type === 'system' && event.sessionId) {
               this.claudeSessionId = event.sessionId;
+              if (this.onSessionIdChange) {
+                this.onSessionIdChange(event.sessionId);
+              }
             }
             const unified = parsedToUnified(event);
             if (unified) this.emit(unified);
@@ -149,6 +157,9 @@ export class ClaudeCodeProvider implements AbstractProvider {
             for (const event of events) {
               if (event.type === 'system' && event.sessionId) {
                 this.claudeSessionId = event.sessionId;
+                if (this.onSessionIdChange) {
+                  this.onSessionIdChange(event.sessionId);
+                }
               }
               const unified = parsedToUnified(event);
               if (unified && unified.type !== 'done') this.emit(unified);
