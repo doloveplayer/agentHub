@@ -22,6 +22,7 @@ import { TestReportCard } from './TestReportCard';
 import { ReviewCard } from './ReviewCard';
 import { WorkspaceSelector } from './WorkspaceSelector';
 import { PptxCard } from './PptxCard';
+import { HtmlPreviewCard } from './HtmlPreviewCard';
 import { SessionLogPanel } from './SessionLogPanel';
 import { RecoveryBanner } from './RecoveryBanner';
 import type { Message, AgentConfig } from '@agenthub/shared';
@@ -337,60 +338,71 @@ export function ChatView() {
     setActiveTab('chat');
   }, [activeSessionId]);
 
-  // Workspace PPTX detection — only show the single newest file
-  const [latestPptx, setLatestPptx] = useState<{ path: string; name: string } | null>(null);
-  const [dismissedPptxPath, setDismissedPptxPath] = useState<string | null>(null);
+  // New artifact detection — snapshot-based: only show files created AFTER session starts
+  const initialFilesRef = useRef<Set<string>>(new Set());
+  const snapshotReadyRef = useRef(false);
+  const [latestArtifact, setLatestArtifact] = useState<{ path: string; name: string; type: 'pptx' | 'html' } | null>(null);
+  const [dismissedPaths, setDismissedPaths] = useState<Set<string>>(new Set());
 
-  const scanWorkspacePptx = useCallback(async () => {
+  // Reset snapshot when session changes
+  useEffect(() => {
+    initialFilesRef.current = new Set();
+    snapshotReadyRef.current = false;
+    setLatestArtifact(null);
+    setDismissedPaths(new Set());
+  }, [activeSessionId]);
+
+  const scanNewArtifacts = useCallback(async () => {
     if (!activeSessionId) return;
     try {
       const result = await api.getWorkspaceTree(activeSessionId);
-      const roots: any[] = [
-        ...(result?.tree ?? []),
-        ...(result?.workspaceTree ?? []),
-      ];
+      const roots: any[] = [...(result?.tree ?? []), ...(result?.workspaceTree ?? [])];
 
-      const collectPptx = (nodes: any[]): { path: string; name: string; modifiedAt: number }[] => {
-        const out: { path: string; name: string; modifiedAt: number }[] = [];
+      // Collect all file paths
+      const allFiles: { path: string; name: string; modifiedAt: number }[] = [];
+      const collect = (nodes: any[]) => {
         for (const node of nodes) {
-          if (node.type === 'file' && /\.pptx$/i.test(node.name)) {
-            out.push({ path: node.path, name: node.name, modifiedAt: node.modifiedAt ?? 0 });
-          }
-          if (node.type === 'directory' && node.children?.length) {
-            out.push(...collectPptx(node.children));
-          }
+          if (node.type === 'file') allFiles.push({ path: node.path, name: node.name, modifiedAt: node.modifiedAt ?? 0 });
+          if (node.type === 'directory' && node.children?.length) collect(node.children);
         }
-        return out;
       };
+      collect(roots);
 
-      const pptxList = collectPptx(roots);
-      pptxList.sort((a, b) => b.modifiedAt - a.modifiedAt);
-      const newest = pptxList[0] ?? null;
-
-      if (newest && newest.path !== dismissedPptxPath) {
-        setLatestPptx({ path: newest.path, name: newest.name });
-      } else if (!newest) {
-        setLatestPptx(null);
+      // First call: take snapshot, don't show any cards
+      if (!snapshotReadyRef.current) {
+        initialFilesRef.current = new Set(allFiles.map(f => f.path));
+        snapshotReadyRef.current = true;
+        return;
       }
-    } catch {
-      // Workspace tree may not exist until the sandbox is created.
-    }
-  }, [activeSessionId, dismissedPptxPath]);
 
-  const dismissPptxCard = useCallback(() => {
-    const current = latestPptx;
-    if (current) {
-      setDismissedPptxPath(current.path);
-      setLatestPptx(null);
-    }
-  }, [latestPptx]);
+      // Subsequent calls: find new files not in snapshot and not dismissed
+      const newFiles = allFiles.filter(f => !initialFilesRef.current.has(f.path) && !dismissedPaths.has(f.path));
+      const previewable = newFiles.filter(f => /\.pptx$/i.test(f.name) || /\.html?$/i.test(f.name));
+      previewable.sort((a, b) => b.modifiedAt - a.modifiedAt);
+      const newest = previewable[0] ?? null;
 
-  // Poll workspace tree every 3s so PPTX card appears as soon as file is created
+      if (newest) {
+        const type = /\.pptx$/i.test(newest.name) ? 'pptx' as const : 'html' as const;
+        setLatestArtifact({ path: newest.path, name: newest.name, type });
+      } else {
+        setLatestArtifact(null);
+      }
+    } catch { /* sandbox not ready */ }
+  }, [activeSessionId, dismissedPaths]);
+
+  const dismissArtifact = useCallback(() => {
+    if (latestArtifact) {
+      setDismissedPaths(prev => new Set(prev).add(latestArtifact.path));
+      setLatestArtifact(null);
+    }
+  }, [latestArtifact]);
+
+  // Poll workspace tree every 3s for new artifacts
   useEffect(() => {
-    scanWorkspacePptx();
-    const interval = setInterval(scanWorkspacePptx, 3000);
+    scanNewArtifacts();
+    const interval = setInterval(scanNewArtifacts, 3000);
     return () => clearInterval(interval);
-  }, [scanWorkspacePptx]);
+  }, [scanNewArtifacts]);
 
   // Memoize agentMap — only rebuild when agents array changes
   const agentMap = useMemo(() => {
@@ -606,14 +618,23 @@ export function ChatView() {
             </React.Fragment>
           ))}
           <ArtifactFeed sessionId={activeSessionId!} />
-          {/* Inline PPTX preview card — only the newest workspace .pptx file */}
-          {latestPptx && (
+          {/* Inline artifact preview — only newly created PPTX/HTML files */}
+          {latestArtifact?.type === 'pptx' && (
             <PptxCard
-              key={latestPptx.path}
+              key={latestArtifact.path}
               sessionId={activeSessionId}
-              filePath={latestPptx.path}
-              fileName={latestPptx.name}
-              onDismiss={dismissPptxCard}
+              filePath={latestArtifact.path}
+              fileName={latestArtifact.name}
+              onDismiss={dismissArtifact}
+            />
+          )}
+          {latestArtifact?.type === 'html' && (
+            <HtmlPreviewCard
+              key={latestArtifact.path}
+              sessionId={activeSessionId}
+              filePath={latestArtifact.path}
+              fileName={latestArtifact.name}
+              onDismiss={dismissArtifact}
             />
           )}
           <div ref={bottomRef} />
