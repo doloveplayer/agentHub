@@ -251,7 +251,7 @@ export type ContextEntryType =
   | 'convention'
   | 'dependency-map';
 
-export type ContextEntryStatus = 'active' | 'resolved' | 'superseded';
+export type ContextEntryStatus = 'active' | 'resolved' | 'superseded' | 'stale';
 
 /**
  * Estimate token count for mixed CJK/English text.

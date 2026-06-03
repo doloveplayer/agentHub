@@ -60,6 +60,7 @@ export class ContextBus {
       status: opts.status,
       createdAt: existing ? existing.createdAt : now,
       updatedAt: now,
+      _refCount: existing?._refCount,
     };
     this.store.set(opts.key, entry);
     this.newKeys.add(opts.key);
@@ -251,7 +252,7 @@ export class ContextBus {
     let marked = 0;
     for (const [, entry] of this.store) {
       if (entry.status === 'active' && entry.updatedAt < cutoff) {
-        entry.status = 'stale' as any;
+        entry.status = 'stale';
         marked++;
       }
     }
@@ -264,7 +265,7 @@ export class ContextBus {
     let removed = 0;
     for (const [key, entry] of this.store) {
       const ageMs = now - entry.updatedAt;
-      if ((entry.status as any) === 'stale' && ageMs > staleGcDays * 24 * 60 * 60 * 1000) {
+      if (entry.status === 'stale' && ageMs > staleGcDays * 24 * 60 * 60 * 1000) {
         this.store.delete(key);
         this.newKeys.delete(key);
         removed++;
@@ -310,5 +311,7 @@ export function getSessionContextBus(sessionId: string): ContextBus {
 }
 
 export function destroySessionContextBus(sessionId: string): void {
+  const bus = sessionBuses.get(sessionId);
+  if (bus) bus.markStale();
   sessionBuses.delete(sessionId);
 }

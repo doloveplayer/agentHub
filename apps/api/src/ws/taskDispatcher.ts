@@ -239,11 +239,14 @@ function handleProviderTaskEvent(
     }
     case 'tool_use':
       if (coordCtx) {
-        agentCoordinator.onToolUse(coordCtx, {
-          type: 'tool_use',
-          toolName: event.toolName || event.toolInput?.toolName || '',
-          input: event.toolInput,
-        } as any);
+        const resolvedToolName = event.toolName || (typeof event.toolInput?.toolName === 'string' ? event.toolInput.toolName : undefined);
+        if (resolvedToolName) {
+          agentCoordinator.onToolUse(coordCtx, {
+            type: 'tool_use' as const,
+            toolName: resolvedToolName,
+            input: event.toolInput ?? {},
+          });
+        }
       }
       broadcast(sessionId, {
         type: 'agent_status',

@@ -1,5 +1,5 @@
 import { prisma } from '../db/prisma.js';
-import { readFileSync, existsSync } from 'fs';
+import { readFile, access } from 'fs/promises';
 import { resolve } from 'path';
 import { estimateTokens } from '@agenthub/shared';
 
@@ -24,11 +24,7 @@ export class PinnedStore {
     content: string,
     options?: { sourceMessageId?: string; filePath?: string; title?: string; injectToAgent?: boolean },
   ): Promise<PinnedMessageData> {
-    const maxOrder = await prisma.pinnedMessage.aggregate({
-      where: { sessionId },
-      _max: { sortOrder: true },
-    });
-    const nextOrder = (maxOrder._max.sortOrder ?? -1) + 1;
+    const count = await prisma.pinnedMessage.count({ where: { sessionId } });
 
     return prisma.pinnedMessage.create({
       data: {
@@ -39,7 +35,7 @@ export class PinnedStore {
         filePath: options?.filePath ?? null,
         title: options?.title ?? null,
         injectToAgent: options?.injectToAgent ?? true,
-        sortOrder: nextOrder,
+        sortOrder: count,
       },
     });
   }
@@ -68,18 +64,20 @@ export class PinnedStore {
     if (!existing) return null;
 
     return prisma.pinnedMessage.update({
-      where: { id: pinnedId },
+      where: { id: pinnedId, sessionId },
       data,
     });
   }
 
   static async reorder(sessionId: string, ids: string[]): Promise<void> {
-    for (let i = 0; i < ids.length; i++) {
-      await prisma.pinnedMessage.updateMany({
-        where: { id: ids[i], sessionId },
-        data: { sortOrder: i },
-      });
-    }
+    await prisma.$transaction(
+      ids.map((id, i) =>
+        prisma.pinnedMessage.updateMany({
+          where: { id, sessionId },
+          data: { sortOrder: i },
+        })
+      )
+    );
   }
 
   static async pinFromMessage(sessionId: string, messageId: string): Promise<PinnedMessageData | null> {
@@ -119,14 +117,15 @@ export class PinnedStore {
         let fileContent = '';
         if (hostWorkDir) {
           const fullPath = resolve(hostWorkDir, pin.filePath.replace(/^\/workspace\/?/, ''));
-          if (existsSync(fullPath)) {
-            try {
-              fileContent = readFileSync(fullPath, 'utf-8').slice(0, 200);
-            } catch {
-              fileContent = '(read error)';
-            }
+          if (!fullPath.startsWith(resolve(hostWorkDir))) {
+            fileContent = '(invalid path)';
           } else {
-            fileContent = '(file not found)';
+            try {
+              await access(fullPath);
+              fileContent = (await readFile(fullPath, 'utf-8')).slice(0, 200);
+            } catch {
+              fileContent = '(file not found)';
+            }
           }
         }
         line = `- [PINNED] ${pin.filePath} — ${fileContent}\n`;
