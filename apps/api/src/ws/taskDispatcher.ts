@@ -6,8 +6,9 @@ import { getSessionContextBus } from '../agent/ContextBus.js';
 import { findClosestAgent } from '../agent/turns.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
+import { PinnedStore } from '../agent/PinnedStore.js';
 import { DagPersistence } from '../agent/DagPersistence.js';
-import { agentCoordinator } from '../agent/AgentCoordinator.js';
+import { agentCoordinator, type CoordinationContext } from '../agent/AgentCoordinator.js';
 import { getManagerLoop } from '../agent/ManagerLoop.js';
 import { agentRuntime } from '../agent/AgentRuntime.js';
 import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
@@ -130,13 +131,28 @@ function planKey(sessionId: string, planId: string): string {
   return `${sessionId}:${planId}`;
 }
 
-function buildTaskPrompt(task: TaskDispatchNode, sessionId?: string): string {
+async function buildTaskPrompt(task: TaskDispatchNode, sessionId?: string): Promise<string> {
   let contextBlock = '';
   if (sessionId) {
+    const budget = config.agent.contextTokenBudget;
+    const pinnedBudget = Math.floor(budget * 0.4);
+    const stateBudget = Math.floor(budget * 0.4);
+    const experienceBudget = Math.floor(budget * 0.2);
+
+    const sandbox = sandboxes.get(sessionId);
+    const hostWorkDir = sandbox?.hostWorkDir;
+
+    // 1. Pinned context
+    const pinnedPrompt = await PinnedStore.buildInjectionPrompt(sessionId, pinnedBudget, hostWorkDir);
+    if (pinnedPrompt) contextBlock += pinnedPrompt + '\n';
+
+    // 2. Project state
     const bus = getSessionContextBus(sessionId);
-    const digest = bus.getProjectDigest(400);
-    const experience = bus.getRelevantExperience(task.agentType, task.description);
+    const digest = bus.getProjectDigest(stateBudget);
     if (digest) contextBlock += digest + '\n';
+
+    // 3. Relevant experience
+    const experience = bus.getRelevantExperience(task.agentType, task.description, experienceBudget);
     if (experience) contextBlock += experience + '\n';
   }
 
@@ -195,6 +211,18 @@ function handleProviderTaskEvent(
   const execution = planExecutions.get(planKey(sessionId, queue.planId));
   if (execution) touchTask(execution, task.id);
 
+  const sandbox = sandboxes.get(sessionId);
+  const coordCtx: CoordinationContext | null = sandbox ? {
+    sessionId,
+    agentName,
+    agentType: task.agentType,
+    messageId: taskMessageId,
+    hostWorkDir: sandbox.hostWorkDir,
+    hostSandboxDir: sandbox.hostSandboxDir,
+    resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+    broadcast,
+  } : null;
+
   switch (event.type) {
     case 'thinking': {
       const chunk = event.content || '';
@@ -210,6 +238,13 @@ function handleProviderTaskEvent(
       break;
     }
     case 'tool_use':
+      if (coordCtx) {
+        agentCoordinator.onToolUse(coordCtx, {
+          type: 'tool_use',
+          toolName: event.toolName || event.toolInput?.toolName || '',
+          input: event.toolInput,
+        } as any);
+      }
       broadcast(sessionId, {
         type: 'agent_status',
         status: 'tool_use',
@@ -223,6 +258,9 @@ function handleProviderTaskEvent(
       });
       break;
     case 'tool_result':
+      if (coordCtx) {
+        agentCoordinator.onToolResult(coordCtx, event.content || '');
+      }
       broadcast(sessionId, {
         type: 'agent_status',
         status: 'tool_result',
@@ -283,6 +321,9 @@ function handleProviderTaskEvent(
       const exitCode = event.exitCode ?? 0;
       const succeeded = exitCode === 0;
       const output = getActiveTaskRun<AgentTaskQueue, TaskDispatchNode>(sessionId, agentName)?.output || '';
+      if (coordCtx) {
+        agentCoordinator.onAgentDone(coordCtx, exitCode, output.slice(0, 500));
+      }
       broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMessageId, fullContent: output, exitCode });
       broadcast(sessionId, {
         type: succeeded ? 'task_completed' : 'task_failed',
@@ -401,7 +442,7 @@ export async function processNextInQueue(
     const retryNote = dagItem && dagItem.retryCount > 0
       ? `\n\n⚠️ 上次执行失败 (attempt ${dagItem.retryCount}): 请避免重复相同操作。`
       : '';
-    const basePrompt = buildTaskPrompt(task, sessionId);
+    const basePrompt = await buildTaskPrompt(task, sessionId);
     const taskPrompt = basePrompt + retryNote;
     const taskMessageId = buildTaskMessageId(queue.planId, task.id);
     recordMessageBeforeVersion(
@@ -454,16 +495,17 @@ async function startReplForTask(
 ): Promise<void> {
   const sandbox = sandboxes.get(sessionId);
   if (!sandbox) return;
-  const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, systemPrompt: true, skills: true } });
+  const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, systemPrompt: true, skills: true, providerConfig: true } });
   if (!agent) return;
 
   const taskMsgId = buildTaskMessageId(queue.planId, task.id);
   const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({
     sessionId, agentName: agent.name, agentType: agent.name,
-    messageId: taskMsgId, hostWorkDir: sandbox.hostWorkDir,
+    messageId: taskMsgId, hostWorkDir: sandbox.hostWorkDir, hostSandboxDir: sandbox.hostSandboxDir,
     resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type), broadcast,
   });
-  const fullPrompt = `${agent.systemPrompt}${languageConsistencyPrompt(detectLanguage(task.description || task.title))}\n\n---\n\n${buildTaskPrompt(task, sessionId)}\n${coordinationPrompt}`;
+  const taskPromptPart = await buildTaskPrompt(task, sessionId);
+  const fullPrompt = `${agent.systemPrompt}${languageConsistencyPrompt(detectLanguage(task.description || task.title))}\n\n---\n\n${taskPromptPart}\n${coordinationPrompt}`;
 
   try {
     const { ProviderFactory } = await import('../agent/providers/factory.js');
@@ -507,6 +549,7 @@ async function startReplForTask(
     }).catch(() => {});
 
     const agentHomeDir = AgentDirectoryManager.getAgentHome(agent.id);
+    AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null, sessionId, agent.skills as any[] | null, agent.id);
     AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt, agent.skills as any[] | null);
     console.log(`[ws] Task REPL started: agent=${agentName} task=${task.id}`);
     await provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
@@ -676,7 +719,7 @@ export async function handleDispatchedTaskFinished(
 
     const sandbox = sandboxes.get(sessionId);
     const fileTree = sandbox ? collectFileTree(sandbox.hostWorkDir) : undefined;
-    const taskPrompt = failedTask ? buildTaskPrompt(failedTask.task, sessionId) : undefined;
+    const taskPrompt = failedTask ? await buildTaskPrompt(failedTask.task, sessionId) : undefined;
 
     // Stage 1: auto-retry (before max retries)
     if (currentRetryCount < MAX_AUTO_RETRIES) {
@@ -943,7 +986,7 @@ export async function handleReplanFailedTask(
 
   const sandbox = sandboxes.get(sessionId);
   const fileTree = sandbox ? collectFileTree(sandbox.hostWorkDir) : undefined;
-  const taskPrompt = buildTaskPrompt(failedTask.task, sessionId);
+  const taskPrompt = await buildTaskPrompt(failedTask.task, sessionId);
 
   broadcast(sessionId, {
     type: "manager_reviewing",
