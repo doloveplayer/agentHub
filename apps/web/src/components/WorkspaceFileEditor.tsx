@@ -55,6 +55,8 @@ export function WorkspaceFileEditor({
   const isImg = useMemo(() => isImageFile(path), [path]);
   const previewable = isHtml || isMd || isImg;
   const [previewMode, setPreviewMode] = useState<'code' | 'preview'>('preview');
+  const [htmlProxyUrl, setHtmlProxyUrl] = useState<string | null>(null);
+  const [htmlProxyLoading, setHtmlProxyLoading] = useState(false);
   const dirty = loaded !== null && content !== loaded.content;
 
   const setPreviewUrl = (url: string | null) => {
@@ -113,6 +115,29 @@ export function WorkspaceFileEditor({
   const loadPptxPreview = () => loadPreviewBlob((url) => setPreviewUrl(url), 'PPTX');
   const loadImagePreview = () => loadPreviewBlob((url) => setImgUrl(url), 'image');
 
+  // For HTML preview: start static server for the file's parent directory
+  useEffect(() => {
+    if (!isHtml || previewMode !== 'preview') { setHtmlProxyUrl(null); return; }
+    let cancelled = false;
+    const parentDir = path.substring(0, path.lastIndexOf('/')) || '/workspace';
+    const fileName = path.substring(path.lastIndexOf('/') + 1);
+    setHtmlProxyLoading(true);
+    setError(null);
+    api.serveStaticDir(sessionId, parentDir)
+      .then(result => {
+        if (cancelled) return;
+        const token = localStorage.getItem('agenthub_token');
+        const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+        setHtmlProxyUrl(`${result.proxyUrl}${fileName}?_t=${Date.now()}${tokenParam}`);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        setError(err?.message || 'Failed to start static server for HTML preview');
+      })
+      .finally(() => { if (!cancelled) setHtmlProxyLoading(false); });
+    return () => { cancelled = true; };
+  }, [sessionId, path, isHtml, previewMode]);
+
   useEffect(() => {
     setLoaded(null);
     setContent('');
@@ -120,6 +145,7 @@ export function WorkspaceFileEditor({
     setImgUrl(null);
     if (previewablePptx) loadPptxPreview();
     else if (isImg && previewMode === 'preview') loadImagePreview();
+    else if (isHtml && previewMode === 'preview') {} // handled by static server effect above
     else if (!isImg || previewMode === 'code') loadFile();
     return () => {
       setPreviewUrl(null);
@@ -271,12 +297,17 @@ export function WorkspaceFileEditor({
         </div>
       ) : isHtml && previewMode === 'preview' ? (
         <div className="min-h-0 flex-1 bg-white">
-          <iframe
-            src={api.getHtmlPreviewUrl(sessionId, path)}
-            className="w-full h-full border-0"
-            sandbox="allow-scripts allow-same-origin"
-            title="HTML Preview"
-          />
+          {htmlProxyLoading && (
+            <div className="flex h-full items-center justify-center text-xs text-hub-muted">Starting preview server...</div>
+          )}
+          {htmlProxyUrl && (
+            <iframe
+              src={htmlProxyUrl}
+              className="w-full h-full border-0"
+              sandbox="allow-scripts allow-same-origin allow-popups allow-downloads"
+              title="HTML Preview"
+            />
+          )}
         </div>
       ) : isMd && previewMode === 'preview' ? (
         <div className="min-h-0 flex-1 overflow-auto bg-hub-root px-6 py-4">

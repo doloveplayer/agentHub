@@ -2,9 +2,13 @@ import { Hono } from 'hono';
 import { chromium } from 'playwright';
 import type http from 'http';
 import net from 'net';
+import Docker from 'dockerode';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
+import { config } from '../config.js';
 import { SandboxManager } from '../agent/SandboxManager.js';
+
+const docker = new Docker({ socketPath: config.sandbox.hostDockerSocket });
 
 const preview = new Hono();
 preview.use('*', authMiddleware);
@@ -12,6 +16,12 @@ preview.use('*', authMiddleware);
 async function getSessionContainer(sessionId: string, userId: string): Promise<string | null> {
   const session = await prisma.session.findUnique({ where: { id: sessionId } });
   if (!session || session.userId !== userId || !session.sandboxContainerId) return null;
+  // Verify container actually exists (DB reference may be stale)
+  try {
+    await docker.getContainer(session.sandboxContainerId).inspect();
+  } catch {
+    return null;
+  }
   return session.sandboxContainerId;
 }
 
@@ -62,7 +72,14 @@ preview.post('/:sessionId/serve-static', async (c) => {
     staticServers.delete(sessionId);
   }
 
-  // Pick a port not already in use
+  try {
+    // Check directory exists before attempting to serve
+    const dirCheck = await SandboxManager.execCapture(containerId, `test -d "${directory}" && echo ok || echo missing`);
+    if (dirCheck !== 'ok') {
+      return c.json({ error: `Directory not found: ${directory}` }, 404);
+    }
+
+    // Pick a port not already in use
   const usedPorts = await SandboxManager.detectPorts(containerId);
   let port = STATIC_SERVER_BASE_PORT;
   while (usedPorts.includes(port) && port < STATIC_SERVER_BASE_PORT + 20) port++;
@@ -72,10 +89,11 @@ preview.post('/:sessionId/serve-static', async (c) => {
 
   // Write a minimal Node.js static server script to the sandbox and start it.
   // Uses the container's own Node runtime — zero extra deps.
+  const dirEscaped = directory.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   await SandboxManager.execCapture(containerId,
     `cat > /tmp/_serve.js << 'ENDOFSCRIPT'
 const http=require("http"),fs=require("fs"),path=require("path");
-const dir="${directory}";
+const dir="${dirEscaped}";
 const mime={html:"text/html",js:"application/javascript",css:"text/css",json:"application/json",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",gif:"image/gif",svg:"image/svg+xml",webp:"image/webp",ico:"image/x-icon",woff2:"font/woff2",txt:"text/plain",xml:"application/xml"};
 http.createServer((req,res)=>{
   const safe=path.normalize(req.url.split("?")[0]).replace(/\.\\.\\//g,"");
@@ -89,7 +107,7 @@ http.createServer((req,res)=>{
 ENDOFSCRIPT`
   );
   SandboxManager.execShell(containerId,
-    `nohup node /tmp/_serve.js > /dev/null 2>&1 &`
+    `nohup node /tmp/_serve.js > /tmp/_serve.log 2>&1 &`
   );
 
   // Wait for the server to bind the port
@@ -99,7 +117,10 @@ ENDOFSCRIPT`
     const ports = await SandboxManager.detectPorts(containerId);
     if (ports.includes(port)) { ready = true; break; }
   }
-  if (!ready) return c.json({ error: 'Static server failed to start' }, 500);
+  if (!ready) {
+    const log = await SandboxManager.execCapture(containerId, 'cat /tmp/_serve.log 2>/dev/null || echo "(no log)"');
+    return c.json({ error: `Static server failed to start: ${log}` }, 500);
+  }
 
   // Set up port forwarding
   const forward = await SandboxManager.portForward(containerId, port);
@@ -111,6 +132,9 @@ ENDOFSCRIPT`
     proxyUrl: `/api/preview/${sessionId}/proxy/${port}/`,
     url: `http://localhost:${forward.hostPort}`,
   });
+  } catch (err: any) {
+    return c.json({ error: `Sandbox command failed: ${err?.message || err}` }, 502);
+  }
 });
 
 preview.post('/:sessionId/screenshot', async (c) => {
@@ -158,6 +182,14 @@ preview.all('/:sessionId/proxy/:port/*', async (c) => {
   responseHeaders.delete('content-security-policy');
   responseHeaders.delete('x-frame-options');
 
+  // Set cookie so subsequent iframe navigations carry the token automatically
+  const reqUrl = new URL(c.req.url);
+  const tokenParam = reqUrl.searchParams.get('token');
+  if (tokenParam) {
+    responseHeaders.set('Set-Cookie',
+      `agenthub_token=${encodeURIComponent(tokenParam)}; Path=/api/preview/${sessionId}/; SameSite=Lax; HttpOnly=false`);
+  }
+
   // Inject HMR WebSocket polyfill so Vite's HMR client connects through the proxy
   const ct = responseHeaders.get('content-type') || '';
   if (ct.includes('text/html') && upstream.body) {
@@ -192,7 +224,8 @@ function injectHmrScript(html: string, sessionId: string, port: number): string 
   const proxyPath = `/api/preview/${sessionId}/proxy/${port}`;
   const hmrScript = `<script>(${hmrPolyfill.toString()})(${JSON.stringify(proxyPath)})</script>`;
   const selScript = `<script>(${selectionCaptureScript.toString()})()</script>`;
-  const combined = hmrScript + selScript;
+  const tokenScript = `<script>(${tokenPersistenceScript.toString()})()</script>`;
+  const combined = hmrScript + selScript + tokenScript;
   if (html.includes('<head>')) {
     return html.replace('<head>', `<head>${combined}`);
   }
@@ -224,6 +257,63 @@ function hmrPolyfill(proxyPath: string): void {
     return new OrigWebSocket(target, protocols);
   };
   (window as any).WebSocket.prototype = OrigWebSocket.prototype;
+}
+
+/** Token persistence script — injected into every proxied HTML page.
+ *  Reads ?token= from the initial URL, stores it in sessionStorage,
+ *  and appends it to all same-origin link clicks/form submissions. */
+function tokenPersistenceScript(): void {
+  const sp = new URLSearchParams(location.search);
+  const initial = sp.get('token');
+  if (initial) sessionStorage.setItem('_apitok', initial);
+
+  function ensureToken(url: string): string {
+    try {
+      const u = new URL(url, location.origin);
+      if (u.origin !== location.origin) return url;
+      const tok = sessionStorage.getItem('_apitok');
+      if (!tok) return url;
+      u.searchParams.set('token', tok);
+      return u.pathname + u.search + u.hash;
+    } catch { return url; }
+  }
+
+  document.addEventListener('click', (e) => {
+    const a = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null;
+    if (!a || a.target === '_blank' || !a.href) return;
+    const tok = sessionStorage.getItem('_apitok');
+    if (!tok) return;
+    try {
+      const u = new URL(a.href, location.origin);
+      if (u.origin !== location.origin) return;
+      if (!u.searchParams.has('token')) {
+        e.preventDefault();
+        u.searchParams.set('token', tok);
+        location.href = u.pathname + u.search + u.hash;
+      }
+    } catch { /* ignore */ }
+  }, true);
+
+  const origPushState = history.pushState;
+  history.pushState = function (...args: any[]) {
+    if (args[1] && typeof args[0] === 'string') args[0] = ensureToken(args[0]);
+    return origPushState.apply(this, args as any);
+  };
+  const origReplaceState = history.replaceState;
+  history.replaceState = function (...args: any[]) {
+    if (args[1] && typeof args[0] === 'string') args[0] = ensureToken(args[0]);
+    return origReplaceState.apply(this, args as any);
+  };
+
+  window.addEventListener('pageshow', () => {
+    const tok = sessionStorage.getItem('_apitok');
+    if (!tok) return;
+    const u = new URL(location.href);
+    if (!u.searchParams.has('token')) {
+      u.searchParams.set('token', tok);
+      history.replaceState(null, '', u.pathname + u.search + u.hash);
+    }
+  });
 }
 
 /** Selection capture script — injected alongside HMR polyfill.

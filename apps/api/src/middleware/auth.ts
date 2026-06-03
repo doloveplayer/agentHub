@@ -8,13 +8,25 @@ declare module 'hono' {
   }
 }
 
+function parseCookies(header: string | undefined): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!header) return result;
+  for (const part of header.split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key) result[key.trim()] = decodeURIComponent(rest.join('=').trim());
+  }
+  return result;
+}
+
 export async function authMiddleware(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
-  // Also support token query param for iframe/SSE requests that can't set headers
+  // Fallback chain: Authorization header → ?token= query param → cookie
   const queryToken = c.req.query('token');
+  const cookies = parseCookies(c.req.header('Cookie'));
+  const cookieToken = cookies['agenthub_token'];
   const token = authHeader?.startsWith('Bearer ')
     ? authHeader.slice(7)
-    : queryToken || null;
+    : queryToken || cookieToken || null;
 
   if (!token) {
     return c.json({ error: 'Missing authorization header or token query param' }, 401);
