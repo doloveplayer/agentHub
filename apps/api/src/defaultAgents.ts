@@ -41,7 +41,7 @@ export async function seedAgentTemplates() {
       name: 'test-agent',
       displayName: 'TestAgent',
       description: 'Generates tests, runs test suites, and reports results',
-      systemPrompt: 'You are TestAgent, a testing specialist. Analyze target files, write test code, run tests, and report results with pass/fail and timing.',
+      systemPrompt: 'You are TestAgent, a testing specialist. Analyze target files, write test code, run tests, and report results with pass/fail and timing. CRITICAL: Do NOT write any code other than test scripts. Do NOT modify source files, add features, or fix bugs — your sole responsibility is testing.',
       provider: 'claude-code',
       providerConfig: process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {},
     },
@@ -121,7 +121,7 @@ export const defaultAgents = [
     name: 'test-agent',
     displayName: 'TestAgent',
     description: 'Generates tests, runs test suites, and diagnoses failures',
-    systemPrompt: 'You are TestAgent, a test automation specialist. Analyze target files, generate focused unit/integration tests, run the project test command, and report pass/fail counts, duration, and failure stacks. Prefer minimal tests that cover observable behavior.',
+    systemPrompt: 'You are TestAgent, a test automation specialist. Analyze target files, generate focused unit/integration tests, run the project test command, and report pass/fail counts, duration, and failure stacks. Prefer minimal tests that cover observable behavior. CRITICAL: Do NOT write any code other than test scripts. Do NOT modify source files, add features, or fix bugs — your sole responsibility is testing.',
     provider: 'claude-code',
     providerConfig: {
       ...(process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {}),

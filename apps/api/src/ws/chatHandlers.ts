@@ -91,6 +91,25 @@ export async function ensureSandboxReady(sessionId: string, sessionType?: string
     }).catch((err: any) => console.error('[recovery] getIncompleteForSession failed:', err.message));
   }).catch((err: any) => console.error('[recovery] CheckpointManager import failed:', err.message));
 
+  // Initialize inbox files for all session agents
+  try {
+    const sessionAgents = await prisma.sessionAgent.findMany({
+      where: { sessionId },
+      select: { agent: { select: { name: true } } },
+    });
+    const agentNames: string[] = [];
+    for (const sa of sessionAgents) {
+      InboxManager.init(sb.hostSandboxDir, sa.agent.name);
+      agentNames.push(sa.agent.name);
+    }
+    // Populate agent name cache for inbox resolution
+    import('../agent/sessionAgentCache.js').then(({ setSessionAgentNames }) => {
+      setSessionAgentNames(sessionId, agentNames);
+    }).catch(() => {});
+  } catch (err: any) {
+    console.error('[ws] Inbox init failed:', err.message);
+  }
+
   sandboxInitialized.add(sessionId);
   return sb;
 }
@@ -161,7 +180,7 @@ async function resolveDefaultAgentForSession(sessionId: string) {
   return selectDefaultAgent(session.type, sessionAgents, allAgents);
 }
 
-async function startNextSequential(sessionId: string): Promise<void> {
+export async function startNextSequential(sessionId: string): Promise<void> {
   const queue = sequentialQueues.get(sessionId);
   if (!queue || queue.length === 0) { sequentialQueues.delete(sessionId); return; }
   const next = queue.shift()!;

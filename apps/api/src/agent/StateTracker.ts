@@ -41,8 +41,15 @@ export class StateTracker {
   }
 
   updateTokenUsage(agentMessageId: string, usage: AgentSnapshot['tokenUsage']): void {
-    const snap = this.snapshots.get(agentMessageId);
-    if (!snap) return;
+    // Auto-create snapshot if it doesn't exist (needed for DAG task path)
+    let snap = this.snapshots.get(agentMessageId);
+    if (!snap) {
+      snap = {
+        agentId: '', agentMessageId, status: 'running',
+        openedFiles: [], subAgents: [], updatedAt: Date.now(),
+      };
+      this.snapshots.set(agentMessageId, snap);
+    }
     // Accumulate token usage across multiple API calls per message
     const prev = snap.tokenUsage;
     snap.tokenUsage = {

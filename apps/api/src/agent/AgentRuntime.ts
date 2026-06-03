@@ -13,6 +13,9 @@ import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
 import { IntentParser } from './IntentParser.js';
 import { InboxManager } from './InboxManager.js';
+import { agentCoordinator } from './AgentCoordinator.js';
+import { MilestoneBroadcaster } from './MilestoneBroadcaster.js';
+import { resolveAgentNameInCache } from './sessionAgentCache.js';
 import { broadcast, clearRunningAgent, quoteBackfillMap } from '../ws/state.js';
 
 interface QueueItem {
@@ -52,6 +55,7 @@ interface AgentEntry {
   needsCompression: boolean;           // set when contextPct > threshold
   compressionPhase: 'none' | 'summarizing'; // compression state
   compressionPendingPrompt: string | null;   // stores user prompt during compression
+  intentScanOffset: number;            // position in accumulatedOutput already scanned for intents
 }
 
 import {
@@ -77,6 +81,33 @@ async function resolveAgentByName(
     });
     return sa?.agent ?? null;
   } catch { return null; }
+}
+
+/**
+ * Synchronous agent name resolver for AgentCoordinator callbacks.
+ * Supports prefix matching: 'code-agent' → 'code-agent-6064e856'.
+ * Uses the agentRuntime singleton's agents map to find matching names.
+ */
+function resolveAgentByNameSync(sessionId: string, agentType: string): string | null {
+  const normalized = agentType.toLowerCase();
+  // Access the private agents map through the singleton
+  const agentsMap = (agentRuntime as any).agents as Map<string, AgentEntry>;
+  if (agentsMap) {
+    for (const [id, entry] of agentsMap) {
+      const name = entry.currentAgentName || entry.lastAgentId;
+      if (name) {
+        const lower = name.toLowerCase();
+        if (lower === normalized || lower.startsWith(normalized + '-')) {
+          return name;
+        }
+      }
+    }
+  }
+  // Fallback to session agent cache (populated at sandbox init, shared with taskDispatcher)
+  const cached = resolveAgentNameInCache(sessionId, agentType);
+  if (cached) return cached;
+  // Target agent not found — return null to skip inbox write
+  return null;
 }
 
 function buildCompressionPrompt(contextPct: number): string {
@@ -167,6 +198,7 @@ class AgentRuntime {
     entry.lastMessageId = agentMessageId || null;
     entry.lastAgentId = agentId;
     entry.accumulatedOutput = ''; // Reset accumulated output for new task
+    entry.intentScanOffset = 0;
     this.clearIdleTimer(entry);
 
     // --- Context Compression ---
@@ -265,6 +297,7 @@ class AgentRuntime {
       needsCompression: false,
       compressionPhase: 'none' as const,
       compressionPendingPrompt: null,
+      intentScanOffset: 0,
     };
 
     provider.onEvent((event: UnifiedAgentEvent) => {
@@ -287,6 +320,34 @@ class AgentRuntime {
           // Accumulate output for all agents so we can persist on completion
           entry.accumulatedOutput += event.content;
           broadcast(sessionId, { type: 'stream_chunk', content: event.content, agentMessageId });
+
+          // Real-time NEEDS HELP intent detection: scan new content as it arrives
+          if (event.content.includes('NEEDS HELP')) {
+            const newContent = entry.accumulatedOutput.slice(entry.intentScanOffset);
+            const intents = IntentParser.scan(newContent);
+            for (const intent of intents) {
+              resolveAgentByName(sessionId, intent.targetAgentName).then(target => {
+                if (target) {
+                  InboxManager.write(entry.hostWorkDir, target.name, {
+                    type: 'help_request',
+                    id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    from: entry.currentAgentName || entry.currentAgentId || 'unknown',
+                    to: target.name,
+                    summary: intent.description,
+                    risk: 'low',
+                    timestamp: Date.now(),
+                  }, sessionId);
+                  broadcast(sessionId, {
+                    type: 'inbox_update',
+                    agentName: target.name,
+                    summary: intent.description,
+                    timestamp: Date.now(),
+                  });
+                }
+              });
+            }
+            entry.intentScanOffset = entry.accumulatedOutput.length;
+          }
         }
         break;
       case 'tool_use':
@@ -296,6 +357,51 @@ class AgentRuntime {
           agentMessageId,
           details: { toolName: event.toolName, input: event.toolInput },
         });
+        // Wire AgentCoordinator: permission check + event routing
+        {
+          const toolInput = event.toolInput || {};
+          const filePath = (toolInput as any).file_path || (toolInput as any).path || (toolInput as any).filePath;
+          agentCoordinator.onToolUse({
+            sessionId,
+            agentName: entry.currentAgentName || entry.currentAgentId || 'unknown',
+            agentType: entry.currentAgentName || entry.currentAgentId || 'unknown',
+            messageId: agentMessageId || '',
+            hostWorkDir: entry.hostWorkDir,
+            resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
+            broadcast,
+          }, {
+            type: 'tool_use',
+            toolName: event.toolName || '',
+            input: toolInput,
+          } as any);
+          // Broadcast file production milestone for chat agents
+          MilestoneBroadcaster.classify({
+            sessionId,
+            agentName: entry.currentAgentName || entry.currentAgentId || 'unknown',
+            agentMessageId: agentMessageId || '',
+            eventType: event.toolName || '',
+            toolName: event.toolName || '',
+            filePath: typeof filePath === 'string' ? filePath : undefined,
+          });
+        }
+        break;
+      case 'tool_result':
+        broadcast(sessionId, {
+          type: 'agent_status',
+          status: 'tool_result',
+          agentMessageId,
+          details: { resultPreview: (event.content || '').slice(0, 200) },
+        });
+        // Wire AgentCoordinator: route tool results
+        agentCoordinator.onToolResult({
+          sessionId,
+          agentName: entry.currentAgentName || entry.currentAgentId || 'unknown',
+          agentType: entry.currentAgentName || entry.currentAgentId || 'unknown',
+          messageId: agentMessageId || '',
+          hostWorkDir: entry.hostWorkDir,
+          resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
+          broadcast,
+        }, event.content || '');
         break;
       case 'done':
         // --- Handle compression completion ---
@@ -305,6 +411,7 @@ class AgentRuntime {
           entry.compressionPhase = 'none';
           entry.compressionPendingPrompt = null;
           entry.accumulatedOutput = '';
+          entry.intentScanOffset = 0;
 
           try {
             const summaryDir = resolve(entry.hostWorkDir, `_agent_${entry.currentAgentId || 'agent'}`);
@@ -330,6 +437,17 @@ class AgentRuntime {
         // --- End compression completion ---
 
         broadcast(sessionId, { type: 'stream_end', exitCode: event.exitCode ?? 0, agentMessageId });
+
+        // Wire AgentCoordinator: route agent completion events
+        agentCoordinator.onAgentDone({
+          sessionId,
+          agentName: entry.currentAgentName || entry.currentAgentId || 'unknown',
+          agentType: entry.currentAgentName || entry.currentAgentId || 'unknown',
+          messageId: agentMessageId || '',
+          hostWorkDir: entry.hostWorkDir,
+          resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
+          broadcast,
+        }, event.exitCode ?? 0, entry.accumulatedOutput?.slice(0, 3000) || '');
 
         // Route NEEDS HELP intents to target agent inboxes
         if (entry.accumulatedOutput) {
@@ -411,6 +529,7 @@ class AgentRuntime {
             }
           }
           entry.accumulatedOutput = '';
+          entry.intentScanOffset = 0;
         }
 
         // Backfill QuoteReference with the agent's response message ID (exact ID match)
@@ -479,6 +598,7 @@ class AgentRuntime {
         // Reset planner accumulated output
         if (entry.isPlanner) {
           entry.accumulatedOutput = '';
+          entry.intentScanOffset = 0;
         }
         entry.currentSession = null;
         entry.currentMessageId = null;
@@ -511,6 +631,7 @@ class AgentRuntime {
                 cacheRead: cumulative.cacheRead,
                 cacheCreate: cumulative.cacheCreate,
                 contextPct: calcPct(cumulative.input, entry.model),
+                model: entry.model,  // pass model to frontend so it doesn't need to guess
               },
             },
           });
@@ -560,8 +681,32 @@ class AgentRuntime {
       entry.currentSession = next.sessionId;
       entry.currentMessageId = next.agentMessageId || null;
       entry.currentAgentId = agentId;
+      // Reset intent scan offset for the new prompt
+      entry.intentScanOffset = 0;
+      entry.accumulatedOutput = '';
       entry.provider.sendPrompt(next.prompt);
     } else {
+      // Agent becomes idle — check if other agents have pending inbox messages
+      const sessionId = entry.currentSession || entry.lastSessionId;
+      if (sessionId && sessionId !== 'unknown') {
+        import('./InboxWakeup.js').then(({ InboxWakeup }) => {
+          // Check inboxes of agents known to this runtime
+          for (const [id, otherEntry] of this.agents) {
+            const name = otherEntry.currentAgentName || otherEntry.lastAgentId;
+            if (name && name !== (entry.currentAgentName || entry.lastAgentId)) {
+              InboxWakeup.check(
+                sessionId, name, entry.hostWorkDir,
+                (n) => this.isAgentActive(n),
+                broadcast,
+              );
+            }
+          }
+        }).catch(() => {});
+        // Drain sequential multi-@mention queue (dynamic import to avoid circular dep)
+        import('../ws/chatHandlers.js').then(({ startNextSequential }) => {
+          startNextSequential(sessionId);
+        }).catch(() => {});
+      }
       entry.idleTimer = setTimeout(() => {
         this.stopContainer(agentId);
       }, config.agentContainer.idleTimeoutMs);
@@ -601,6 +746,15 @@ class AgentRuntime {
   /** Check if agent is currently running */
   isRunning(agentId: string): boolean {
     return this.agents.has(agentId);
+  }
+
+  /** Check if an agent (by name) is currently active (has a current session). */
+  isAgentActive(agentName: string): boolean {
+    for (const [id, entry] of this.agents) {
+      const name = entry.currentAgentName || entry.lastAgentId;
+      if (name === agentName && entry.currentSession !== null) return true;
+    }
+    return false;
   }
 
   /** Switch agent to a different session's container without losing persistent identity. */

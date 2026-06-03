@@ -176,6 +176,26 @@ export const DEFAULT_RULES: RouteRule[] = [
     risk: 'low',
   },
   {
+    id: 'review-report-file-written',
+    eventType: 'tool_use',
+    toolName: 'Write',
+    senderTypes: ['review-agent'],
+    filePathPattern: '**/*review*',
+    notifyTypes: ['code-agent', 'planner'],
+    priority: 12,
+    summaryTemplate: '[{{senderName}}] wrote review report to {{filePath}} — check and fix issues',
+    risk: 'high',
+  },
+  {
+    id: 'code-agent-done-after-fix',
+    eventType: 'done',
+    senderTypes: ['code-agent'],
+    notifyTypes: ['review-agent', 'test-agent'],
+    priority: 6,
+    summaryTemplate: '[{{senderName}}] completed code changes — re-review and re-test needed',
+    risk: 'high',
+  },
+  {
     id: 'agent-done-notify-planner',
     eventType: 'done',
     exitCode: 0,
@@ -249,9 +269,13 @@ export class EventRoutingRules {
     // toolName: if specified on rule, must match event
     if (rule.toolName !== undefined && rule.toolName !== event.toolName) return false;
 
-    // senderTypes: if specified and non-empty, must include event senderType
+    // senderTypes: if specified and non-empty, must include event senderType.
+    // Supports prefix matching: 'review-agent' matches 'review-agent-6064e856'.
     if (rule.senderTypes && rule.senderTypes.length > 0) {
-      if (!rule.senderTypes.includes(event.senderType)) return false;
+      const matches = rule.senderTypes.some(
+        (t) => event.senderType === t || event.senderType.startsWith(t + '-')
+      );
+      if (!matches) return false;
     }
 
     // exitCode: if specified on rule, must match event (undefined = no check)
