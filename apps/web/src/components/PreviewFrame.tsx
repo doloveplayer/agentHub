@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink, RefreshCcw } from 'lucide-react';
+import { ExternalLink, FolderOpen, Globe, RefreshCcw } from 'lucide-react';
 import { api } from '../lib/api';
 import { ScreenshotComparisonCard } from './ScreenshotComparisonCard';
 
@@ -24,6 +24,23 @@ export function PreviewFrame({ sessionId, onSelection }: Props) {
   const [afterShot, setAfterShot] = useState('');
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [staticDir, setStaticDir] = useState('/workspace');
+  const [serving, setServing] = useState(false);
+  const [serveError, setServeError] = useState<string | null>(null);
+
+  const serveStatic = async () => {
+    setServing(true);
+    setServeError(null);
+    try {
+      const result = await api.serveStaticDir(sessionId, staticDir);
+      setUrl(result.proxyUrl);
+      setDirectUrl(result.url);
+    } catch (err: any) {
+      setServeError(err?.message || 'Failed to start static server');
+    } finally {
+      setServing(false);
+    }
+  };
 
   const refreshPorts = async () => {
     setLoading(true);
@@ -130,6 +147,26 @@ export function PreviewFrame({ sessionId, onSelection }: Props) {
           </>
         )}
       </div>
+      <div className="flex items-center gap-2 border-b border-hub px-3 py-2">
+        <FolderOpen className="h-3.5 w-3.5 text-hub-tertiary shrink-0" />
+        <input
+          value={staticDir}
+          onChange={(e) => setStaticDir(e.target.value)}
+          placeholder="/workspace"
+          className="h-8 flex-1 rounded border border-hub bg-hub-input px-2 text-xs text-hub-primary font-mono"
+        />
+        <button
+          onClick={serveStatic}
+          disabled={serving || !staticDir}
+          className="inline-flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50 shrink-0"
+        >
+          <Globe className="h-3.5 w-3.5" />
+          {serving ? 'Starting...' : 'Serve'}
+        </button>
+      </div>
+      {serveError && (
+        <div className="border-b border-hub bg-hub-danger/10 px-3 py-2 text-xs text-hub-danger">{serveError}</div>
+      )}
       {url ? (
         <iframe
           key={`${url}-${refreshKey}`}

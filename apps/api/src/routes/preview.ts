@@ -39,6 +39,80 @@ preview.post('/:sessionId/forward', async (c) => {
   });
 });
 
+// Track active static servers per session so we can stop old ones
+// and avoid port conflicts.
+const staticServers = new Map<string, { port: number; directory: string }>();
+
+const STATIC_SERVER_BASE_PORT = 8765;
+
+preview.post('/:sessionId/serve-static', async (c) => {
+  const { userId } = c.get('user');
+  const sessionId = c.req.param('sessionId');
+  const containerId = await getSessionContainer(sessionId, userId);
+  if (!containerId) return c.json({ error: 'Sandbox not ready' }, 404);
+
+  const body = await c.req.json().catch(() => ({}));
+  const directory = String(body.directory || '/workspace');
+  if (!directory.startsWith('/workspace')) return c.json({ error: 'Directory must be under /workspace' }, 400);
+
+  // Kill any previous static server for this session
+  const prev = staticServers.get(sessionId);
+  if (prev) {
+    SandboxManager.execShell(containerId, `pkill -f "/tmp/_serve.js" 2>/dev/null || true`);
+    staticServers.delete(sessionId);
+  }
+
+  // Pick a port not already in use
+  const usedPorts = await SandboxManager.detectPorts(containerId);
+  let port = STATIC_SERVER_BASE_PORT;
+  while (usedPorts.includes(port) && port < STATIC_SERVER_BASE_PORT + 20) port++;
+  if (port >= STATIC_SERVER_BASE_PORT + 20) {
+    return c.json({ error: 'No available port for static server' }, 503);
+  }
+
+  // Write a minimal Node.js static server script to the sandbox and start it.
+  // Uses the container's own Node runtime — zero extra deps.
+  await SandboxManager.execCapture(containerId,
+    `cat > /tmp/_serve.js << 'ENDOFSCRIPT'
+const http=require("http"),fs=require("fs"),path=require("path");
+const dir="${directory}";
+const mime={html:"text/html",js:"application/javascript",css:"text/css",json:"application/json",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",gif:"image/gif",svg:"image/svg+xml",webp:"image/webp",ico:"image/x-icon",woff2:"font/woff2",txt:"text/plain",xml:"application/xml"};
+http.createServer((req,res)=>{
+  const safe=path.normalize(req.url.split("?")[0]).replace(/\.\\.\\//g,"");
+  const file=path.join(dir,safe==="/"?"/index.html":safe);
+  fs.readFile(file,(err,data)=>{
+    if(err){res.writeHead(404);res.end("Not found");return}
+    res.writeHead(200,{"Content-Type":mime[path.extname(file).slice(1)]||"application/octet-stream"});
+    res.end(data);
+  });
+}).listen(${port});
+ENDOFSCRIPT`
+  );
+  SandboxManager.execShell(containerId,
+    `nohup node /tmp/_serve.js > /dev/null 2>&1 &`
+  );
+
+  // Wait for the server to bind the port
+  let ready = false;
+  for (let i = 0; i < 10; i++) {
+    await new Promise(r => setTimeout(r, 300));
+    const ports = await SandboxManager.detectPorts(containerId);
+    if (ports.includes(port)) { ready = true; break; }
+  }
+  if (!ready) return c.json({ error: 'Static server failed to start' }, 500);
+
+  // Set up port forwarding
+  const forward = await SandboxManager.portForward(containerId, port);
+  staticServers.set(sessionId, { port, directory });
+
+  return c.json({
+    port,
+    directory,
+    proxyUrl: `/api/preview/${sessionId}/proxy/${port}/`,
+    url: `http://localhost:${forward.hostPort}`,
+  });
+});
+
 preview.post('/:sessionId/screenshot', async (c) => {
   const { userId } = c.get('user');
   const sessionId = c.req.param('sessionId');

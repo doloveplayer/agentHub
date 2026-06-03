@@ -161,6 +161,11 @@ export const api = {
 
   getPreviewPorts: (sessionId: string) => request<{ ports: number[] }>(`/preview/${sessionId}/ports`),
 
+  serveStaticDir: (sessionId: string, directory: string) =>
+    request<{ port: number; directory: string; proxyUrl: string; url: string }>(`/preview/${sessionId}/serve-static`, {
+      method: 'POST',
+      body: JSON.stringify({ directory }),
+    }),
   forwardPreviewPort: (sessionId: string, port: number) =>
     request<{ containerPort: number; hostPort: number; url: string; proxyUrl: string }>(`/preview/${sessionId}/forward`, {
       method: 'POST',
