@@ -178,6 +178,8 @@ export function useChat(sessionId: string) {
               // Transition queued → streaming when agent starts processing
               if (data.status === 'running' && data.agentMessageId) {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                // Touch session updatedAt for sort order on activity
+                useAppStore.getState().updateSessionInList(targetSessionId, { updatedAt: new Date().toISOString() });
                 // Replace queued placeholder with empty content so stream_chunk appends cleanly
                 const store = useAppStore.getState();
                 const msg = store.messages[targetSessionId]?.find(m => m.id === data.agentMessageId);
@@ -342,6 +344,16 @@ export function useChat(sessionId: string) {
             case 'session_renamed':
               if (data.sessionId && data.newTitle) {
                 useAppStore.getState().updateSessionInList(data.sessionId, { title: data.newTitle });
+              }
+              break;
+            case 'session_pinned':
+              if (data.sessionId && data.pinned !== undefined) {
+                useAppStore.getState().updateSessionInList(data.sessionId, { pinned: data.pinned });
+              }
+              break;
+            case 'session_archived':
+              if (data.sessionId && data.archived !== undefined) {
+                useAppStore.getState().updateSessionInList(data.sessionId, { archived: data.archived });
               }
               break;
             case 'agent_joined':

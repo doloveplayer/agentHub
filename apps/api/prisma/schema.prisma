@@ -31,6 +31,8 @@ model Session {
   workspacePath      String?        // Custom workspace path on host (null = use default sandbox)
   workspaceMode      String         @default("sandbox") // "sandbox" | "custom"
   writePermission    String         @default("ask")     // "ask" | "auto"
+  pinned             Boolean        @default(false)
+  archived           Boolean        @default(false)
   user               User           @relation(fields: [userId], references: [id])
   messages           Message[]
   agents             SessionAgent[]

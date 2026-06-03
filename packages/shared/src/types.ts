@@ -39,6 +39,8 @@ export interface Session {
   writePermission?: WritePermission;
   agents?: SessionAgentInfo[];
   lastMessage?: { id: string; content: string; senderType: string; createdAt: string } | null;
+  pinned?: boolean;
+  archived?: boolean;
   createdAt: string;
   updatedAt: string;
 }

@@ -45,7 +45,10 @@ export const api = {
 
   getMe: () => request<any>('/auth/me'),
 
-  getSessions: () => request<any[]>('/sessions'),
+  getSessions: (includeArchived?: boolean) => {
+    const query = includeArchived ? '?includeArchived=true' : '';
+    return request<any[]>(`/sessions${query}`);
+  },
 
   createSession: (body?: { type?: string; agentIds?: string[]; customAgent?: { name: string; displayName: string; description: string; systemPrompt: string } }) =>
     request<any>('/sessions', { method: 'POST', body: JSON.stringify(body ?? {}) }),
@@ -54,7 +57,7 @@ export const api = {
 
   deleteSession: (id: string) => request<void>(`/sessions/${id}`, { method: 'DELETE' }),
 
-  updateSession: (id: string, body: { title?: string; permissionMode?: string; pinned?: boolean }) =>
+  updateSession: (id: string, body: { title?: string; permissionMode?: string; pinned?: boolean; archived?: boolean }) =>
     request<any>(`/sessions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
 
   sendMessage: (sessionId: string, content: string, mentions?: { agentId: string; agentName: string; subPrompt: string }[]) =>

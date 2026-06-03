@@ -58,6 +58,9 @@ chat.post('/send', async (c) => {
     data: { sessionId, senderType: 'human', content, status: 'done' },
   });
 
+  // Touch session updatedAt so it reflects recent activity for sorting
+  prisma.session.update({ where: { id: sessionId }, data: { updatedAt: new Date() } }).catch(() => {});
+
   // Create agent placeholder messages — one per mention, or one generic if no mentions
   const defaultAgent = selectDefaultAgent(
     session.type,

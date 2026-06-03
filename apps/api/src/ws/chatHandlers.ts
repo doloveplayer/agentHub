@@ -295,6 +295,8 @@ export async function handleChatMessage(
     } catch {
       try {
         await prisma.message.create({ data: { id: mention.messageId, sessionId, senderType: 'agent', agentId: mention.agentId || null, content: '', status: 'streaming' } });
+        // Touch session updatedAt for sorting
+        prisma.session.update({ where: { id: sessionId }, data: { updatedAt: new Date() } }).catch(() => {});
       } catch {
         broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: 'Failed to create message' });
         decRunningAgentCount();
@@ -475,6 +477,7 @@ export function handleStopAgent(sessionId: string, data: { agentMessageId: strin
   if (!stateMap) {
     // Agent may have already finished — update DB and broadcast stream_end gracefully
     prisma.message.update({ where: { id: data.agentMessageId }, data: { status: 'done' } }).catch(() => {});
+    prisma.session.update({ where: { id: sessionId }, data: { updatedAt: new Date() } }).catch(() => {});
     broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });
     return;
   }
@@ -482,6 +485,7 @@ export function handleStopAgent(sessionId: string, data: { agentMessageId: strin
   if (!st) {
     // Agent not in active state — gracefully mark as done
     prisma.message.update({ where: { id: data.agentMessageId }, data: { status: 'done' } }).catch(() => {});
+    prisma.session.update({ where: { id: sessionId }, data: { updatedAt: new Date() } }).catch(() => {});
     broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });
     return;
   }
@@ -519,6 +523,7 @@ export function handleStopAgent(sessionId: string, data: { agentMessageId: strin
   drainPerSessionQueue(sessionId);
   if (stateMap.size === 0) agentStates.delete(sessionId);
   prisma.message.update({ where: { id: data.agentMessageId }, data: { status: 'done' } }).catch(() => {});
+  prisma.session.update({ where: { id: sessionId }, data: { updatedAt: new Date() } }).catch(() => {});
   broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });
 }
 
