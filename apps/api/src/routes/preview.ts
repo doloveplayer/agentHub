@@ -92,15 +92,12 @@ preview.post("/:sessionId/serve-static", async (c) => {
   const containerId = await getSessionContainer(sessionId, userId);
   if (!containerId) return c.json({ error: "Sandbox not ready" }, 404);
 
-  // Kill any previous static server for this session
-  const prev = staticServers.get(sessionId);
-  if (prev) {
-    SandboxManager.execShell(
-      containerId,
-      `pkill -f "/tmp/_serve.js" 2>/dev/null || true`,
-    );
-    staticServers.delete(sessionId);
-  }
+  // Kill ALL previous static servers in this container (await to ensure port is released)
+  await SandboxManager.execCapture(
+    containerId,
+    `pkill -f "/tmp/_serve.js" 2>/dev/null; sleep 0.5; true`,
+  );
+  staticServers.delete(sessionId);
 
   try {
     // Check directory exists before attempting to serve (use single-quoted path to prevent injection)
@@ -131,7 +128,7 @@ preview.post("/:sessionId/serve-static", async (c) => {
 const http=require("http"),fs=require("fs"),path=require("path");
 const dir=${dirJsLiteral};
 const mime={html:"text/html",js:"application/javascript",css:"text/css",json:"application/json",png:"image/png",jpg:"image/jpeg",jpeg:"image/jpeg",gif:"image/gif",svg:"image/svg+xml",webp:"image/webp",ico:"image/x-icon",woff2:"font/woff2",txt:"text/plain",xml:"application/xml"};
-http.createServer((req,res)=>{
+const srv=http.createServer((req,res)=>{
   const raw=req.url.split("?")[0];
   const safe=path.normalize(raw).replace(/^\\.\\.\\//g,"");
   const file=path.join(dir,safe==="/"?"/index.html":safe);
@@ -141,7 +138,9 @@ http.createServer((req,res)=>{
     res.writeHead(200,{"Content-Type":mime[path.extname(file).slice(1)]||"application/octet-stream"});
     res.end(data);
   });
-}).listen(${port});
+});
+srv.on("error",(e)=>{if(e.code==="EADDRINUSE"){process.exit(1)}});
+srv.listen(${port});
 ENDOFSCRIPT`,
     );
     SandboxManager.execShell(
