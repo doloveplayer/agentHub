@@ -46,11 +46,12 @@ export class CapabilityInventory {
 
       const capPath = resolve(skillsDir, 'cap-inventory.md');
 
-      // Content change check: skip if file exists with same content
+      // Content change check: skip if file exists with same content (ignoring timestamp)
       if (existsSync(capPath)) {
         try {
           const existing = readFileSync(capPath, 'utf-8');
-          if (existing === content) continue; // Content unchanged, skip write and inbox
+          const stripTimestamp = (s: string) => s.replace(/>.Last updated by AgentHub at.*/g, '');
+          if (stripTimestamp(existing) === stripTimestamp(content)) continue;
         } catch { /* read error, proceed with write */ }
       }
 

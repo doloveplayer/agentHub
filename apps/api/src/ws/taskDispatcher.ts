@@ -67,8 +67,8 @@ import {
 } from './dagExecution.js';
 import {
   broadcast, sessionPermissionModes, agentProcesses, agentStates, agentTaskQueues,
-  agentCurrentTask, agentCurrentMessage, sandboxes,
-  incRunningAgentCount, clearRunningAgent,
+  agentCurrentTask, agentCurrentMessage, sandboxes, sessionAgentNames,
+  incRunningAgentCount, clearRunningAgent, populateSessionAgentNames,
   type AgentTaskQueue, type TaskDispatchNode,
 } from './state.js';
 import {
@@ -132,6 +132,12 @@ export function resolveAgentNameInSession(sessionId: string, agentType: string):
   }
   for (const [name] of agentTaskQueues) {
     if (name.toLowerCase().startsWith(normalized + '-')) return name;
+  }
+  // 4. Session agent name cache (populated by dispatchTasksToAgents)
+  const nameCache = sessionAgentNames.get(sessionId);
+  if (nameCache) {
+    const cached = nameCache.get(normalized);
+    if (cached) return cached;
   }
   return agentType;
 }
@@ -610,6 +616,9 @@ export async function dispatchTasksToAgents(
     broadcast(sessionId, { type: 'stream_error', error: 'No agents in this session to execute tasks' });
     return;
   }
+
+  // Cache agent name mappings so resolveAgentNameInSession can resolve base names
+  populateSessionAgentNames(sessionId, sessionAgents.map(sa => ({ name: sa.agent.name })));
 
   const agentsByType = new Map<string, typeof sessionAgents[number]['agent'][]>();
   for (const sa of sessionAgents) {

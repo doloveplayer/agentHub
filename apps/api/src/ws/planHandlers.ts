@@ -8,6 +8,7 @@ import {
   agentTaskQueues,
   taskModifications,
   broadcast,
+  populateSessionAgentNames,
   type AgentTaskQueue, type TaskDispatchNode,
 } from './state.js';
 
@@ -78,6 +79,9 @@ export async function handleConfirmPlan(sessionId: string, data: { planId: strin
     where: { sessionId },
     include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, providerConfig: true, skills: true } } },
   });
+  // Cache agent name mappings for resolveAgentNameInSession
+  populateSessionAgentNames(sessionId, sessionAgents.map(sa => ({ name: sa.agent.name })));
+
   for (const sa of sessionAgents) {
     AgentDirectoryManager.initialize(sandbox.hostSandboxDir, sa.agent.name, sa.agent.systemPrompt, sa.agent.providerConfig as Record<string, unknown> | null, undefined, sa.agent.skills as any[] | null, sa.agent.id);
   }
