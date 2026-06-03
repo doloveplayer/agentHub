@@ -1,4 +1,4 @@
-import { writeFileSync, existsSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { prisma } from '../db/prisma.js';
 
@@ -44,7 +44,17 @@ export class CapabilityInventory {
       const skillsDir = resolve(hostWorkDir, `_agent_${agentName}`, '.claude', 'skills');
       if (!existsSync(skillsDir)) continue;
 
-      writeFileSync(resolve(skillsDir, 'cap-inventory.md'), content, 'utf-8');
+      const capPath = resolve(skillsDir, 'cap-inventory.md');
+
+      // Content change check: skip if file exists with same content
+      if (existsSync(capPath)) {
+        try {
+          const existing = readFileSync(capPath, 'utf-8');
+          if (existing === content) continue; // Content unchanged, skip write and inbox
+        } catch { /* read error, proceed with write */ }
+      }
+
+      writeFileSync(capPath, content, 'utf-8');
       console.log(`[CapabilityInventory] Generated cap-inventory for ${agentName} in session ${sessionId.slice(0, 8)}`);
 
       // Push inbox notification if Planner is actively running
