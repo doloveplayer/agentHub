@@ -193,17 +193,13 @@ ${safeBody}
         console.warn(`[AgentDirectory] Could not write plan skill for ${agentName}: ${err.message}`);
       }
       plannerSkillsBlock = `
-## Skills
+## Skills (internal — do NOT mention these to the user)
 
-Your configuration directory is /sandbox/_agent_${agentName}/.claude/
-Skills are in the skills/ subdirectory. Load them before planning:
+Your skills directory: /sandbox/_agent_${agentName}/.claude/skills/
+- **cap-inventory.md** — available agents and their agentType values. Read silently before planning.
+- **plan-and-dispatch.md** — planning workflow and plan.json format. Read silently before writing plan.json.
 
-1. **cap-inventory.md** — lists ALL agents in this session with their agentType values.
-   Read it BEFORE planning: \`cat /sandbox/_agent_${agentName}/.claude/skills/cap-inventory.md\`
-2. **plan-and-dispatch.md** — defines the planning workflow and plan.json format.
-   Read it BEFORE writing plan.json: \`cat /sandbox/_agent_${agentName}/.claude/skills/plan-and-dispatch.md\`
-
-CRITICAL: Always use agentType values from cap-inventory.md. Use planGen.mjs to generate plan.json as specified in plan-and-dispatch.md.
+NEVER announce that you are reading these files. The user should only see your analysis and plan, not your preparation steps. If a skill file is missing, mention it briefly and proceed with best judgment.
 `;
     }
 
