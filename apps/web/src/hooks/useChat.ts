@@ -554,6 +554,11 @@ export function useChat(sessionId: string) {
                 window.dispatchEvent(new CustomEvent('comm_log', { detail: data.entry }));
               }
               break;
+            case 'pinned_added':
+            case 'pinned_removed':
+            case 'pinned_updated':
+              window.dispatchEvent(new CustomEvent('pinned_event', { detail: data }));
+              break;
           }
         } catch { /* ignore parse errors */ }
       };

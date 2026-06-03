@@ -25,6 +25,8 @@ import { PptxCard } from './PptxCard';
 import { HtmlPreviewCard } from './HtmlPreviewCard';
 import { SessionLogPanel } from './SessionLogPanel';
 import { RecoveryBanner } from './RecoveryBanner';
+import { PinnedPanel } from './PinnedPanel';
+import { PinnedPinMenu } from './PinnedPinMenu';
 import type { Message, AgentConfig } from '@agenthub/shared';
 import { safeContent, formatTokens } from '../lib/text';
 
@@ -193,10 +195,10 @@ const SessionHeader = React.memo(function SessionHeader({
 
 /** Single message row with bubble, actions, agent info, and inline diff cards. Subscribes only to its own agentEvents. */
 const MessageItem = React.memo(function MessageItem({
-  msg, agentDisplayName, agentName, onCopy, onQuote, onRegenerate, onDelete, respondToPermission,
+  msg, agentDisplayName, agentName, onCopy, onQuote, onPin, onRegenerate, onDelete, respondToPermission,
 }: {
   msg: Message; agentDisplayName?: string; agentName?: string;
-  onCopy: () => void; onQuote: () => void; onRegenerate: () => void; onDelete: () => void;
+  onCopy: () => void; onQuote: () => void; onPin: () => void; onRegenerate: () => void; onDelete: () => void;
   respondToPermission: (id: string, allowed: boolean) => void;
 }) {
   // Subscribe only to this message's agent events — no global store pollution
@@ -221,7 +223,7 @@ const MessageItem = React.memo(function MessageItem({
         {msg.status !== 'streaming' && msg.status !== 'sending' && (
           <div className={`flex-shrink-0 flex items-start pt-2.5 ${msg.senderType === 'human' ? 'mr-3 order-first' : 'ml-1'}`}>
             <MessageActions message={msg} agentDisplayName={agentDisplayName}
-              onCopy={onCopy} onQuote={onQuote} onRegenerate={onRegenerate} onDelete={onDelete} />
+              onCopy={onCopy} onQuote={onQuote} onPin={onPin} onRegenerate={onRegenerate} onDelete={onDelete} />
           </div>
         )}
       </div>
@@ -319,8 +321,12 @@ export function ChatView() {
   const renderedPlanIds = useRef(new Set<string>());
 
   // Session Log tab state
-  const [activeTab, setActiveTab] = useState<'chat' | 'log'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'pinned' | 'log'>('chat');
   const [commLogEntries, setCommLogEntries] = useState<any[]>([]);
+
+  // Pinned tab state
+  const [pinnedEvents, setPinnedEvents] = useState<Array<{ type: string; pinned?: any; pinnedId?: string }>>([]);
+  const [pinnedCount, setPinnedCount] = useState(0);
 
   // Listen for real-time comm_log events from WebSocket
   useEffect(() => {
@@ -332,10 +338,29 @@ export function ChatView() {
     return () => window.removeEventListener('comm_log', handler);
   }, []);
 
-  // Clear comm log entries when session changes
+  // Listen for real-time pinned events from WebSocket
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (!data) return;
+      setPinnedEvents(prev => [...prev, data]);
+      if (data.type === 'pinned_added') setPinnedCount(c => c + 1);
+      if (data.type === 'pinned_removed') setPinnedCount(c => Math.max(0, c - 1));
+    };
+    window.addEventListener('pinned_event', handler);
+    return () => window.removeEventListener('pinned_event', handler);
+  }, []);
+
+  // Clear comm log and pinned entries when session changes
   useEffect(() => {
     setCommLogEntries([]);
+    setPinnedEvents([]);
+    setPinnedCount(0);
     setActiveTab('chat');
+    // Fetch initial pinned count
+    if (activeSessionId) {
+      api.getPinned(activeSessionId).then(items => setPinnedCount(items.length)).catch(() => {});
+    }
   }, [activeSessionId]);
 
   // New artifact detection — snapshot-based: only show files created AFTER session starts
@@ -541,6 +566,20 @@ export function ChatView() {
     addToast('Message deleted', 'info');
   }, [deleteMessage, addToast]);
 
+  const handlePinMessage = useCallback((msg: Message) => {
+    api.createPinned(activeSessionId!, {
+      sourceType: 'message',
+      content: msg.content,
+      sourceMessageId: msg.id,
+      title: msg.content.slice(0, 80).split('\n')[0],
+    }).then(() => {
+      setPinnedCount(c => c + 1);
+      addToast('Message pinned', 'success');
+    }).catch(() => {
+      addToast('Failed to pin message', 'error');
+    });
+  }, [activeSessionId, addToast]);
+
   if (!activeSessionId) {
     return (
       <div className="flex-1 flex items-center justify-center text-hub-muted">
@@ -577,13 +616,33 @@ export function ChatView() {
             Chat
           </button>
           <button
+            className={`px-4 py-1.5 font-medium transition-colors ${activeTab === 'pinned' ? 'text-hub-accent border-b-2 border-hub-accent' : 'text-hub-muted hover:text-hub-secondary'}`}
+            onClick={() => setActiveTab('pinned')}
+          >
+            Pinned{pinnedCount > 0 ? ` (${pinnedCount})` : ''}
+          </button>
+          <button
             className={`px-4 py-1.5 font-medium transition-colors ${activeTab === 'log' ? 'text-hub-accent border-b-2 border-hub-accent' : 'text-hub-muted hover:text-hub-secondary'}`}
             onClick={() => setActiveTab('log')}
           >
             Session Log
           </button>
         </div>
-        {activeTab === 'log' ? (
+        {activeTab === 'pinned' ? (
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between px-3 py-2 bg-[#252526] border-b border-white/10">
+              <span className="text-xs text-hub-secondary font-medium">Pinned Messages</span>
+              <PinnedPinMenu
+                sessionId={activeSessionId!}
+                messages={messages}
+                onPinned={() => {
+                  api.getPinned(activeSessionId!).then(items => setPinnedCount(items.length));
+                }}
+              />
+            </div>
+            <PinnedPanel sessionId={activeSessionId!} wsPinnedEvents={pinnedEvents} />
+          </div>
+        ) : activeTab === 'log' ? (
           <SessionLogPanel sessionId={activeSessionId!} wsEntries={commLogEntries} />
         ) : (
         <div className="flex-1 overflow-y-auto chat-scroll" ref={scrollContainerRef} onScroll={handleChatScroll}>
@@ -604,6 +663,7 @@ export function ChatView() {
                 agentName={msg.agentId ? agentMap.get(msg.agentId)?.name : undefined}
                 onCopy={() => handleCopyMessage(msg)}
                 onQuote={() => handleQuoteMessage(msg)}
+                onPin={() => handlePinMessage(msg)}
                 onRegenerate={() => handleRegenerateMessage(msg)}
                 onDelete={() => handleDeleteMessage(msg)}
                 respondToPermission={respondToPermission}
