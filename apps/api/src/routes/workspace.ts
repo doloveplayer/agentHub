@@ -250,6 +250,32 @@ workspace.get("/:sessionId/download", async (c) => {
     ) as ArrayBuffer;
     return c.body(arrayBuffer);
   } catch (err: any) {
+    // Fallback to custom workspace path if file not found in sandbox
+    if (session.workspacePath) {
+      try {
+        const real = realpathSync(session.workspacePath);
+        const files = collectArchiveFiles(real, filePath);
+        const rawName =
+          filePath.replace(/^\/workspace\/?/, "").replace(/\/+$/, "") ||
+          "workspace";
+        const isDirectory =
+          files.length !== 1 || files[0].archivePath !== basename(rawName);
+        const body = isDirectory ? buildWorkspaceZip(files) : files[0].content;
+        const downloadName = workspaceDownloadName(filePath, isDirectory);
+        c.header("Content-Disposition", `attachment; filename="${downloadName}"`);
+        c.header(
+          "Content-Type",
+          isDirectory ? "application/zip" : "application/octet-stream",
+        );
+        const arrayBuffer = body.buffer.slice(
+          body.byteOffset,
+          body.byteOffset + body.byteLength,
+        ) as ArrayBuffer;
+        return c.body(arrayBuffer);
+      } catch {
+        // Fall through to default error
+      }
+    }
     const status = typeof err.status === "number" ? err.status : 404;
     const message =
       status === 400 || status === 403
