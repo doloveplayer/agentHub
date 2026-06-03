@@ -9,6 +9,11 @@ import { config } from '../config.js';
 import { PinnedStore } from '../agent/PinnedStore.js';
 import { DagPersistence } from '../agent/DagPersistence.js';
 import { agentCoordinator, type CoordinationContext } from '../agent/AgentCoordinator.js';
+import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
+import { IntentParser } from '../agent/IntentParser.js';
+import { InboxManager } from '../agent/InboxManager.js';
+import { InboxWakeup } from '../agent/InboxWakeup.js';
+import { calcContextPct } from '@agenthub/shared/constants';
 import { getManagerLoop } from '../agent/ManagerLoop.js';
 import { agentRuntime } from '../agent/AgentRuntime.js';
 import { AgentDirectoryManager } from '../agent/AgentDirectoryManager.js';
@@ -22,7 +27,18 @@ import * as fs from 'fs';
 import { createSDKAgentProcess, createOneShotAgentProcess } from '../agent/processFactory.js';
 
 
-import { calcContextPct } from '@agenthub/shared/constants';
+/** Agent model name cache for contextPct calculation. Populated when agents start. */
+const agentModels = new Map<string, string>();
+
+/** Extract model name from providerConfig (may be JSON string or object). */
+function extractModel(providerConfig: unknown): string | undefined {
+  if (!providerConfig) return undefined;
+  try {
+    const cfg = typeof providerConfig === 'string' ? JSON.parse(providerConfig) : providerConfig;
+    if (cfg && typeof cfg === 'object' && 'model' in cfg) return (cfg as any).model as string;
+  } catch {}
+  return undefined;
+}
 
 /** Check if a task's expected output file exists in the sandbox. */
 function taskOutputExists(hostWorkDir: string, expectedOutput: string): boolean {
@@ -119,7 +135,8 @@ export function resolveAgentNameInSession(sessionId: string, agentType: string):
   if (procMap) {
     // 1. Exact match
     for (const [name] of procMap) {
-      if (name.toLowerCase() === normalized) return name;
+      const lower = name.toLowerCase();
+      if (lower === normalized || lower.startsWith(normalized + '-')) return name;
     }
     // 2. Prefix match: 'test-agent' matches 'test-agent-b13eebaa'
     for (const [name] of procMap) {
@@ -128,10 +145,8 @@ export function resolveAgentNameInSession(sessionId: string, agentType: string):
   }
   // 3. Same for agentTaskQueues
   for (const [name] of agentTaskQueues) {
-    if (name.toLowerCase() === normalized) return name;
-  }
-  for (const [name] of agentTaskQueues) {
-    if (name.toLowerCase().startsWith(normalized + '-')) return name;
+    const lower = name.toLowerCase();
+    if (lower === normalized || lower.startsWith(normalized + '-')) return name;
   }
   // 4. Session agent name cache (populated by dispatchTasksToAgents)
   const nameCache = sessionAgentNames.get(sessionId);
@@ -139,7 +154,8 @@ export function resolveAgentNameInSession(sessionId: string, agentType: string):
     const cached = nameCache.get(normalized);
     if (cached) return cached;
   }
-  return agentType;
+  // Target agent not found — return null to skip inbox write
+  return null;
 }
 
 function planKey(sessionId: string, planId: string): string {
@@ -275,6 +291,30 @@ function handleProviderTaskEvent(
         agentMessageId: taskMessageId,
         timestamp: Date.now(),
       });
+      // Wire AgentCoordinator: permission check + event routing
+      {
+        const toolInput = event.toolInput || {};
+        const filePath = (toolInput as any).file_path || (toolInput as any).path || (toolInput as any).filePath;
+        agentCoordinator.onToolUse({
+          sessionId, agentName, agentType: agentName,
+          messageId: taskMessageId, hostWorkDir: queue.sandbox.hostWorkDir,
+          hostSandboxDir: sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir,
+          resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+          broadcast,
+        }, {
+          type: 'tool_use',
+          toolName: event.toolName || '',
+          input: event.toolInput || {},
+        } as any);
+        // Broadcast file production milestone for DAG task agents
+        MilestoneBroadcaster.classify({
+          sessionId, agentName,
+          agentMessageId: taskMessageId,
+          eventType: event.toolName || '',
+          toolName: event.toolName || '',
+          filePath: typeof filePath === 'string' ? filePath : undefined,
+        });
+      }
       break;
     case 'tool_result':
       if (coordCtx) {
@@ -287,6 +327,14 @@ function handleProviderTaskEvent(
         agentMessageId: taskMessageId,
         timestamp: Date.now(),
       });
+      // Wire AgentCoordinator: route tool results
+      agentCoordinator.onToolResult({
+        sessionId, agentName, agentType: agentName,
+        messageId: taskMessageId, hostWorkDir: queue.sandbox.hostWorkDir,
+        hostSandboxDir: sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir,
+        resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+        broadcast,
+      }, event.content || '');
       break;
     case 'token_usage':
       stateTracker.updateTokenUsage(taskMessageId, {
@@ -308,7 +356,8 @@ function handleProviderTaskEvent(
               output: cumulative?.output ?? 0,
               cacheRead: cumulative?.cacheRead ?? 0,
               cacheCreate: cumulative?.cacheCreate ?? 0,
-              contextPct: calcContextPct(cumulative?.input ?? 0),
+              contextPct: calcContextPct(cumulative?.input ?? 0, agentModels.get(agentName)),
+              model: agentModels.get(agentName) || undefined,
             },
           },
           agentMessageId: taskMessageId,
@@ -370,9 +419,51 @@ function handleProviderTaskEvent(
           status: 'active',
         });
       }
+
+      // Wire AgentCoordinator: route agent completion events
+      agentCoordinator.onAgentDone({
+        sessionId, agentName, agentType: agentName,
+        messageId: taskMessageId, hostWorkDir: queue.sandbox.hostWorkDir,
+        hostSandboxDir: sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir,
+        resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+        broadcast,
+      }, exitCode, output.slice(0, 3000));
+
+      // Scan for NEEDS HELP intents and route to target agents
+      if (output) {
+        const intents = IntentParser.scan(output);
+        for (const intent of intents) {
+          const targetName = resolveAgentNameInSession(sessionId, intent.targetAgentName) || intent.targetAgentName;
+          InboxManager.write(sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir, targetName, {
+            type: 'help_request',
+            id: `help-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+            from: agentName,
+            to: targetName,
+            summary: intent.description,
+            risk: 'low',
+            timestamp: Date.now(),
+          }, sessionId);
+          broadcast(sessionId, {
+            type: 'inbox_update',
+            agentName: targetName,
+            summary: intent.description,
+            timestamp: Date.now(),
+          });
+        }
+      }
+
+      // Persist token usage from StateTracker alongside content/status
+      const finalSnapshot = stateTracker.getSnapshot(taskMessageId);
       void prisma.message.update({
         where: { id: taskMessageId },
-        data: { content: output || '[Agent finished]', status: succeeded ? 'done' : 'error' },
+        data: {
+          content: output || '[Agent finished]',
+          status: succeeded ? 'done' : 'error',
+          inputTokens: finalSnapshot?.tokenUsage?.input ?? 0,
+          outputTokens: finalSnapshot?.tokenUsage?.output ?? 0,
+          cacheReadTokens: finalSnapshot?.tokenUsage?.cacheRead ?? 0,
+          cacheCreateTokens: finalSnapshot?.tokenUsage?.cacheCreate ?? 0,
+        },
       }).catch(() => {});
       agentCurrentTask.delete(agentName);
       agentCurrentMessage.delete(agentName);
@@ -385,6 +476,23 @@ function handleProviderTaskEvent(
       }).catch(() => {});
       processNextInQueue(sessionId, agentName, queue);
       void handleDispatchedTaskFinished(sessionId, queue.planId, task.id, succeeded);
+      // Drain sequential multi-@mention queue
+      import('./chatHandlers.js').then(({ startNextSequential }) => {
+        startNextSequential(sessionId);
+      }).catch(() => {});
+
+      // Proactive inbox check: notify if other agents have pending messages
+      {
+        const procMap = agentProcesses.get(sessionId);
+        if (procMap) {
+          for (const [name] of procMap) {
+            if (name !== agentName) {
+              InboxWakeup.check(sessionId, name, queue.sandbox.hostWorkDir,
+                (n) => procMap.has(n), broadcast);
+            }
+          }
+        }
+      }
       break;
     }
     case 'error':
@@ -393,9 +501,16 @@ function handleProviderTaskEvent(
         agentMessageId: taskMessageId,
         error: event.message || 'Unknown error',
       });
+      const errSnapshot = stateTracker.getSnapshot(taskMessageId);
       void prisma.message.update({
         where: { id: taskMessageId },
-        data: { status: 'error' },
+        data: {
+          status: 'error',
+          inputTokens: errSnapshot?.tokenUsage?.input ?? 0,
+          outputTokens: errSnapshot?.tokenUsage?.output ?? 0,
+          cacheReadTokens: errSnapshot?.tokenUsage?.cacheRead ?? 0,
+          cacheCreateTokens: errSnapshot?.tokenUsage?.cacheCreate ?? 0,
+        },
       }).catch(() => {});
       agentCurrentTask.delete(agentName);
       agentCurrentMessage.delete(agentName);
@@ -495,7 +610,15 @@ export async function processNextInQueue(
     import('../agent/SessionCommLog.js').then(({ SessionCommLog }) => {
       SessionCommLog.log(sessionId, 'task', 'assigned', { planId: queue.planId, taskId: task.id, agentName });
     }).catch(() => {});
-    procInfo.provider.sendPrompt(taskPrompt);
+    // Inject coordination context (inbox messages) when reusing a provider
+    const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({
+      sessionId, agentName, agentType: agentName,
+      messageId: taskMessageId, hostWorkDir: queue.sandbox.hostWorkDir,
+      hostSandboxDir: sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir,
+      resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+      broadcast,
+    });
+    procInfo.provider.sendPrompt(`${taskPrompt}\n${coordinationPrompt}`);
   } else {
     // No REPL provider running — start one, then sendPrompt
     await startReplForTask(sessionId, agentName, task, queue);
@@ -514,8 +637,14 @@ async function startReplForTask(
 ): Promise<void> {
   const sandbox = sandboxes.get(sessionId);
   if (!sandbox) return;
-  const agent = await prisma.agent.findUnique({ where: { name: agentName }, select: { id: true, name: true, systemPrompt: true, skills: true, providerConfig: true } });
+  const agent = await prisma.agent.findUnique({
+    where: { name: agentName },
+    select: { id: true, name: true, systemPrompt: true, skills: true, providerConfig: true },
+  });
   if (!agent) return;
+  // Cache model for contextPct calculation
+  const agentModel = extractModel(agent.providerConfig);
+  if (agentModel) agentModels.set(agentName, agentModel);
 
   const taskMsgId = buildTaskMessageId(queue.planId, task.id);
   const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({

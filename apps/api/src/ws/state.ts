@@ -374,4 +374,11 @@ export function clearRunningAgent(sessionId: string, agentMessageId: string): vo
   const st = stateMap.get(agentMessageId);
   if (st) { if (st.timer) clearTimeout(st.timer); stateMap.delete(agentMessageId); decRunningAgentCount(); }
   if (stateMap.size === 0) agentStates.delete(sessionId);
+
+  // Drain all queues whenever an agent slot frees up
+  import('./chatHandlers.js').then(({ startNextSequential, drainPerSessionQueue, drainPendingQueue }) => {
+    startNextSequential(sessionId);
+    drainPerSessionQueue(sessionId);
+    drainPendingQueue();
+  }).catch(() => {});
 }

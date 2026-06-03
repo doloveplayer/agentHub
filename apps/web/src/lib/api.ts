@@ -60,7 +60,10 @@ export const api = {
 
   getMe: () => request<any>("/auth/me"),
 
-  getSessions: () => request<any[]>("/sessions"),
+  getSessions: (includeArchived?: boolean) => {
+    const query = includeArchived ? '?includeArchived=true' : '';
+    return request<any[]>(`/sessions${query}`);
+  },
 
   createSession: (body?: {
     type?: string;
@@ -84,7 +87,7 @@ export const api = {
 
   updateSession: (
     id: string,
-    body: { title?: string; permissionMode?: string; pinned?: boolean },
+    body: { title?: string; permissionMode?: string; pinned?: boolean; archived?: boolean },
   ) =>
     request<any>(`/sessions/${id}`, {
       method: "PATCH",

@@ -19,6 +19,8 @@ export interface AgentEvent {
     permissionId?: string;
     tokenUsage?: { input: number; output: number; cacheRead?: number; cacheCreate?: number; contextPct?: number };
     skillName?: string;
+    summary?: string;
+    filePath?: string;
   };
 }
 
@@ -98,6 +100,8 @@ interface AppState {
   addMessage: (sessionId: string, msg: Message) => void;
   appendToMessage: (sessionId: string, msgId: string, chunk: string) => void;
   setMessageStatus: (sessionId: string, msgId: string, status: string) => void;
+  replaceMessageContent: (sessionId: string, msgId: string, content: string) => void;
+  updateMessageTokens: (sessionId: string, msgId: string, tokens: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number }) => void;
   addAgentEvent: (messageId: string, event: AgentEvent) => void;
   addStreamingMessage: (sessionId: string, msgId: string) => void;
   setTrustMode: (mode: boolean) => void;
@@ -272,6 +276,17 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     })),
 
+  replaceMessageContent: (sessionId, msgId, content) =>
+    set((state) => {
+      const sessionMsgs = state.messages[sessionId];
+      if (!sessionMsgs) return state;
+      const idx = sessionMsgs.findIndex((m) => m.id === msgId);
+      if (idx < 0) return state;
+      const next = sessionMsgs.slice();
+      next[idx] = { ...sessionMsgs[idx], content };
+      return { messages: { ...state.messages, [sessionId]: next } };
+    }),
+
   appendToMessage: (sessionId, msgId, chunk) =>
     set((state) => {
       const sessionMsgs = state.messages[sessionId];
@@ -291,6 +306,24 @@ export const useAppStore = create<AppState>((set, get) => ({
       const idx = sessionMsgs.findIndex((m) => m.id === msgId);
       if (idx < 0) return state;
       const updated = { ...sessionMsgs[idx], status: status as Message['status'] };
+      const next = sessionMsgs.slice();
+      next[idx] = updated;
+      return { messages: { ...state.messages, [sessionId]: next } };
+    }),
+
+  updateMessageTokens: (sessionId, msgId, tokens) =>
+    set((state) => {
+      const sessionMsgs = state.messages[sessionId];
+      if (!sessionMsgs) return state;
+      const idx = sessionMsgs.findIndex((m) => m.id === msgId);
+      if (idx < 0) return state;
+      const updated = {
+        ...sessionMsgs[idx],
+        inputTokens: tokens.inputTokens,
+        outputTokens: tokens.outputTokens,
+        cacheReadTokens: tokens.cacheReadTokens,
+        cacheCreateTokens: tokens.cacheCreateTokens,
+      };
       const next = sessionMsgs.slice();
       next[idx] = updated;
       return { messages: { ...state.messages, [sessionId]: next } };

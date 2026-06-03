@@ -25,6 +25,7 @@ import {
   generateId, getOrCreateSandbox, broadcast,
   clearRunningAgent,
   realWorkspacePaths, workspaceModes,
+  populateSessionAgentNames,
 } from './state.js';
 
 import { startStaleTaskChecker } from './taskDispatcher.js';
@@ -90,6 +91,23 @@ export async function ensureSandboxReady(sessionId: string, sessionType?: string
       }
     }).catch((err: any) => console.error('[recovery] getIncompleteForSession failed:', err.message));
   }).catch((err: any) => console.error('[recovery] CheckpointManager import failed:', err.message));
+
+  // Initialize inbox files for all session agents
+  try {
+    const sessionAgents = await prisma.sessionAgent.findMany({
+      where: { sessionId },
+      select: { agent: { select: { name: true } } },
+    });
+    const agentNames: string[] = [];
+    for (const sa of sessionAgents) {
+      InboxManager.init(sb.hostSandboxDir, sa.agent.name);
+      agentNames.push(sa.agent.name);
+    }
+    // Populate agent name cache for inbox resolution
+    populateSessionAgentNames(sessionId, sessionAgents.map(sa => ({ name: sa.agent.name })));
+  } catch (err: any) {
+    console.error('[ws] Inbox init failed:', err.message);
+  }
 
   sandboxInitialized.add(sessionId);
   return sb;
@@ -161,7 +179,7 @@ async function resolveDefaultAgentForSession(sessionId: string) {
   return selectDefaultAgent(session.type, sessionAgents, allAgents);
 }
 
-async function startNextSequential(sessionId: string): Promise<void> {
+export async function startNextSequential(sessionId: string): Promise<void> {
   const queue = sequentialQueues.get(sessionId);
   if (!queue || queue.length === 0) { sequentialQueues.delete(sessionId); return; }
   const next = queue.shift()!;
@@ -276,6 +294,8 @@ export async function handleChatMessage(
     } catch {
       try {
         await prisma.message.create({ data: { id: mention.messageId, sessionId, senderType: 'agent', agentId: mention.agentId || null, content: '', status: 'streaming' } });
+        // Touch session updatedAt for sorting
+        prisma.session.update({ where: { id: sessionId }, data: { updatedAt: new Date() } }).catch(() => {});
       } catch {
         broadcast(sessionId, { type: 'stream_error', agentMessageId: mention.messageId, error: 'Failed to create message' });
         decRunningAgentCount();
@@ -456,6 +476,7 @@ export function handleStopAgent(sessionId: string, data: { agentMessageId: strin
   if (!stateMap) {
     // Agent may have already finished — update DB and broadcast stream_end gracefully
     prisma.message.update({ where: { id: data.agentMessageId }, data: { status: 'done' } }).catch(() => {});
+    prisma.session.update({ where: { id: sessionId }, data: { updatedAt: new Date() } }).catch(() => {});
     broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });
     return;
   }
@@ -463,6 +484,7 @@ export function handleStopAgent(sessionId: string, data: { agentMessageId: strin
   if (!st) {
     // Agent not in active state — gracefully mark as done
     prisma.message.update({ where: { id: data.agentMessageId }, data: { status: 'done' } }).catch(() => {});
+    prisma.session.update({ where: { id: sessionId }, data: { updatedAt: new Date() } }).catch(() => {});
     broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });
     return;
   }
@@ -500,6 +522,7 @@ export function handleStopAgent(sessionId: string, data: { agentMessageId: strin
   drainPerSessionQueue(sessionId);
   if (stateMap.size === 0) agentStates.delete(sessionId);
   prisma.message.update({ where: { id: data.agentMessageId }, data: { status: 'done' } }).catch(() => {});
+  prisma.session.update({ where: { id: sessionId }, data: { updatedAt: new Date() } }).catch(() => {});
   broadcast(sessionId, { type: 'stream_end', agentMessageId: data.agentMessageId, exitCode: -1, stopped: true });
 }
 

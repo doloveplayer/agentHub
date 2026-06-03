@@ -94,17 +94,25 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const lastToken = tokenEvents.length > 0 ? tokenEvents[tokenEvents.length - 1].details.tokenUsage : null;
   const toolCount = events.filter((e) => e.type === 'tool_use').length;
 
-  // Get persisted token usage from messages (fallback when events are lost)
-  const msgWithTokens = (messages || []).find(m => m.agentId === agentId && (m.inputTokens ?? 0) > 0);
+  // Sum persisted token usage across ALL messages for this agent (robust fallback)
+  const agentMessages = (messages || []).filter(m => m.agentId === agentId);
+  const persistedInput = agentMessages.reduce((s, m) => s + (m.inputTokens ?? 0), 0);
+  const persistedOutput = agentMessages.reduce((s, m) => s + (m.outputTokens ?? 0), 0);
+  const persistedCacheRead = agentMessages.reduce((s, m) => s + (m.cacheReadTokens ?? 0), 0);
+  const persistedCacheCreate = agentMessages.reduce((s, m) => s + (m.cacheCreateTokens ?? 0), 0);
 
-  const inputTokens = lastToken?.input ?? msgWithTokens?.inputTokens ?? 0;
-  const outputTokens = lastToken?.output ?? msgWithTokens?.outputTokens ?? 0;
-  const cacheTokens = lastToken
-    ? ((lastToken.cacheRead ?? 0) + (lastToken.cacheCreate ?? 0))
-    : ((msgWithTokens?.cacheReadTokens ?? 0) + (msgWithTokens?.cacheCreateTokens ?? 0));
-  // contextPct: prefer live event value; fall back to computation from persisted inputTokens
-  const contextPct = lastToken?.contextPct
-    ?? (inputTokens > 0 ? calcContextPct(inputTokens, model) : 0);
+  // Always take the larger of live events vs persisted DB data.
+  // Live events reset per-task, persisted data accumulates across tasks.
+  const inputTokens = Math.max(lastToken?.input ?? 0, persistedInput);
+  const outputTokens = Math.max(lastToken?.output ?? 0, persistedOutput);
+  const liveCache = lastToken ? ((lastToken.cacheRead ?? 0) + (lastToken.cacheCreate ?? 0)) : 0;
+  const persistedCache = persistedCacheRead + persistedCacheCreate;
+  const cacheTokens = Math.max(liveCache, persistedCache);
+  // contextPct: prefer the larger data source; cap at 100%
+  const livePct = lastToken?.contextPct ?? 0;
+  const persistedPct = persistedInput > 0 ? calcContextPct(persistedInput, model) : 0;
+  const rawPct = Math.max(livePct, persistedPct);
+  const contextPct = Math.min(100, rawPct);
 
   // Skill stats for 4th face — must be at top level (Rules of Hooks)
   // Use ?? EMPTY_SKILLS (not || []) to keep a stable reference and avoid Zustand infinite re-render

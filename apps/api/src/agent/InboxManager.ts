@@ -122,11 +122,23 @@ export class InboxManager {
    * into agent prompts so they know how to check their inbox.
    */
   static inboxPrompt(agentName: string): string {
+    const myInbox = `/sandbox/_agent_${norm(agentName)}/_inbox.jsonl`;
     return `\n## Multi-Agent Collaboration
 
 You are part of a multi-agent session. Other agents may observe your work and contact you.
 
-INBOX: Your inbox is at /sandbox/_agent_${norm(agentName)}/_inbox.jsonl. Other agents may send you intervention requests here.
+### YOUR INBOX: ${myInbox}
+
+When the user asks about inbox contents (e.g. "check your inbox", "收件箱里有什么", "what's in your inbox"):
+1. IMMEDIATELY read YOUR OWN inbox file at **${myInbox}** — use Bash: \`cat ${myInbox}\`
+2. Report ONLY what is in YOUR inbox. Do NOT read or mention other agents' inbox files.
+3. If your inbox is empty, say "My inbox is empty" — do NOT describe other agents' inboxes.
+
+CRITICAL RULES:
+- NEVER read inbox files belonging to other agents (e.g. _agent_code-agent, _agent_planner).
+- NEVER volunteer to check what other agents received.
+- Only access **${myInbox}**.
+
 After completing each significant tool_use, read your inbox file and respond to any intervention requests:
   - If helpful and relevant, respond with accepted:true
   - If not relevant, respond with accepted:false and a brief reason

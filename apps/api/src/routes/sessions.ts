@@ -17,12 +17,17 @@ const sessions = new Hono();
 sessions.use('*', authMiddleware);
 
 // GET / — list sessions for current user
+// Query params: ?includeArchived=true to include archived sessions
 sessions.get('/', async (c) => {
   const { userId } = c.get('user');
+  const includeArchived = c.req.query('includeArchived') === 'true';
 
   const result = await prisma.session.findMany({
-    where: { userId },
-    orderBy: { updatedAt: 'desc' },
+    where: {
+      userId,
+      ...(includeArchived ? {} : { archived: false }),
+    },
+    orderBy: [{ pinned: 'desc' }, { updatedAt: 'desc' }],
     include: {
       messages: {
         orderBy: { createdAt: 'desc' },
@@ -58,6 +63,8 @@ sessions.get('/', async (c) => {
         displayName: sa.agent.displayName,
       })),
       lastMessage,
+      pinned: s.pinned,
+      archived: s.archived,
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString(),
     };
@@ -154,22 +161,36 @@ sessions.post('/', async (c) => {
       }
     } else {
       // Solo: reuse existing user code-agent or create from template
+      const userCodeAgentName = `code-agent-${userId.slice(0, 8)}`;
       let defaultAgent = await prisma.agent.findFirst({
-        where: { name: 'code-agent', type: 'user', createdBy: userId, isActive: true },
+        where: {
+          OR: [
+            { name: userCodeAgentName, type: 'user', createdBy: userId },
+            { name: 'code-agent', type: 'user', createdBy: userId },
+          ],
+        },
       });
+      // Reactivate if previously deactivated
+      if (defaultAgent && !defaultAgent.isActive) {
+        await prisma.agent.update({ where: { id: defaultAgent.id }, data: { isActive: true } });
+        defaultAgent = await prisma.agent.findUnique({ where: { id: defaultAgent.id } });
+      }
       if (!defaultAgent) {
         // Claim seeded agent (createdBy=null) or create from template
         const codeTpl = await prisma.agentTemplate.findUnique({ where: { name: 'code-agent' } });
-        const seeded = await prisma.agent.findFirst({ where: { name: 'code-agent', isActive: true } });
-        if (seeded && !seeded.createdBy) {
-          // Atomic claim: only succeeds if createdBy is still null (prevents race condition)
-          const claimed = await prisma.agent.updateMany({
-            where: { id: seeded.id, createdBy: null },
-            data: { createdBy: userId },
-          });
-          if (claimed.count > 0) {
-            defaultAgent = await prisma.agent.findUnique({ where: { id: seeded.id } });
+        // Also check for inactive seeded agent and reactivate
+        let seeded = await prisma.agent.findFirst({ where: { name: 'code-agent', createdBy: null } });
+        if (seeded) {
+          if (!seeded.isActive) {
+            await prisma.agent.update({ where: { id: seeded.id }, data: { isActive: true, createdBy: userId } });
+          } else {
+            // Atomic claim: only succeeds if createdBy is still null
+            const claimed = await prisma.agent.updateMany({
+              where: { id: seeded.id, createdBy: null },
+              data: { createdBy: userId },
+            });
           }
+          defaultAgent = await prisma.agent.findUnique({ where: { id: seeded.id } });
         }
         if (!defaultAgent && codeTpl) {
           defaultAgent = await prisma.agent.create({
@@ -328,6 +349,7 @@ const updateSchema = z.object({
   title: z.string().optional(),
   permissionMode: z.enum(['read_only', 'ask', 'smart', 'trust']).optional(),
   pinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
 });
 
 // PATCH /:id — update session fields (title, permissionMode, etc.)
@@ -383,6 +405,24 @@ sessions.patch('/:id', async (c) => {
     }
   }
 
+  // Broadcast pin/archive changes
+  if (parsed.data.pinned !== undefined && parsed.data.pinned !== session.pinned) {
+    broadcast(sessionId, {
+      type: 'session_pinned',
+      sessionId,
+      pinned: parsed.data.pinned,
+      timestamp: Date.now(),
+    });
+  }
+  if (parsed.data.archived !== undefined && parsed.data.archived !== session.archived) {
+    broadcast(sessionId, {
+      type: 'session_archived',
+      sessionId,
+      archived: parsed.data.archived,
+      timestamp: Date.now(),
+    });
+  }
+
   return c.json({
     id: updated.id,
     title: updated.title,
@@ -390,6 +430,8 @@ sessions.patch('/:id', async (c) => {
     permissionMode: updated.permissionMode,
     userId: updated.userId,
     sandboxContainerId: updated.sandboxContainerId,
+    pinned: updated.pinned,
+    archived: updated.archived,
     createdAt: updated.createdAt.toISOString(),
     updatedAt: updated.updatedAt.toISOString(),
   });

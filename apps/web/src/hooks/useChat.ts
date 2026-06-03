@@ -87,8 +87,8 @@ export function useChat(sessionId: string) {
             case 'stream_chunk':
               {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                setMessageStatus(targetSessionId, data.agentMessageId, 'streaming');
                 appendToMessage(targetSessionId, data.agentMessageId, safeContent(data.content));
-                // Increment unread only when the user is viewing a DIFFERENT session
                 const store = useAppStore.getState();
                 if (store.activeSessionId !== targetSessionId) {
                   incrementUnread(targetSessionId);
@@ -178,6 +178,14 @@ export function useChat(sessionId: string) {
               // Transition queued → streaming when agent starts processing
               if (data.status === 'running' && data.agentMessageId) {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                // Touch session updatedAt for sort order on activity
+                useAppStore.getState().updateSessionInList(targetSessionId, { updatedAt: new Date().toISOString() });
+                // Replace queued placeholder with empty content so stream_chunk appends cleanly
+                const store = useAppStore.getState();
+                const msg = store.messages[targetSessionId]?.find(m => m.id === data.agentMessageId);
+                if (msg?.status === 'queued') {
+                  useAppStore.getState().replaceMessageContent(targetSessionId, data.agentMessageId, '');
+                }
                 setMessageStatus(targetSessionId, data.agentMessageId, 'streaming');
                 addStreamingMessage(targetSessionId, data.agentMessageId);
                 break;
@@ -194,19 +202,31 @@ export function useChat(sessionId: string) {
             }
             case 'token_update':
               if (data.agentMessageId) {
+                const tu = data.details?.tokenUsage ?? {};
                 addAgentEvent(data.agentMessageId, {
                   id: 'tu-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
                   type: 'token_update',
                   timestamp: data.timestamp || Date.now(),
-                  details: {
-                    tokenUsage: {
-                      input: data.details?.tokenUsage?.input ?? 0,
-                      output: data.details?.tokenUsage?.output ?? 0,
-                      cacheRead: data.details?.tokenUsage?.cacheRead ?? 0,
-                      cacheCreate: data.details?.tokenUsage?.cacheCreate ?? 0,
-                      contextPct: data.details?.tokenUsage?.contextPct ?? 0,
-                    },
-                  },
+                  details: { tokenUsage: tu },
+                });
+                // Update message token fields for aggregated view (real-time)
+                const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                useAppStore.getState().updateMessageTokens(targetSessionId, data.agentMessageId, {
+                  inputTokens: tu.input ?? 0,
+                  outputTokens: tu.output ?? 0,
+                  cacheReadTokens: tu.cacheRead ?? 0,
+                  cacheCreateTokens: tu.cacheCreate ?? 0,
+                });
+              }
+              break;
+            case 'file_produced':
+            case 'phase_complete':
+              if (data.agentMessageId) {
+                addAgentEvent(data.agentMessageId, {
+                  id: 'ms-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                  type: data.type as AgentEvent['type'],
+                  timestamp: data.timestamp || Date.now(),
+                  details: { summary: data.summary || '', filePath: data.filePath || '' },
                 });
               }
               break;
@@ -326,6 +346,16 @@ export function useChat(sessionId: string) {
                 useAppStore.getState().updateSessionInList(data.sessionId, { title: data.newTitle });
               }
               break;
+            case 'session_pinned':
+              if (data.sessionId && data.pinned !== undefined) {
+                useAppStore.getState().updateSessionInList(data.sessionId, { pinned: data.pinned });
+              }
+              break;
+            case 'session_archived':
+              if (data.sessionId && data.archived !== undefined) {
+                useAppStore.getState().updateSessionInList(data.sessionId, { archived: data.archived });
+              }
+              break;
             case 'agent_joined':
               if (data.sessionId && data.agent) {
                 useAppStore.getState().addAgentToSession(data.sessionId, data.agent);
@@ -354,16 +384,8 @@ export function useChat(sessionId: string) {
               break;
             case 'inbox_wake_up':
               if (data.agentName && data.count > 0) {
+                // Only show badge on AgentCard, don't add a chat message
                 useAppStore.getState().addInboxNotification(data.agentName);
-                const wakeMsg: Message = {
-                  id: 'wake-' + Date.now(),
-                  sessionId,
-                  senderType: 'agent',
-                  content: data.suggestion || `@${data.agentName} has ${data.count} unread messages.`,
-                  status: 'done',
-                  createdAt: new Date().toISOString(),
-                };
-                useAppStore.getState().addMessage(sessionId, wakeMsg);
               }
               break;
             case 'permission_violation':

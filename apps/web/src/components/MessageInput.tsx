@@ -216,6 +216,11 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
 
     onSend(trimmed, tags, orchestrationMode, quoteReferenceId);
 
+    // Touch session updatedAt locally for immediate sort feedback
+    if (activeSessionId) {
+      useAppStore.getState().updateSessionInList(activeSessionId, { updatedAt: new Date().toISOString() });
+    }
+
     setValue('');
     setTags([]);
     ref.current?.focus();

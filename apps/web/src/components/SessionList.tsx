@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, MessageSquare, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil, ChevronDown, ChevronRight, Bot, Save } from 'lucide-react';
+import { Plus, MessageSquare, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil, ChevronDown, ChevronRight, Bot, Save, Pin, Archive, ArchiveRestore, Search } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
 import type { Session, AgentConfig } from '@agenthub/shared';
@@ -24,6 +24,13 @@ export function SessionList({ onCloseMobile }: Props) {
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [agentEdit, setAgentEdit] = useState({ displayName: '', description: '', systemPrompt: '' });
+  // Search
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  // Archive
+  const [showArchived, setShowArchived] = useState(false);
+  const [archivedSessions, setArchivedSessions] = useState<Session[]>([]);
+  const [archivedLoaded, setArchivedLoaded] = useState(false);
 
   const loadSessions = () => {
     setLoadState('loading');
@@ -47,14 +54,40 @@ export function SessionList({ onCloseMobile }: Props) {
 
   useEffect(() => { loadSessions(); }, []);
 
+  // Debounced search
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 200);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Sort sessions: pinned first, then by updatedAt desc. Exclude archived from main list.
+  const sortedSessions = useMemo(() => {
+    return [...sessions]
+      .filter((s) => !s.archived)
+      .sort((a, b) => {
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+      });
+  }, [sessions]);
+
+  // Search filter helper
+  const filterBySearch = (list: Session[], search: string): Session[] => {
+    if (!search) return list;
+    const q = search.toLowerCase();
+    return list.filter((s) =>
+      s.title.toLowerCase().includes(q) ||
+      s.agents?.some((a) => a.displayName.toLowerCase().includes(q))
+    );
+  };
+
   // Group solo sessions by agent
   const { soloGroups, groupSessions } = useMemo(() => {
     const soloByAgent = new Map<string, AgentGroup>();
-    const groupSessions: any[] = [];
+    let groupList: any[] = [];
 
-    for (const s of sessions) {
+    for (const s of sortedSessions) {
       if (s.type === 'group') {
-        groupSessions.push(s);
+        groupList.push(s);
         continue;
       }
       const agentInfo = s.agents?.[0];
@@ -70,8 +103,22 @@ export function SessionList({ onCloseMobile }: Props) {
       soloByAgent.get(agentId)!.sessions.push(s);
     }
 
-    return { soloGroups: Array.from(soloByAgent.values()), groupSessions };
-  }, [sessions]);
+    // Apply search filtering
+    if (debouncedSearch) {
+      groupList = filterBySearch(groupList, debouncedSearch);
+      // Filter each agent group's sessions and remove empty groups
+      const filteredGroups: AgentGroup[] = [];
+      for (const group of soloByAgent.values()) {
+        const filtered = filterBySearch(group.sessions, debouncedSearch);
+        if (filtered.length > 0) {
+          filteredGroups.push({ ...group, sessions: filtered });
+        }
+      }
+      return { soloGroups: filteredGroups, groupSessions: groupList };
+    }
+
+    return { soloGroups: Array.from(soloByAgent.values()), groupSessions: groupList };
+  }, [sortedSessions, debouncedSearch]);
 
   // Agent store lookup for inline editing
   const agentMap = useMemo(() => {
@@ -213,6 +260,8 @@ export function SessionList({ onCloseMobile }: Props) {
       await api.deleteSession(id);
       const remaining = sessions.filter((s) => s.id !== id);
       setSessions(remaining);
+      // Also remove from archived list if present
+      setArchivedSessions(prev => prev.filter(s => s.id !== id));
       if (activeSessionId === id) {
         const idx = sessions.findIndex((s) => s.id === id);
         const next = remaining[Math.min(idx, remaining.length - 1)];
@@ -297,6 +346,57 @@ export function SessionList({ onCloseMobile }: Props) {
     });
   };
 
+  // --- Pin / Archive handlers ---
+
+  const handleTogglePin = async (sessionId: string, currentPinned: boolean, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.updateSession(sessionId, { pinned: !currentPinned });
+      useAppStore.getState().updateSessionInList(sessionId, { pinned: !currentPinned });
+    } catch { /* ignore */ }
+  };
+
+  const handleToggleArchive = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.updateSession(sessionId, { archived: true });
+      const state = useAppStore.getState();
+      const session = state.sessions.find((s) => s.id === sessionId);
+      if (session) {
+        state.updateSessionInList(sessionId, { archived: true });
+        // Move to archived list locally
+        setArchivedSessions((prev) => [{ ...session, archived: true } as Session, ...prev]);
+        // If archiving the active session, switch to another one
+        if (state.activeSessionId === sessionId) {
+          const remaining = state.sessions.filter((s) => s.id !== sessionId && !s.archived);
+          setActiveSession(remaining[0]?.id ?? null);
+        }
+      }
+    } catch { /* ignore */ }
+  };
+
+  const handleUnarchive = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.updateSession(sessionId, { archived: false });
+      // Refresh to pull back into active list with correct sorting
+      loadSessions();
+    } catch {
+      // Session may have been deleted — still remove from archived list below
+    }
+    setArchivedSessions((prev) => prev.filter((s) => s.id !== sessionId));
+  };
+
+  const loadArchivedSessions = async () => {
+    if (!archivedLoaded) {
+      try {
+        const data = await api.getSessions(true);
+        setArchivedSessions(data.filter((s: any) => s.archived));
+        setArchivedLoaded(true);
+      } catch { /* ignore */ }
+    }
+  };
+
   // --- Render helpers ---
 
   const renderSessionRow = (s: any, opts?: { indent?: boolean; icon?: React.ReactNode }) => (
@@ -329,6 +429,22 @@ export function SessionList({ onCloseMobile }: Props) {
                 title="Rename"
               >
                 <Pencil className="w-3 h-3 text-hub-tertiary" />
+              </button>
+              {/* Pin button */}
+              <button
+                onClick={(e) => handleTogglePin(s.id, !!s.pinned, e)}
+                className={`p-0.5 hover:bg-hub-hover rounded shrink-0 transition ${s.pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                title={s.pinned ? 'Unpin' : 'Pin'}
+              >
+                <Pin className={`w-3 h-3 ${s.pinned ? 'text-hub-accent fill-hub-accent' : 'text-hub-tertiary'}`} />
+              </button>
+              {/* Archive button */}
+              <button
+                onClick={(e) => handleToggleArchive(s.id, e)}
+                className="opacity-0 group-hover:opacity-100 p-0.5 hover:bg-hub-hover rounded shrink-0 transition"
+                title="Archive"
+              >
+                <Archive className="w-3 h-3 text-hub-tertiary" />
               </button>
             </>
           )}
@@ -518,6 +634,30 @@ export function SessionList({ onCloseMobile }: Props) {
       </div>
 
       <div className="flex-1 overflow-y-auto panel-scroll">
+        {/* Search bar */}
+        {loadState === 'done' && (
+          <div className="px-3 py-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-hub-tertiary" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search sessions..."
+                className="w-full pl-8 pr-7 py-1.5 text-xs bg-hub-input border border-hub-border rounded-md text-hub-primary placeholder:text-hub-muted focus:outline-none focus:border-hub-accent transition"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-hub-hover rounded"
+                >
+                  <X className="w-3 h-3 text-hub-tertiary" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {loadState === 'loading' && (
           <div className="flex items-center justify-center p-8">
             <Loader2 className="w-5 h-5 text-hub-tertiary animate-spin" />
@@ -590,6 +730,77 @@ export function SessionList({ onCloseMobile }: Props) {
               </div>
             )}
           </>
+        )}
+
+        {/* Archived section */}
+        {loadState === 'done' && (archivedSessions.length > 0 || archivedLoaded) && (
+          <div>
+            <button
+              onClick={() => {
+                setShowArchived(!showArchived);
+                if (!showArchived) loadArchivedSessions();
+              }}
+              className="w-full px-4 py-2 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-hub-tertiary hover:bg-hub-hover/30 transition"
+            >
+              {showArchived ? (
+                <ChevronDown className="w-3 h-3" />
+              ) : (
+                <ChevronRight className="w-3 h-3" />
+              )}
+              Archived
+              {archivedSessions.length > 0 && (
+                <span className="ml-auto text-[10px] font-normal normal-case tracking-normal">
+                  {archivedSessions.length}
+                </span>
+              )}
+            </button>
+            {showArchived && (() => {
+              const filtered = debouncedSearch
+                ? archivedSessions.filter((s) => {
+                    const q = debouncedSearch.toLowerCase();
+                    return s.title.toLowerCase().includes(q) ||
+                      s.agents?.some((a) => a.displayName.toLowerCase().includes(q));
+                  })
+                : archivedSessions;
+              if (filtered.length === 0 && archivedSessions.length > 0) {
+                return <p className="text-hub-muted text-[11px] text-center py-4">No matching archived sessions</p>;
+              }
+              return filtered.map((s) => (
+                <div
+                  key={s.id}
+                  onClick={() => handleSelect(s.id)}
+                  className={`px-4 py-2.5 cursor-pointer hover:bg-hub-hover flex items-start gap-2 group transition-all duration-hub border-l-[3px] ${
+                    activeSessionId === s.id ? 'bg-hub-active border-l-hub-accent' : 'border-l-transparent opacity-60'
+                  }`}
+                >
+                  <Archive className="w-4 h-4 text-hub-tertiary mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] text-hub-secondary truncate">{s.title}</div>
+                    {s.lastMessage && (
+                      <div className="text-xs text-hub-tertiary truncate mt-0.5">
+                        {s.lastMessage.senderType === 'human' ? 'You: ' : ''}{s.lastMessage.content}
+                      </div>
+                    )}
+                  </div>
+                  {/* Unarchive button */}
+                  <button
+                    onClick={(e) => handleUnarchive(s.id, e)}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-hub-hover rounded-lg shrink-0 transition"
+                    title="Unarchive"
+                  >
+                    <ArchiveRestore className="w-3 h-3 text-hub-tertiary" />
+                  </button>
+                  {/* Delete button */}
+                  <button
+                    onClick={(e) => handleDeleteSessionClick(s.id, s.title, e)}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-hub-hover rounded-lg shrink-0 transition"
+                  >
+                    <Trash2 className="w-3 h-3 text-hub-tertiary" />
+                  </button>
+                </div>
+              ));
+            })()}
+          </div>
         )}
       </div>
 
