@@ -4,6 +4,7 @@ import { resolve, basename } from "path";
 import { authMiddleware } from "../middleware/auth.js";
 import { prisma } from "../db/prisma.js";
 import { WorkspaceManager } from "../agent/WorkspaceManager.js";
+import { realWorkspacePaths } from "../ws/state.js";
 import {
   getWorkspaceRoot,
   readWorkspaceTextFile,
@@ -129,12 +130,13 @@ workspace.get("/:sessionId/tree", async (c) => {
   const sandboxDir = resolve(SANDBOX_ROOT, sessionId);
   const sandboxTree = readFileTree(sandboxDir, sandboxDir, 4, 0, "sandbox");
 
-  // Merge workspace tree if a custom workspace is configured
+  // Merge workspace tree if a custom workspace is configured (DB or in-memory container bind mount)
   let workspaceTree: FileNode[] = [];
   let workspacePath: string | null = null;
-  if (session.workspacePath) {
+  const wsPath = session.workspacePath || realWorkspacePaths.get(sessionId);
+  if (wsPath) {
     try {
-      const real = realpathSync(session.workspacePath);
+      const real = realpathSync(wsPath);
       if (existsSync(real)) {
         workspacePath = real;
         workspaceTree = readFileTree(real, real, 4, 0, "workspace");
@@ -167,18 +169,18 @@ workspace.get("/:sessionId/file", async (c) => {
   try {
     return c.json(readWorkspaceTextFile(workDir, filePath));
   } catch (err: any) {
-    // If the file is not in the sandbox directory, try the custom workspace path
-    if (session.workspacePath) {
+    // Fallback to custom workspace paths (DB + in-memory container bind mount)
+    const fallbackPaths = [
+      session.workspacePath,
+      realWorkspacePaths.get(sessionId),
+    ].filter(Boolean) as string[];
+
+    for (const wsPath of fallbackPaths) {
       try {
-        const real = realpathSync(session.workspacePath);
+        const real = realpathSync(wsPath);
         return c.json(readWorkspaceTextFile(real, filePath));
-      } catch (err2: any) {
-        const status2 = typeof err2.status === "number" ? err2.status : 404;
-        const message2 =
-          status2 === 400 || status2 === 403
-            ? err2.message
-            : "Failed to read file";
-        return c.json({ error: message2 }, status2 as any);
+      } catch {
+        // Try next fallback
       }
     }
     const status = typeof err.status === "number" ? err.status : 404;
@@ -250,10 +252,16 @@ workspace.get("/:sessionId/download", async (c) => {
     ) as ArrayBuffer;
     return c.body(arrayBuffer);
   } catch (err: any) {
-    // Fallback to custom workspace path if file not found in sandbox
-    if (session.workspacePath) {
+    // Fallback 1: session.workspacePath from DB
+    // Fallback 2: realWorkspacePaths from in-memory map (container's actual bind mount)
+    const fallbackPaths = [
+      session.workspacePath,
+      realWorkspacePaths.get(sessionId),
+    ].filter(Boolean) as string[];
+
+    for (const wsPath of fallbackPaths) {
       try {
-        const real = realpathSync(session.workspacePath);
+        const real = realpathSync(wsPath);
         const files = collectArchiveFiles(real, filePath);
         const rawName =
           filePath.replace(/^\/workspace\/?/, "").replace(/\/+$/, "") ||
@@ -273,7 +281,7 @@ workspace.get("/:sessionId/download", async (c) => {
         ) as ArrayBuffer;
         return c.body(arrayBuffer);
       } catch {
-        // Fall through to default error
+        // Try next fallback
       }
     }
     const status = typeof err.status === "number" ? err.status : 404;
