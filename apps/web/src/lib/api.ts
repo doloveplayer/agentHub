@@ -195,7 +195,12 @@ export const api = {
     }
     const disposition = res.headers.get("content-disposition") || "";
     const name = disposition.match(/filename="([^"]+)"/)?.[1];
-    return { blob: await res.blob(), filename: name };
+    // Ensure blob has correct MIME type for image rendering (server returns application/octet-stream)
+    const rawBlob = await res.blob();
+    const ext = name?.split(".").pop()?.toLowerCase();
+    const mimeMap: Record<string, string> = { svg: "image/svg+xml", png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp" };
+    const blob = ext && mimeMap[ext] ? new Blob([rawBlob], { type: mimeMap[ext] }) : rawBlob;
+    return { blob, filename: name };
   },
 
   getWorkspaceChanges: (sessionId: string) =>
