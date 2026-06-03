@@ -53,10 +53,22 @@ export function isEditableWorkspaceFile(path: string): boolean {
 }
 
 const HTML_EXTENSIONS = new Set(['html', 'htm']);
+const MARKDOWN_EXTENSIONS = new Set(['md', 'markdown']);
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg']);
 
 export function isHtmlFile(path: string): boolean {
   const ext = path.split('.').pop()?.toLowerCase() ?? '';
   return HTML_EXTENSIONS.has(ext);
+}
+
+export function isMarkdownFile(path: string): boolean {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  return MARKDOWN_EXTENSIONS.has(ext);
+}
+
+export function isImageFile(path: string): boolean {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  return IMAGE_EXTENSIONS.has(ext);
 }
 
 export function isPptxWorkspaceFile(path: string): boolean {

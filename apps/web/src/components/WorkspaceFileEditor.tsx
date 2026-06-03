@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
-import { Download, FileText, Maximize2, Minimize2, RefreshCw, Save, X } from 'lucide-react';
+import { Download, Eye, FileText, Maximize2, Minimize2, RefreshCw, Save, X } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '../lib/api';
-import { displayWorkspacePath, inferWorkspaceLanguage, isEditableWorkspaceFile, isHtmlFile, isPptxWorkspaceFile, safeDownloadName } from '../lib/workspaceFile';
+import { displayWorkspacePath, inferWorkspaceLanguage, isEditableWorkspaceFile, isHtmlFile, isImageFile, isMarkdownFile, isPptxWorkspaceFile, safeDownloadName } from '../lib/workspaceFile';
 import { PptxViewer } from './PptxViewer';
 
 interface Props {
@@ -42,12 +44,17 @@ export function WorkspaceFileEditor({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pptxUrl, setPptxUrl] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
   const pptxUrlRef = useRef<string | null>(null);
+  const imageUrlRef = useRef<string | null>(null);
   const language = useMemo(() => inferWorkspaceLanguage(path), [path]);
   const editable = useMemo(() => isEditableWorkspaceFile(path), [path]);
   const previewablePptx = useMemo(() => isPptxWorkspaceFile(path), [path]);
   const isHtml = useMemo(() => isHtmlFile(path), [path]);
-  const [htmlMode, setHtmlMode] = useState<'code' | 'preview'>('preview');
+  const isMd = useMemo(() => isMarkdownFile(path), [path]);
+  const isImg = useMemo(() => isImageFile(path), [path]);
+  const previewable = isHtml || isMd || isImg;
+  const [previewMode, setPreviewMode] = useState<'code' | 'preview'>('preview');
   const dirty = loaded !== null && content !== loaded.content;
 
   const setPreviewUrl = (url: string | null) => {
@@ -56,8 +63,14 @@ export function WorkspaceFileEditor({
     setPptxUrl(url);
   };
 
+  const setImgUrl = (url: string | null) => {
+    if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
+    imageUrlRef.current = url;
+    setImageUrl(url);
+  };
+
   const loadFile = async () => {
-    if (!editable || previewablePptx) {
+    if (previewablePptx || isImg) {
       setLoaded(null);
       setContent('');
       setError(null);
@@ -81,29 +94,38 @@ export function WorkspaceFileEditor({
     }
   };
 
-  const loadPptxPreview = async () => {
+  const loadPreviewBlob = async (
+    onUrl: (url: string) => void,
+    label: string,
+  ) => {
     setLoading(true);
     setError(null);
-    setPreviewUrl(null);
     try {
       const result = await api.downloadWorkspacePath(sessionId, path);
-      setPreviewUrl(URL.createObjectURL(result.blob));
+      onUrl(URL.createObjectURL(result.blob));
     } catch (err: any) {
-      setError(err?.message || 'Failed to load PPTX preview');
+      setError(err?.message || `Failed to load ${label} preview`);
     } finally {
       setLoading(false);
     }
   };
 
+  const loadPptxPreview = () => loadPreviewBlob((url) => setPreviewUrl(url), 'PPTX');
+  const loadImagePreview = () => loadPreviewBlob((url) => setImgUrl(url), 'image');
+
   useEffect(() => {
     setLoaded(null);
     setContent('');
+    setPreviewUrl(null);
+    setImgUrl(null);
     if (previewablePptx) loadPptxPreview();
-    else loadFile();
+    else if (isImg && previewMode === 'preview') loadImagePreview();
+    else if (!isImg || previewMode === 'code') loadFile();
     return () => {
       setPreviewUrl(null);
+      setImgUrl(null);
     };
-  }, [sessionId, path, editable, previewablePptx]);
+  }, [sessionId, path, previewablePptx, isImg, previewMode]);
 
   const save = async () => {
     if (!editable) return;
@@ -121,7 +143,7 @@ export function WorkspaceFileEditor({
   };
 
   const download = () => {
-    if (!editable || previewablePptx) {
+    if (!editable || previewablePptx || isImg) {
       onDownloadOriginal?.(path);
       return;
     }
@@ -156,7 +178,11 @@ export function WorkspaceFileEditor({
           </span>
         )}
         <button
-          onClick={previewablePptx ? loadPptxPreview : loadFile}
+          onClick={() => {
+            if (previewablePptx) loadPptxPreview();
+            else if (isImg && previewMode === 'preview') loadImagePreview();
+            else loadFile();
+          }}
           disabled={loading || saving}
           className="inline-flex h-7 w-7 items-center justify-center rounded text-hub-tertiary hover:bg-hub-hover disabled:opacity-50"
           title="Refresh"
@@ -165,7 +191,7 @@ export function WorkspaceFileEditor({
         </button>
         <button
           onClick={save}
-          disabled={loading || saving || !dirty || !editable || previewablePptx}
+          disabled={loading || saving || !dirty || !editable || previewablePptx || (isImg && previewMode === 'preview')}
           className="inline-flex h-7 w-7 items-center justify-center rounded text-hub-success hover:bg-hub-hover disabled:opacity-40"
           title="Save"
         >
@@ -173,23 +199,23 @@ export function WorkspaceFileEditor({
         </button>
         <button
           onClick={download}
-          disabled={loading || (editable && loaded === null)}
+          disabled={loading || (editable && loaded === null && !isImg)}
           className="inline-flex h-7 w-7 items-center justify-center rounded text-hub-link hover:bg-hub-hover disabled:opacity-40"
-          title={editable ? 'Save as local file' : 'Download file'}
+          title={editable && !isImg ? 'Save as local file' : 'Download file'}
         >
           <Download className="h-3.5 w-3.5" />
         </button>
-        {isHtml && (
+        {previewable && (
           <div className="flex rounded bg-hub-surface border border-hub px-0.5 py-0.5">
             <button
-              onClick={() => setHtmlMode('code')}
-              className={`px-2 py-0.5 text-[11px] rounded ${htmlMode === 'code' ? 'bg-hub-accent text-white' : 'text-hub-secondary hover:text-hub-primary'}`}
+              onClick={() => setPreviewMode('code')}
+              className={`px-2 py-0.5 text-[11px] rounded ${previewMode === 'code' ? 'bg-hub-accent text-white' : 'text-hub-secondary hover:text-hub-primary'}`}
             >
               Code
             </button>
             <button
-              onClick={() => setHtmlMode('preview')}
-              className={`px-2 py-0.5 text-[11px] rounded ${htmlMode === 'preview' ? 'bg-hub-accent text-white' : 'text-hub-secondary hover:text-hub-primary'}`}
+              onClick={() => setPreviewMode('preview')}
+              className={`px-2 py-0.5 text-[11px] rounded ${previewMode === 'preview' ? 'bg-hub-accent text-white' : 'text-hub-secondary hover:text-hub-primary'}`}
             >
               Preview
             </button>
@@ -243,7 +269,7 @@ export function WorkspaceFileEditor({
             PPTX preview is read-only. Use Download to save the original file.
           </div>
         </div>
-      ) : isHtml && htmlMode === 'preview' ? (
+      ) : isHtml && previewMode === 'preview' ? (
         <div className="min-h-0 flex-1 bg-white">
           <iframe
             src={api.getHtmlPreviewUrl(sessionId, path)}
@@ -251,6 +277,32 @@ export function WorkspaceFileEditor({
             sandbox="allow-scripts allow-same-origin"
             title="HTML Preview"
           />
+        </div>
+      ) : isMd && previewMode === 'preview' ? (
+        <div className="min-h-0 flex-1 overflow-auto bg-white px-6 py-4">
+          {loading ? (
+            <div className="flex min-h-[260px] items-center justify-center text-xs text-hub-muted">Loading...</div>
+          ) : (
+            <div className="prose prose-sm max-w-none dark:prose-invert">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {content}
+              </ReactMarkdown>
+            </div>
+          )}
+        </div>
+      ) : isImg && previewMode === 'preview' ? (
+        <div className="min-h-0 flex-1 flex items-center justify-center bg-hub-root p-4">
+          {loading && (
+            <div className="flex min-h-[260px] items-center justify-center text-xs text-hub-muted">Loading image...</div>
+          )}
+          {!loading && imageUrl && (
+            <img src={imageUrl} alt={safeDownloadName(path)} className="max-w-full max-h-full object-contain rounded" />
+          )}
+          {!loading && !imageUrl && !error && (
+            <div className="flex min-h-[260px] items-center justify-center text-xs text-hub-muted">
+              <Eye className="h-4 w-4 mr-2" /> No preview available
+            </div>
+          )}
         </div>
       ) : editable ? (
         <div className="min-h-0 flex-1">
