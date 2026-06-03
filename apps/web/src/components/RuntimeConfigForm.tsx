@@ -22,6 +22,13 @@ const FIELDS = [
     fmt: (v: number) => v / 1000,
     parse: (v: number) => v * 1000,
   },
+  {
+    key: 'contextTokenBudget',
+    label: 'Context Token Budget',
+    min: 2000,
+    max: 50000,
+    hint: 'Total token budget for context injection (pinned + state + experience)',
+  },
 ];
 
 export function RuntimeConfigForm() {
