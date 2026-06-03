@@ -342,14 +342,14 @@ export function ChatView() {
   useEffect(() => {
     const handler = (e: Event) => {
       const data = (e as CustomEvent).detail;
-      if (!data) return;
+      if (!data || (data.sessionId && data.sessionId !== activeSessionId)) return;
       setPinnedEvents(prev => [...prev, data]);
       if (data.type === 'pinned_added') setPinnedCount(c => c + 1);
       if (data.type === 'pinned_removed') setPinnedCount(c => Math.max(0, c - 1));
     };
     window.addEventListener('pinned_event', handler);
     return () => window.removeEventListener('pinned_event', handler);
-  }, []);
+  }, [activeSessionId]);
 
   // Clear comm log and pinned entries when session changes
   useEffect(() => {

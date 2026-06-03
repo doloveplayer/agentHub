@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Pin, PinOff, FileText, MessageSquare, Type, ToggleLeft, ToggleRight } from 'lucide-react';
 import { api } from '../lib/api';
 import type { PinnedMessage } from '@agenthub/shared';
@@ -23,9 +23,11 @@ const SOURCE_LABELS: Record<string, string> = {
 export function PinnedPanel({ sessionId, wsPinnedEvents }: Props) {
   const [items, setItems] = useState<PinnedMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  const processedRef = useRef(0);
 
   useEffect(() => {
     setLoading(true);
+    processedRef.current = 0;
     api.getPinned(sessionId)
       .then(setItems)
       .catch(() => {})
@@ -33,7 +35,8 @@ export function PinnedPanel({ sessionId, wsPinnedEvents }: Props) {
   }, [sessionId]);
 
   useEffect(() => {
-    for (const event of wsPinnedEvents) {
+    for (let i = processedRef.current; i < wsPinnedEvents.length; i++) {
+      const event = wsPinnedEvents[i];
       if (event.type === 'pinned_added' && event.pinned) {
         setItems(prev => {
           if (prev.some(p => p.id === event.pinned!.id)) return prev;
@@ -45,16 +48,27 @@ export function PinnedPanel({ sessionId, wsPinnedEvents }: Props) {
         setItems(prev => prev.map(p => p.id === event.pinned!.id ? event.pinned! : p));
       }
     }
+    processedRef.current = wsPinnedEvents.length;
   }, [wsPinnedEvents]);
 
   const handleDelete = useCallback(async (id: string) => {
-    await api.deletePinned(sessionId, id);
+    const prev = items;
     setItems(prev => prev.filter(p => p.id !== id));
-  }, [sessionId]);
+    try {
+      await api.deletePinned(sessionId, id);
+    } catch {
+      setItems(prev); // rollback
+    }
+  }, [sessionId, items]);
 
   const handleToggleInject = useCallback(async (id: string, current: boolean) => {
-    const updated = await api.updatePinned(sessionId, id, { injectToAgent: !current });
-    setItems(prev => prev.map(p => p.id === id ? updated : p));
+    setItems(prev => prev.map(p => p.id === id ? { ...p, injectToAgent: !current } : p));
+    try {
+      const updated = await api.updatePinned(sessionId, id, { injectToAgent: !current });
+      setItems(prev => prev.map(p => p.id === id ? updated : p));
+    } catch {
+      setItems(prev => prev.map(p => p.id === id ? { ...p, injectToAgent: current } : p));
+    }
   }, [sessionId]);
 
   if (loading) {

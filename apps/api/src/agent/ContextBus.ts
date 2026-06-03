@@ -156,7 +156,9 @@ export class ContextBus {
 
       if (lineTokens > remainingTokens) {
         // Level 1 compression: try truncated value
-        const maxValChars = Math.floor((remainingTokens - 20) / 1.5); // rough estimate
+        const overheadPrefix = `- [${entry.type}] **${entry.key}**: `;
+        const overheadTokens = estimateTokens(overheadPrefix);
+        const maxValChars = Math.floor((remainingTokens - overheadTokens) / 1.5);
         if (maxValChars > 20) {
           const truncated = valStr.slice(0, maxValChars) + '...';
           digest += `- [${entry.type}] **${entry.key}**: ${truncated}\n`;
