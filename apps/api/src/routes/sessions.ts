@@ -4,6 +4,7 @@ import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { SandboxManager } from '../agent/SandboxManager.js';
 import { broadcast, sandboxes, realWorkspacePaths, workspaceModes } from '../ws/state.js';
+import { ensureSandboxReady } from '../ws/chatHandlers.js';
 import { stopPlanWatcher } from '../ws/planWatcher.js';
 import { InboxManager } from '../agent/InboxManager.js';
 import { buildGroupContext } from '../agent/groupContext.js';
@@ -438,6 +439,11 @@ sessions.post('/:id/workspace', async (c) => {
   // Invalidate cached sandbox so the next getOrCreateSandbox() recreates it
   // with the new workspace bind mount
   sandboxes.delete(sessionId);
+
+  // Eagerly activate sandbox with the new workspace bind mount
+  ensureSandboxReady(sessionId, session.type).catch((err: any) =>
+    console.error(`[sessions] Sandbox activation failed: ${err.message}`),
+  );
 
   broadcast(sessionId, {
     type: 'workspace_changed',
