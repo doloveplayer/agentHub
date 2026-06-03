@@ -1,4 +1,4 @@
-import type { SendResponse } from "@agenthub/shared";
+import type { PinnedMessage, SendResponse } from "@agenthub/shared";
 
 const BASE_URL = "/api";
 
@@ -407,4 +407,34 @@ export const api = {
 
   getCommLog: (sessionId: string) =>
     request<{ entries: any[] }>(`/sessions/${sessionId}/comm-log`),
+
+  // Pinned messages
+  getPinned: (sessionId: string) =>
+    request<PinnedMessage[]>(`/sessions/${sessionId}/pinned`),
+
+  createPinned: (sessionId: string, data: {
+    sourceType: 'message' | 'file' | 'text';
+    content: string;
+    sourceMessageId?: string;
+    filePath?: string;
+    title?: string;
+    injectToAgent?: boolean;
+  }) =>
+    request<PinnedMessage>(`/sessions/${sessionId}/pinned`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  deletePinned: (sessionId: string, id: string) =>
+    request<void>(`/sessions/${sessionId}/pinned/${id}`, { method: 'DELETE' }),
+
+  updatePinned: (sessionId: string, id: string, data: {
+    injectToAgent?: boolean;
+    sortOrder?: number;
+    title?: string;
+  }) =>
+    request<PinnedMessage>(`/sessions/${sessionId}/pinned/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
 };

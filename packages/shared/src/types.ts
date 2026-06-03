@@ -64,6 +64,20 @@ export interface Message {
   cacheCreateTokens?: number;
 }
 
+export interface PinnedMessage {
+  id: string;
+  sessionId: string;
+  sourceType: 'message' | 'file' | 'text';
+  sourceMessageId: string | null;
+  filePath: string | null;
+  content: string;
+  title: string | null;
+  injectToAgent: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SessionAgentStats {
   agentId: string;
   sessionId: string;
