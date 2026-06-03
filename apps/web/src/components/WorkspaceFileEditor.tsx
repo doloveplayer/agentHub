@@ -279,11 +279,22 @@ export function WorkspaceFileEditor({
           />
         </div>
       ) : isMd && previewMode === 'preview' ? (
-        <div className="min-h-0 flex-1 overflow-auto bg-white px-6 py-4">
+        <div className="min-h-0 flex-1 overflow-auto bg-hub-root px-6 py-4">
           {loading ? (
             <div className="flex min-h-[260px] items-center justify-center text-xs text-hub-muted">Loading...</div>
           ) : (
-            <div className="prose prose-sm max-w-none dark:prose-invert">
+            <div className="prose prose-sm prose-invert max-w-none
+              prose-headings:text-hub-primary
+              prose-p:text-hub-secondary
+              prose-a:text-hub-link prose-a:no-underline hover:prose-a:underline
+              prose-strong:text-hub-primary
+              prose-code:text-hub-accent prose-code:bg-hub-code prose-code:px-1 prose-code:py-0.5 prose-code:rounded
+              prose-pre:bg-hub-code prose-pre:border prose-pre:border-hub
+              prose-blockquote:border-hub-accent prose-blockquote:text-hub-tertiary
+              prose-li:text-hub-secondary
+              prose-th:text-hub-primary prose-td:text-hub-secondary
+              prose-hr:border-hub
+              prose-img:rounded-lg">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
                 {content}
               </ReactMarkdown>
