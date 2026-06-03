@@ -9,8 +9,10 @@ export interface CoordinationContext {
   agentType: string;
   messageId: string;
   hostWorkDir: string;
+  hostSandboxDir: string;
   resolveAgent: (agentType: string) => string | null;
   broadcast: (sessionId: string, data: unknown) => void;
+  notifiedKeys?: Set<string>;
 }
 
 export class AgentCoordinator {
@@ -34,7 +36,7 @@ export class AgentCoordinator {
       if (check.delegateTo) {
         const delegateAgentName = ctx.resolveAgent(check.delegateTo);
         if (delegateAgentName) {
-          InboxManager.write(ctx.hostWorkDir, delegateAgentName, {
+          InboxManager.write(ctx.hostSandboxDir, delegateAgentName, {
             type: 'intervention_request',
             id: `delegate-${Date.now()}`,
             from: ctx.agentName,
@@ -60,7 +62,12 @@ export class AgentCoordinator {
     for (const { targetType, entry } of deliveries) {
       const targetAgentName = ctx.resolveAgent(targetType);
       if (targetAgentName && targetAgentName !== ctx.agentName) {
-        InboxManager.write(ctx.hostWorkDir, targetAgentName, entry, ctx.sessionId);
+        // Dedup: same sender→target+ruleId within one task only notifies once
+        const key = `${ctx.agentName}->${targetAgentName}:${entry.id}`;
+        if (ctx.notifiedKeys?.has(key)) continue;
+        ctx.notifiedKeys?.add(key);
+
+        InboxManager.write(ctx.hostSandboxDir, targetAgentName, entry, ctx.sessionId);
       }
     }
 
@@ -78,7 +85,7 @@ export class AgentCoordinator {
     for (const { targetType, entry } of deliveries) {
       const targetAgentName = ctx.resolveAgent(targetType);
       if (targetAgentName && targetAgentName !== ctx.agentName) {
-        InboxManager.write(ctx.hostWorkDir, targetAgentName, entry, ctx.sessionId);
+        InboxManager.write(ctx.hostSandboxDir, targetAgentName, entry, ctx.sessionId);
       }
     }
   }
@@ -96,7 +103,7 @@ export class AgentCoordinator {
     for (const { targetType, entry } of deliveries) {
       const targetAgentName = ctx.resolveAgent(targetType);
       if (targetAgentName && targetAgentName !== ctx.agentName) {
-        InboxManager.write(ctx.hostWorkDir, targetAgentName, entry, ctx.sessionId);
+        InboxManager.write(ctx.hostSandboxDir, targetAgentName, entry, ctx.sessionId);
       }
     }
 
@@ -111,7 +118,7 @@ export class AgentCoordinator {
   buildCoordinationPrompt(ctx: CoordinationContext): string {
     const prompt = InboxManager.hubModePrompt(ctx.agentName);
 
-    const entries = InboxManager.read(ctx.hostWorkDir, ctx.agentName, ctx.sessionId);
+    const entries = InboxManager.read(ctx.hostSandboxDir, ctx.agentName, ctx.sessionId);
     if (entries.length === 0) return prompt;
 
     const highRisk = entries.filter((e) => e.risk === 'high');

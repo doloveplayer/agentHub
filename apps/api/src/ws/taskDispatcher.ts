@@ -230,6 +230,7 @@ function handleProviderTaskEvent(
     hostSandboxDir: sandbox.hostSandboxDir,
     resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
     broadcast,
+    notifiedKeys: new Set<string>(),
   } : null;
 
   switch (event.type) {
