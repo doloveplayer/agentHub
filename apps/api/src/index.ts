@@ -126,8 +126,8 @@ app.use(
 
 // Static uploads (avatars etc.) — path traversal protected
 const uploadsRoot = resolve(process.cwd(), "uploads");
-app.get("/uploads/*", (c) => {
-  const filePath = resolve(process.cwd(), c.req.path.slice(1));
+app.get("/api/uploads/*", (c) => {
+  const filePath = resolve(process.cwd(), c.req.path.replace(/^\/api/, "").slice(1));
   if (!filePath.startsWith(uploadsRoot + "/") && filePath !== uploadsRoot) {
     return c.json({ error: "Forbidden" }, 403);
   }

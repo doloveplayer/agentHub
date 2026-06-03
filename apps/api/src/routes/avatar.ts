@@ -89,7 +89,7 @@ avatar.post('/upload', async (c) => {
   await writeFile(avatarPath, fileBuffer);
 
   // Update User.avatarUrl in DB
-  const url = `/uploads/avatars/${avatarFilename}`;
+  const url = `/api/uploads/avatars/${avatarFilename}`;
   await prisma.user.update({
     where: { id: user.userId },
     data: { avatarUrl: url },
