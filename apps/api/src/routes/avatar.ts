@@ -79,7 +79,7 @@ avatar.post('/upload', async (c) => {
   // Determine extension
   const ext = EXTENSION_MAP[mimeType] || '.png';
   const avatarFilename = `${user.userId}${ext}`;
-  const avatarDir = resolve('.uploads', 'avatars');
+  const avatarDir = resolve('uploads', 'avatars');
   const avatarPath = resolve(avatarDir, avatarFilename);
 
   // Ensure uploads directory exists

@@ -596,7 +596,18 @@ export function SessionList({ onCloseMobile }: Props) {
       <div className="p-3 border-t border-hub flex items-center gap-2.5">
         {user && (
           <>
-            <img src={user.avatarUrl} alt="" className="w-7 h-7 rounded-full ring-2 ring-hub-border" />
+            {user.avatarUrl ? (
+              <img
+                src={user.avatarUrl}
+                alt=""
+                className="w-7 h-7 rounded-full ring-2 ring-hub-border"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+              />
+            ) : (
+              <div className="w-7 h-7 rounded-full ring-2 ring-hub-border bg-hub-surface flex items-center justify-center text-xs text-hub-muted">
+                {user.username?.[0]?.toUpperCase() || '?'}
+              </div>
+            )}
             <span className="text-sm text-hub-secondary font-medium">{user.username}</span>
           </>
         )}

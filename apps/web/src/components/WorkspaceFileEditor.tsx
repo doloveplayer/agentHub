@@ -419,6 +419,11 @@ export function WorkspaceFileEditor({
               src={imageUrl}
               alt={safeDownloadName(path)}
               className="max-w-full max-h-full object-contain rounded"
+              onError={(e) => {
+                // Fall back to text display if image rendering fails (e.g. SVG with external refs)
+                (e.target as HTMLImageElement).style.display = "none";
+                setImgUrl(null);
+              }}
             />
           )}
           {!loading && !imageUrl && !error && (
