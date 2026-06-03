@@ -1,8 +1,9 @@
 import { appendFileSync, mkdirSync, readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import type { CommLogEntry, CommLogCategory } from '@agenthub/shared';
+import { config } from '../config.js';
 
-const SANDBOXES_ROOT = '.sandboxes';
+const SANDBOXES_ROOT = config.sandbox.root;
 
 export class SessionCommLog {
   private static broadcastFn: ((sessionId: string, data: unknown) => void) | null = null;

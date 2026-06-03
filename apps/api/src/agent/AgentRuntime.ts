@@ -33,6 +33,7 @@ interface AgentEntry {
   provider: AbstractProvider;
   containerId: string;
   hostWorkDir: string;
+  hostSandboxDir: string;
   idleTimer: NodeJS.Timeout | null;
   currentSession: string | null;
   currentMessageId: string | null;
@@ -249,6 +250,7 @@ class AgentRuntime {
       provider,
       containerId,
       hostWorkDir,
+      hostSandboxDir,
       idleTimer: null,
       currentSession: null,
       currentMessageId: null,
@@ -337,7 +339,7 @@ class AgentRuntime {
           for (const intent of helpIntents) {
             const target = await resolveAgentByName(sessionId, intent.targetAgentName);
             if (target) {
-              InboxManager.write(entry.hostWorkDir, target.name, {
+              InboxManager.write(entry.hostSandboxDir, target.name, {
                 type: 'help_request',
                 id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 from: entry.currentAgentName || entry.currentAgentId || 'unknown',

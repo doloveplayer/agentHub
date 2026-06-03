@@ -1,4 +1,4 @@
-import { appendFileSync, readFileSync, existsSync, writeFileSync } from 'fs';
+import { appendFileSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
 
 function norm(name: string): string {
@@ -19,11 +19,24 @@ export interface InboxEntry {
 
 export class InboxManager {
   /**
-   * Create an empty inbox file if it doesn't exist.
-   * Inbox files live at {hostWorkDir}/_inbox_{agentName}.jsonl
+   * Resolve the inbox file path for an agent.
+   * Inbox files live at {hostSandboxDir}/_agent_{agentName}/_inbox.jsonl
+   * which maps to /sandbox/_agent_{agentName}/_inbox.jsonl inside the container.
    */
-  static init(hostWorkDir: string, agentName: string): void {
-    const inboxPath = resolve(hostWorkDir, `_inbox_${norm(agentName)}.jsonl`);
+  static resolveInboxPath(hostSandboxDir: string, agentName: string): string {
+    const agentDir = resolve(hostSandboxDir, `_agent_${norm(agentName)}`);
+    return resolve(agentDir, '_inbox.jsonl');
+  }
+
+  /**
+   * Create an empty inbox file if it doesn't exist.
+   */
+  static init(hostSandboxDir: string, agentName: string): void {
+    const inboxPath = InboxManager.resolveInboxPath(hostSandboxDir, agentName);
+    const dir = resolve(inboxPath, '..');
+    if (!existsSync(dir)) {
+      try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
+    }
     if (!existsSync(inboxPath)) {
       try {
         writeFileSync(inboxPath, '', 'utf-8');
@@ -35,13 +48,16 @@ export class InboxManager {
 
   /**
    * Write an entry to an agent's inbox file.
-   * Inbox files live at {hostWorkDir}/_inbox_{agentName}.jsonl
    */
-  static write(hostWorkDir: string, targetAgentName: string, entry: InboxEntry, sessionId?: string): void {
+  static write(hostSandboxDir: string, targetAgentName: string, entry: InboxEntry, sessionId?: string): void {
     if (entry.summary && entry.summary.length > 500) {
       console.warn(`[inbox] Large summary (${entry.summary.length} chars) from ${entry.from} to ${targetAgentName}`);
     }
-    const inboxPath = resolve(hostWorkDir, `_inbox_${norm(targetAgentName)}.jsonl`);
+    const inboxPath = InboxManager.resolveInboxPath(hostSandboxDir, targetAgentName);
+    const dir = resolve(inboxPath, '..');
+    if (!existsSync(dir)) {
+      try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
+    }
     const line = JSON.stringify(entry) + '\n';
     try {
       appendFileSync(inboxPath, line, 'utf-8');
@@ -67,8 +83,8 @@ export class InboxManager {
    * Read all unprocessed entries from an agent's inbox.
    * Returns entries and clears the file.
    */
-  static read(hostWorkDir: string, agentName: string, sessionId?: string): InboxEntry[] {
-    const inboxPath = resolve(hostWorkDir, `_inbox_${norm(agentName)}.jsonl`);
+  static read(hostSandboxDir: string, agentName: string, sessionId?: string): InboxEntry[] {
+    const inboxPath = InboxManager.resolveInboxPath(hostSandboxDir, agentName);
     if (!existsSync(inboxPath)) return [];
 
     try {
@@ -110,7 +126,7 @@ export class InboxManager {
 
 You are part of a multi-agent session. Other agents may observe your work and contact you.
 
-INBOX: Your inbox is at /sandbox/_inbox_${norm(agentName)}.jsonl. Other agents may send you intervention requests here.
+INBOX: Your inbox is at /sandbox/_agent_${norm(agentName)}/_inbox.jsonl. Other agents may send you intervention requests here.
 After completing each significant tool_use, read your inbox file and respond to any intervention requests:
   - If helpful and relevant, respond with accepted:true
   - If not relevant, respond with accepted:false and a brief reason
@@ -146,8 +162,8 @@ a clear message like "NEEDS HELP from @CodeAgent: <description>" and the hub wil
    * Returns the number of non-empty lines. Returns 0 if the file doesn't exist.
    * Does NOT clear the file (unlike read()).
    */
-  static unreadCount(hostWorkDir: string, agentName: string): number {
-    const inboxPath = resolve(hostWorkDir, `_inbox_${norm(agentName)}.jsonl`);
+  static unreadCount(hostSandboxDir: string, agentName: string): number {
+    const inboxPath = InboxManager.resolveInboxPath(hostSandboxDir, agentName);
     if (!existsSync(inboxPath)) return 0;
     try {
       const raw = readFileSync(inboxPath, 'utf-8');

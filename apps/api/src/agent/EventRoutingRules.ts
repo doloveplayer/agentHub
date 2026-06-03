@@ -41,6 +41,7 @@ export interface RouteEvent {
 export interface RouteMatch {
   targetType: string;
   entry: InboxEntry;
+  ruleId: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,6 +229,7 @@ export class EventRoutingRules {
         results.push({
           targetType,
           entry: { ...baseEntry, to: targetType },
+          ruleId: rule.id,
         });
       }
     }

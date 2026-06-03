@@ -59,11 +59,11 @@ export class AgentCoordinator {
       filePath: filePathStr,
     });
 
-    for (const { targetType, entry } of deliveries) {
+    for (const { targetType, entry, ruleId } of deliveries) {
       const targetAgentName = ctx.resolveAgent(targetType);
       if (targetAgentName && targetAgentName !== ctx.agentName) {
         // Dedup: same sender→target+ruleId within one task only notifies once
-        const key = `${ctx.agentName}->${targetAgentName}:${entry.id}`;
+        const key = `${ctx.agentName}->${targetAgentName}:${ruleId}`;
         if (ctx.notifiedKeys?.has(key)) continue;
         ctx.notifiedKeys?.add(key);
 

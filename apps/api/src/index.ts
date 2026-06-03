@@ -29,6 +29,7 @@ import reviewRoutes from "./routes/review.js";
 import settingsRoutes from "./routes/settings.js";
 import avatarRoutes from "./routes/avatar.js";
 import quoteRefRoutes from "./routes/quoteReferences.js";
+import pinnedRoutes from "./routes/pinned.js";
 import { seedAgentTemplates } from "./defaultAgents.js";
 
 // Startup cleanup: remove orphaned sandbox containers and directories
@@ -153,6 +154,7 @@ app.route("/api/auth", authRoutes);
 // Protected routes (middleware applied inside each router)
 app.route("/api/sessions", sessionRoutes);
 app.route("/api/sessions", sessionAgentRoutes);
+app.route("/api/sessions", pinnedRoutes);
 app.route("/api/chat", chatRoutes);
 app.route("/api/agents", agentRoutes);
 app.route("/api/workspace", workspaceRoutes);
