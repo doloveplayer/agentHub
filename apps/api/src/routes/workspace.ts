@@ -257,17 +257,27 @@ workspace.get('/:sessionId/html-preview', async (c) => {
   if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
   if (!filePath) return c.json({ error: 'Missing path query param' }, 400);
 
-  const workDir = getWorkspaceRoot(sessionId);
-  const resolved = resolveWorkspaceFilePath(workDir, filePath);
-  // Also try custom workspace if not found in sandbox
+  // Try sandbox directory first, then custom workspace
   let absPath: string | null = null;
-  if (resolved.ok) {
-    absPath = resolved.absolutePath;
-  } else if (session.workspacePath) {
+  try {
+    const workDir = getWorkspaceRoot(sessionId);
+    const resolved = resolveWorkspaceFilePath(workDir, filePath);
+    if (resolved.ok) {
+      try {
+        const st = statSync(resolved.absolutePath);
+        if (st.isFile()) absPath = resolved.absolutePath;
+      } catch { /* sandbox dir or file doesn't exist */ }
+    }
+  } catch { /* sandbox unavailable */ }
+
+  if (!absPath && session.workspacePath) {
     try {
       const alt = resolveWorkspaceFilePath(realpathSync(session.workspacePath), filePath);
-      if (alt.ok) absPath = alt.absolutePath;
-    } catch { /* not found */ }
+      if (alt.ok) {
+        const st = statSync(alt.absolutePath);
+        if (st.isFile()) absPath = alt.absolutePath;
+      }
+    } catch { /* not found in custom workspace */ }
   }
 
   if (!absPath) return c.json({ error: 'File not found' }, 404);
