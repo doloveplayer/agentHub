@@ -7,11 +7,12 @@ interface Props {
   sessionId: string;
   messages: Message[];
   onPinned: () => void;
+  onError?: (msg: string) => void;
 }
 
 type MenuMode = 'main' | 'message' | 'file' | 'text';
 
-export function PinnedPinMenu({ sessionId, messages, onPinned }: Props) {
+export function PinnedPinMenu({ sessionId, messages, onPinned, onError }: Props) {
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<MenuMode>('main');
   const [searchQuery, setSearchQuery] = useState('');
@@ -41,38 +42,53 @@ export function PinnedPinMenu({ sessionId, messages, onPinned }: Props) {
   }, [open, closeMenu]);
 
   const handlePinMessage = useCallback(async (msg: Message) => {
-    await api.createPinned(sessionId, {
-      sourceType: 'message',
-      content: msg.content,
-      sourceMessageId: msg.id,
-      title: msg.content.slice(0, 80).split('\n')[0],
-    });
-    onPinned();
-    closeMenu();
-  }, [sessionId, onPinned, closeMenu]);
+    try {
+      await api.createPinned(sessionId, {
+        sourceType: 'message',
+        content: msg.content,
+        sourceMessageId: msg.id,
+        title: msg.content.slice(0, 80).split('\n')[0],
+      });
+      onPinned();
+    } catch {
+      onError?.('Failed to pin message');
+    } finally {
+      closeMenu();
+    }
+  }, [sessionId, onPinned, closeMenu, onError]);
 
   const handlePinFile = useCallback(async () => {
     if (!filePath.trim()) return;
-    await api.createPinned(sessionId, {
-      sourceType: 'file',
-      content: filePath.trim(),
-      filePath: filePath.trim(),
-      title: filePath.trim().split('/').pop() ?? filePath.trim(),
-    });
-    onPinned();
-    closeMenu();
-  }, [sessionId, filePath, onPinned, closeMenu]);
+    try {
+      await api.createPinned(sessionId, {
+        sourceType: 'file',
+        content: filePath.trim(),
+        filePath: filePath.trim(),
+        title: filePath.trim().split('/').pop() ?? filePath.trim(),
+      });
+      onPinned();
+    } catch {
+      onError?.('Failed to pin file');
+    } finally {
+      closeMenu();
+    }
+  }, [sessionId, filePath, onPinned, closeMenu, onError]);
 
   const handlePinText = useCallback(async () => {
     if (!textContent.trim()) return;
-    await api.createPinned(sessionId, {
-      sourceType: 'text',
-      content: textContent.trim(),
-      title: textTitle.trim() || textContent.trim().slice(0, 80),
-    });
-    onPinned();
-    closeMenu();
-  }, [sessionId, textContent, textTitle, onPinned, closeMenu]);
+    try {
+      await api.createPinned(sessionId, {
+        sourceType: 'text',
+        content: textContent.trim(),
+        title: textTitle.trim() || textContent.trim().slice(0, 80),
+      });
+      onPinned();
+    } catch {
+      onError?.('Failed to pin text');
+    } finally {
+      closeMenu();
+    }
+  }, [sessionId, textContent, textTitle, onPinned, closeMenu, onError]);
 
   const filteredMessages = messages
     .filter(m => m.senderType === 'agent' && m.status === 'done')

@@ -573,7 +573,6 @@ export function ChatView() {
       sourceMessageId: msg.id,
       title: msg.content.slice(0, 80).split('\n')[0],
     }).then(() => {
-      setPinnedCount(c => c + 1);
       addToast('Message pinned', 'success');
     }).catch(() => {
       addToast('Failed to pin message', 'error');
@@ -638,6 +637,7 @@ export function ChatView() {
                 onPinned={() => {
                   api.getPinned(activeSessionId!).then(items => setPinnedCount(items.length));
                 }}
+                onError={(msg) => addToast(msg, 'error')}
               />
             </div>
             <PinnedPanel sessionId={activeSessionId!} wsPinnedEvents={pinnedEvents} />
