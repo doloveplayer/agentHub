@@ -34,7 +34,7 @@ export class ContextBus {
 
   /** Calculate priority weight for an entry. */
   private calcWeight(e: ContextEntry): number {
-    const typeScores: Record<string, number> = {
+    const typeScores: Record<ContextEntryType, number> = {
       'convention': 100, 'decision': 80, 'known-issue': 70,
       'dependency-map': 60, 'task-handoff': 50, 'project-fact': 40, 'artifact': 20,
     };
@@ -134,6 +134,7 @@ export class ContextBus {
   }
 
   getProjectDigest(maxTokens: number): string {
+    if (maxTokens <= 0) return '';
     const active = this.query({ status: 'active' });
     if (active.length === 0) return '';
 
