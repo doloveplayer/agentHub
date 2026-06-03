@@ -1,4 +1,5 @@
 import type { ContextEntry, ContextEntryType, ContextEntryStatus } from '@agenthub/shared';
+import { estimateTokens } from '@agenthub/shared';
 
 interface SetOptions {
   key: string;
@@ -29,6 +30,19 @@ export class ContextBus {
 
   constructor(maxEntries = 500) {
     this.maxEntries = maxEntries;
+  }
+
+  /** Calculate priority weight for an entry. */
+  private calcWeight(e: ContextEntry): number {
+    const typeScores: Record<string, number> = {
+      'convention': 100, 'decision': 80, 'known-issue': 70,
+      'dependency-map': 60, 'task-handoff': 50, 'project-fact': 40, 'artifact': 20,
+    };
+    const baseScore = typeScores[e.type] ?? 0;
+    const ageHours = (Date.now() - e.updatedAt) / (1000 * 60 * 60);
+    const decayFactor = Math.max(0, 1 - ageHours / 168); // 7-day linear decay
+    const refBonus = (e._refCount ?? 0) * 10;
+    return baseScore * decayFactor + refBonus;
   }
 
   set(opts: SetOptions): ContextEntry {

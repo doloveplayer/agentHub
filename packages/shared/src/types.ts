@@ -239,6 +239,18 @@ export type ContextEntryType =
 
 export type ContextEntryStatus = 'active' | 'resolved' | 'superseded';
 
+/**
+ * Estimate token count for mixed CJK/English text.
+ * CJK chars ~1.5 tokens, English words ~1.3 tokens, other chars ~0.5 tokens.
+ */
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  const cjk = (text.match(/[一-鿿]/g) || []).length;
+  const words = (text.match(/[a-zA-Z]+/g) || []).length;
+  const other = text.length - cjk - (text.match(/[a-zA-Z]/g) || []).length;
+  return Math.ceil(cjk * 1.5 + words * 1.3 + other * 0.5);
+}
+
 export interface ContextEntry {
   key: string;
   value: unknown;
@@ -251,6 +263,8 @@ export interface ContextEntry {
   status: ContextEntryStatus;
   createdAt: number;
   updatedAt: number;
+  /** In-memory reference count for weight calculation. Not persisted. */
+  _refCount?: number;
 }
 
 // ---- Archive ----
