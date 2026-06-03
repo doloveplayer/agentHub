@@ -245,14 +245,30 @@ export class ContextBus {
     return entries;
   }
 
-  gc(ageMs = 7 * 24 * 60 * 60 * 1000): number {
+  /** Mark entries older than staleHours as 'stale'. */
+  markStale(staleHours = 168): number {
+    const cutoff = Date.now() - staleHours * 60 * 60 * 1000;
+    let marked = 0;
+    for (const [, entry] of this.store) {
+      if (entry.status === 'active' && entry.updatedAt < cutoff) {
+        entry.status = 'stale' as any;
+        marked++;
+      }
+    }
+    return marked;
+  }
+
+  /** Enhanced GC: remove stale entries older than staleGcDays, resolved older than resolvedGcDays. */
+  gc(staleGcDays = 30, resolvedGcDays = 7): number {
     const now = Date.now();
     let removed = 0;
     for (const [key, entry] of this.store) {
-      if (
-        (entry.status === 'resolved' || entry.status === 'superseded') &&
-        now - entry.updatedAt > ageMs
-      ) {
+      const ageMs = now - entry.updatedAt;
+      if ((entry.status as any) === 'stale' && ageMs > staleGcDays * 24 * 60 * 60 * 1000) {
+        this.store.delete(key);
+        this.newKeys.delete(key);
+        removed++;
+      } else if (entry.status === 'resolved' && ageMs > resolvedGcDays * 24 * 60 * 60 * 1000) {
         this.store.delete(key);
         this.newKeys.delete(key);
         removed++;
