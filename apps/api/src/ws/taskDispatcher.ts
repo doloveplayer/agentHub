@@ -117,12 +117,21 @@ export function resolveAgentNameInSession(sessionId: string, agentType: string):
   const normalized = agentType.toLowerCase();
   const procMap = agentProcesses.get(sessionId);
   if (procMap) {
+    // 1. Exact match
     for (const [name] of procMap) {
       if (name.toLowerCase() === normalized) return name;
     }
+    // 2. Prefix match: 'test-agent' matches 'test-agent-b13eebaa'
+    for (const [name] of procMap) {
+      if (name.toLowerCase().startsWith(normalized + '-')) return name;
+    }
   }
+  // 3. Same for agentTaskQueues
   for (const [name] of agentTaskQueues) {
     if (name.toLowerCase() === normalized) return name;
+  }
+  for (const [name] of agentTaskQueues) {
+    if (name.toLowerCase().startsWith(normalized + '-')) return name;
   }
   return agentType;
 }
