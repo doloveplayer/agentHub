@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, KeyboardEvent } from 'react';
+import { useEffect, useState, useRef, KeyboardEvent, useMemo } from 'react';
 import { Send, Paperclip } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { AgentMentionPopup } from './AgentMentionPopup';
@@ -24,7 +24,7 @@ interface PromptInsertDetail {
 }
 
 interface Props {
-  onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null) => void;
+  onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null, skillInvocation?: string | null) => void;
   disabled?: boolean;
   mentionableAgents?: AgentConfig[];
 }
@@ -53,6 +53,33 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
 
   const matchSource = mentionableAgents ?? agents;
   const matchedAgents = recommendAgents(mentionQuery, matchSource, recentMessages);
+
+  const agentSkills = useMemo(() => {
+    if (!activeSessionId) return [];
+    const sessions = useAppStore.getState().sessions;
+    const session = sessions.find(s => s.id === activeSessionId);
+    if (!session) return [];
+    const agentIds = new Set((session.agents || []).map(sa => sa.agentId));
+    const allAgents = useAppStore.getState().agents;
+    const seen = new Set<string>();
+    const result: { name: string; description: string }[] = [];
+    for (const a of allAgents) {
+      if (!agentIds.has(a.id)) continue;
+      for (const s of (a.skills || [])) {
+        if (!seen.has(s.name)) {
+          seen.add(s.name);
+          result.push({ name: s.name, description: s.description });
+        }
+      }
+    }
+    return result;
+  }, [activeSessionId]);
+
+  const BUILTIN_SLASH_COMMANDS = ['/plan','/review','/fix','/deploy','/init','/test','/audit','/compact'];
+  const allSlashCommands = useMemo(() => {
+    const skills = agentSkills.map(s => '/' + s.name);
+    return [...BUILTIN_SLASH_COMMANDS, ...skills];
+  }, [agentSkills]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -122,13 +149,14 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (showSlash) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => (i + 1) % 8); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex(i => (i - 1 + 8) % 8); return; }
+      const cmdCount = allSlashCommands.length;
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => (i + 1) % cmdCount); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex(i => (i - 1 + cmdCount) % cmdCount); return; }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         const filtered = slashQuery
-          ? ['/plan','/review','/fix','/deploy','/init','/test','/audit','/compact'].filter(c => c.startsWith(slashQuery))
-          : ['/plan','/review','/fix','/deploy','/init','/test','/audit','/compact'];
+          ? allSlashCommands.filter(c => c.startsWith(slashQuery))
+          : allSlashCommands;
         if (filtered[slashIndex]) handleSelectCommand(filtered[slashIndex]);
         return;
       }
@@ -212,7 +240,19 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
       return;
     }
 
-    onSend(trimmed, tags, orchestrationMode, quoteReferenceId);
+    let skillInvocation: string | null = null;
+    let finalValue = trimmed;
+    const slashMatch = trimmed.match(/^\/(\S+)(?:\s+(.*))?$/);
+    if (slashMatch) {
+      const cmd = slashMatch[1].toLowerCase();
+      const rest = slashMatch[2] || '';
+      if (agentSkills.some(s => s.name === cmd)) {
+        skillInvocation = cmd;
+        finalValue = rest || `Run ${cmd}`;
+      }
+    }
+
+    onSend(finalValue, tags, orchestrationMode, quoteReferenceId, skillInvocation);
 
     // Touch session updatedAt locally for immediate sort feedback
     if (activeSessionId) {
@@ -279,6 +319,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
             onSelect={handleSelectCommand}
             onClose={() => setShowSlash(false)}
             position={{ top: 0, left: 8 }}
+            agentSkills={agentSkills}
           />
         )}
 
