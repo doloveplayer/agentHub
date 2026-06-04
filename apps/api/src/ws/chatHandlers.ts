@@ -341,11 +341,14 @@ export async function handleChatMessage(
       const inboxPrompt = sandbox ? await InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostSandboxDir, sessionId) : '';
       agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${inboxPrompt}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${sessionContext ? sessionContext + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
       if (skillInvocation) {
-        agentPrompt = `[Skill Invocation: ${skillInvocation}]
+        const agentHasSkill = (agent.skills as any[])?.some((s: any) => s.name === skillInvocation);
+        if (agentHasSkill) {
+          agentPrompt = `[Skill Invocation: ${skillInvocation}]
 Use the '${skillInvocation}' skill from your .claude/skills/${skillInvocation}/ directory.
 Read the SKILL.md in that directory and follow its instructions.
 
 ${agentPrompt}`;
+        }
       }
       if (sandbox) AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null, sessionId, agent.skills as any[] | null, agent.id);
       agentNameToType.set(agent.name, agent.name);

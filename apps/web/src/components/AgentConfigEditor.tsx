@@ -404,8 +404,12 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
                             const err = await res.json().catch(() => ({ error: 'Failed to add skills' }));
                             throw new Error(err.error || 'Failed to add skills');
                           }
-                          // Refresh agents to get updated skills
-                          api.getAgents().then(useAppStore.getState().setAgents);
+                          // Refresh agents and local skills state
+                          api.getAgents().then(updatedAgents => {
+                            useAppStore.getState().setAgents(updatedAgents);
+                            const a = updatedAgents.find((x: any) => x.id === agentId);
+                            if (a) setSkills((a.skills || []) as EditableSkill[]);
+                          });
                           setShowPresetPicker(false);
                         } catch (err: any) {
                           setError(err.message || 'Failed to add skills');

@@ -268,8 +268,15 @@ agents.post('/', async (c) => {
     });
 
     // Set up agent persistent home with full skill directories
-    const { AgentDirectoryManager } = await import('../agent/AgentDirectoryManager.js');
-    AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt, skills);
+    try {
+      const { AgentDirectoryManager } = await import('../agent/AgentDirectoryManager.js');
+      AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt, skills);
+    } catch (homeErr: any) {
+      // Rollback: delete the orphaned agent record
+      await prisma.agent.delete({ where: { id: agent.id } }).catch(() => {});
+      console.error(`[agents] Failed to set up agent home for ${agent.id}, rolled back: ${homeErr.message}`);
+      return c.json({ error: 'Failed to initialize agent home directory' }, 500);
+    }
 
     return c.json(agent, 201);
   } catch (err: any) {
@@ -291,7 +298,7 @@ agents.post('/:id/skills', async (c) => {
 
   const agent = await prisma.agent.findUnique({ where: { id } });
   if (!agent) return c.json({ error: 'Agent not found' }, 404);
-  if (agent.type !== 'user' && agent.createdBy !== userId) return c.json({ error: 'Forbidden' }, 403);
+  if (agent.createdBy !== userId) return c.json({ error: 'Forbidden' }, 403);
 
   const presetMap = new Map(presetSkills.map(s => [s.name, s]));
   const newSkills: SkillDef[] = [];

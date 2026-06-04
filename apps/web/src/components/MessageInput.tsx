@@ -31,6 +31,7 @@ interface Props {
 
 export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   const agents = useAppStore((s) => s.agents);
+  const sessions = useAppStore((s) => s.sessions);
   const orchestrationMode = useAppStore((s) => s.orchestrationMode);
   const setOrchestrationMode = useAppStore((s) => s.setOrchestrationMode);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -56,14 +57,12 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
 
   const agentSkills = useMemo(() => {
     if (!activeSessionId) return [];
-    const sessions = useAppStore.getState().sessions;
     const session = sessions.find(s => s.id === activeSessionId);
     if (!session) return [];
     const agentIds = new Set((session.agents || []).map(sa => sa.agentId));
-    const allAgents = useAppStore.getState().agents;
     const seen = new Set<string>();
     const result: { name: string; description: string }[] = [];
-    for (const a of allAgents) {
+    for (const a of agents) {
       if (!agentIds.has(a.id)) continue;
       for (const s of (a.skills || [])) {
         if (!seen.has(s.name)) {
@@ -73,7 +72,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
       }
     }
     return result;
-  }, [activeSessionId]);
+  }, [activeSessionId, sessions, agents]);
 
   const BUILTIN_SLASH_COMMANDS = ['/plan','/review','/fix','/deploy','/init','/test','/audit','/compact'];
   const allSlashCommands = useMemo(() => {

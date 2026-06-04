@@ -50,25 +50,23 @@ ${systemPrompt}
     // Write custom skills
     if (skills && skills.length > 0) {
       const skillsDir = resolve(claudeConfigDir, 'skills');
-      mkdirSync(skillsDir, { recursive: true });
       const presetMap = new Map(presetSkills.map(s => [s.name, s]));
       for (const skill of skills) {
         const preset = presetMap.get(skill.name) as PresetSkillDef | undefined;
         if (preset?.sourceDir && existsSync(preset.sourceDir)) {
-          // Full directory copy (includes SKILL.md, scripts, templates, etc.)
           const targetDir = resolve(skillsDir, skill.name);
           try {
-            cpSync(preset.sourceDir, targetDir, { recursive: true });
+            cpSync(preset.sourceDir, targetDir, { recursive: true, force: true });
           } catch (err: any) {
-            // Fallback to .md file if copy fails
             console.warn(`[AgentDirectory] Failed to copy skill dir for ${skill.name}: ${err.message}`);
-            const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
-            writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
           }
-        } else {
-          // Fallback: write single .md file for skills without sourceDir
+        }
+        // Always ensure SKILL.md exists (from sourceDir copy or generated fallback)
+        const targetSkillMd = resolve(skillsDir, skill.name, 'SKILL.md');
+        if (!existsSync(targetSkillMd)) {
+          mkdirSync(resolve(skillsDir, skill.name), { recursive: true });
           const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
-          writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+          writeFileSync(targetSkillMd, skillMd, 'utf-8');
         }
       }
     }
@@ -261,21 +259,22 @@ ${plannerSkillsBlock}
     // Write custom skills files
     if (skills && skills.length > 0) {
       const skillsDir = resolve(claudeConfigDir, 'skills');
-      mkdirSync(skillsDir, { recursive: true });
       const presetMap = new Map(presetSkills.map(s => [s.name, s]));
       for (const skill of skills) {
         const preset = presetMap.get(skill.name) as PresetSkillDef | undefined;
         if (preset?.sourceDir && existsSync(preset.sourceDir)) {
           try {
-            cpSync(preset.sourceDir, resolve(skillsDir, skill.name), { recursive: true });
+            cpSync(preset.sourceDir, resolve(skillsDir, skill.name), { recursive: true, force: true });
           } catch (err: any) {
             console.warn(`[AgentDirectory] Failed to copy skill dir for ${skill.name}: ${err.message}`);
-            const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
-            writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
           }
-        } else {
+        }
+        // Always ensure SKILL.md exists (from sourceDir copy or generated fallback)
+        const targetSkillMd = resolve(skillsDir, skill.name, 'SKILL.md');
+        if (!existsSync(targetSkillMd)) {
+          mkdirSync(resolve(skillsDir, skill.name), { recursive: true });
           const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
-          writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+          writeFileSync(targetSkillMd, skillMd, 'utf-8');
         }
       }
     }
