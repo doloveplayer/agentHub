@@ -2,12 +2,9 @@ import { useEffect, useState } from 'react';
 import { Square, Settings, UserPlus } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import type { AgentEvent } from '../store/appStore';
-import { FaceBusinessCard, FaceTerminalLog, FaceDashboard, FaceSkillStats } from './AgentCardFaces';
+import { FaceBusinessCard, FaceTerminalLog, FaceDashboard, FaceSkillCapabilities } from './AgentCardFaces';
 import type { AgentProvider } from '@agenthub/shared';
 import { calcContextPct } from '@agenthub/shared/constants';
-
-/** Stable empty array reference — prevents Zustand infinite re-render loop when skillStats[key] is undefined */
-const EMPTY_SKILLS: { skillName: string; count: number }[] = [];
 
 /** Derive capability tags from agent name / display name. */
 function deriveCapabilityTags(agentName?: string, displayName?: string): string[] {
@@ -114,9 +111,8 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   const rawPct = Math.max(livePct, persistedPct);
   const contextPct = Math.min(100, rawPct);
 
-  // Skill stats for 4th face — must be at top level (Rules of Hooks)
-  // Use ?? EMPTY_SKILLS (not || []) to keep a stable reference and avoid Zustand infinite re-render
-  const skillStats = useAppStore(s => s.skillStats[agentName || displayName] ?? EMPTY_SKILLS);
+  // Skills for 4th face — from agent config
+  const agentSkills = (agentConfig as any)?.skills || [];
 
   const isCollapsed = collapsed && !expanded;
 
@@ -182,7 +178,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
                   ? 'bg-hub-accent scale-110'
                   : 'bg-hub-muted/30 hover:bg-hub-muted/60'
               }`}
-              title={['摘要', '日志', '仪表盘', 'Skills'][face]}
+              title={['摘要', '日志', '仪表盘', '能力表'][face]}
             />
           ))}
         </div>
@@ -246,7 +242,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
           />
         )}
         {activeFace === 3 && (
-          <FaceSkillStats skills={skillStats} />
+          <FaceSkillCapabilities skills={agentSkills} />
         )}
       </div>
     </div>

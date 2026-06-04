@@ -1,4 +1,5 @@
 import type { AgentEvent } from '../store/appStore';
+import type { SkillDef } from '@agenthub/shared';
 import { formatTokens } from '../lib/text';
 
 // ---- Face 1: Business Card ----
@@ -159,39 +160,53 @@ export function FaceDashboard({
   );
 }
 
-// ---- Face 4: Skill Stats ----
-export function FaceSkillStats({
+// ---- Face 4: Skill Capabilities ----
+export function FaceSkillCapabilities({
   skills,
 }: {
-  skills: { skillName: string; count: number }[];
+  skills: SkillDef[];
 }) {
   if (skills.length === 0) {
     return (
-      <div className="flex items-center justify-center py-6 text-hub-muted text-caption italic">
-        尚未使用 skills
+      <div className="flex flex-col items-center justify-center py-6 px-3 text-hub-muted">
+        <div className="w-10 h-10 rounded-full bg-hub-muted/10 flex items-center justify-center mb-2">
+          <svg className="w-5 h-5 text-hub-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+          </svg>
+        </div>
+        <span className="text-caption italic">暂无配置 skills</span>
       </div>
     );
   }
 
-  const total = skills.reduce((s, r) => s + r.count, 0);
-
   return (
-    <div className="py-3 px-3 space-y-2 text-[11px]">
-      {skills
-        .sort((a, b) => b.count - a.count)
-        .map((s) => (
-          <div
-            key={s.skillName}
-            className="flex items-center justify-between"
-          >
-            <span className="text-hub-primary font-mono">{s.skillName}</span>
-            <span className="text-hub-accent font-medium tabular-nums">
-              {s.count}次
-            </span>
+    <div className="py-3 px-3 space-y-2.5 max-h-52 overflow-y-auto panel-scroll">
+      {skills.map((skill) => (
+        <div
+          key={skill.name}
+          className="group rounded-lg bg-hub-raised/50 hover:bg-hub-raised transition-colors p-2.5"
+        >
+          <div className="flex items-start gap-2">
+            <div className="w-5 h-5 rounded bg-hub-accent/15 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <svg className="w-3 h-3 text-hub-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-[11px] font-semibold text-hub-primary leading-tight">
+                {skill.name}
+              </h4>
+              {skill.description && (
+                <p className="text-[10px] text-hub-tertiary mt-0.5 leading-relaxed line-clamp-2">
+                  {skill.description}
+                </p>
+              )}
+            </div>
           </div>
-        ))}
-      <div className="pt-2 border-t border-hub text-hub-tertiary">
-        总计: {total} 次调用 · {skills.length} 个 skills
+        </div>
+      ))}
+      <div className="pt-2 border-t border-hub text-[10px] text-hub-muted text-center">
+        共 {skills.length} 个 skills
       </div>
     </div>
   );
