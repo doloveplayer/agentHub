@@ -21,8 +21,12 @@ interface EditableSkill {
 export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
   const agents = useAppStore((s) => s.agents);
   const setAgents = useAppStore((s) => s.setAgents);
+  const setSessions = useAppStore((s) => s.setSessions);
+  const sessions = useAppStore((s) => s.sessions);
   const agent = agents.find((a) => a.id === agentId);
 
+  const [displayName, setDisplayName] = useState('');
+  const [description, setDescription] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [skills, setSkills] = useState<EditableSkill[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,6 +38,8 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
 
   useEffect(() => {
     if (agent) {
+      setDisplayName(agent.displayName || '');
+      setDescription(agent.description || '');
       setSystemPrompt(agent.systemPrompt);
       setSkills((agent.skills || []) as EditableSkill[]);
       setLoading(false);
@@ -44,14 +50,24 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
     setSaving(true);
     setError(null);
     try {
-      // Strip internal fields before saving
       const cleanSkills: SkillDef[] = skills.map(({ _editing, _isNew, ...s }) => s);
       const updated = await api.updateAgent(agentId, {
+        displayName,
+        description,
         systemPrompt,
         skills: cleanSkills.length > 0 ? cleanSkills : null,
       });
-      // Update store
+      // Update agents store
       setAgents(agents.map((a) => (a.id === agentId ? { ...a, ...updated } : a)));
+      // Update session titles if displayName changed
+      if (agent && agent.displayName !== displayName) {
+        setSessions(sessions.map(s => {
+          if (s.type === 'solo' && s.agents?.[0]?.agentId === agentId) {
+            return { ...s, agents: [{ ...s.agents[0], displayName }] };
+          }
+          return s;
+        }));
+      }
       onSaved?.();
     } catch (err: any) {
       setError(err.message || 'Failed to save config');
@@ -60,8 +76,13 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
     }
   };
 
-  const handleResetSystemPrompt = () => {
-    if (agent) setSystemPrompt(agent.systemPrompt);
+  const handleResetAll = () => {
+    if (agent) {
+      setDisplayName(agent.displayName || '');
+      setDescription(agent.description || '');
+      setSystemPrompt(agent.systemPrompt);
+      setSkills((agent.skills || []) as EditableSkill[]);
+    }
   };
 
   // --- Skills management ---
@@ -150,6 +171,34 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
+          {/* Display Name */}
+          <div>
+            <label className="text-sm font-medium text-hub-primary mb-2 block">
+              Display Name
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-hub-raised border border-hub
+                         text-hub-primary text-sm focus:border-hub-accent focus:outline-none"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="text-sm font-medium text-hub-primary mb-2 block">
+              Description
+            </label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-hub-raised border border-hub
+                         text-hub-primary text-sm focus:border-hub-accent focus:outline-none"
+            />
+          </div>
+
           {/* System Prompt */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -158,7 +207,7 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
               </label>
               {systemPrompt !== agent?.systemPrompt && (
                 <button
-                  onClick={handleResetSystemPrompt}
+                  onClick={() => agent && setSystemPrompt(agent.systemPrompt)}
                   className="flex items-center gap-1 text-xs text-hub-muted hover:text-hub-accent"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -301,26 +350,36 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-hub">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-hub">
           <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm text-hub-secondary hover:bg-hub-hover transition"
+            onClick={handleResetAll}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-hub-muted hover:text-hub-secondary hover:bg-hub-hover transition"
+            title="Revert all fields to saved values"
           >
-            Cancel
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset to default
           </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-hub-accent text-white text-sm
-                       hover:bg-hub-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition"
-          >
-            {saving ? (
-              <span className="animate-spin">⏳</span>
-            ) : (
-              <Save className="w-4 h-4" />
-            )}
-            Save
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm text-hub-secondary hover:bg-hub-hover transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-hub-accent text-white text-sm
+                         hover:bg-hub-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              {saving ? (
+                <span className="animate-spin">⏳</span>
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              Save
+            </button>
+          </div>
         </div>
       </div>
     </div>

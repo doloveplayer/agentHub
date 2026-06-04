@@ -78,6 +78,8 @@ interface AppState {
   messages: Record<string, Message[]>;
   agentEvents: Record<string, AgentEvent[]>;
   agents: AgentConfig[];
+  configAgentId: string | null;
+  setConfigAgentId: (id: string | null) => void;
   streamingMessages: Record<string, string[]>;
   trustMode: boolean;
   sessionPermissionModes: Record<string, string>;
@@ -162,6 +164,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   messages: {},
   agentEvents: {},
   agents: [],
+  configAgentId: null,
   streamingMessages: {},
   trustMode: true,
   sessionPermissionModes: {},
@@ -217,6 +220,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   setAgents: (agents) => set({ agents }),
+  setConfigAgentId: (configAgentId) => set({ configAgentId }),
 
   setTrustMode: (trustMode) => set({ trustMode }),
   setOrchestrationMode: (orchestrationMode) => set({ orchestrationMode }),

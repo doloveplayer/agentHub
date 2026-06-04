@@ -495,7 +495,8 @@ export function ChatView() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showAddAgents, setShowAddAgents] = useState(false);
   const [showRemoveAgents, setShowRemoveAgents] = useState(false);
-  const [configAgentId, setConfigAgentId] = useState<string | null>(null);
+  const configAgentId = useAppStore((s) => s.configAgentId);
+  const setConfigAgentId = useAppStore((s) => s.setConfigAgentId);
   const [showWorkspaceSelector, setShowWorkspaceSelector] = useState(false);
   const [previewSelection, setPreviewSelection] = useState<{
     text: string;
