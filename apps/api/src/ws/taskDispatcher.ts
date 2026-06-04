@@ -532,6 +532,7 @@ export async function processNextInQueue(
   sessionId: string,
   agentName: string,
   queue: AgentTaskQueue,
+  depth: number = 0,
 ): Promise<void> {
   // Skip tasks whose expected output already exists (agent already did the work)
   while (queue.tasks.length > 0) {
@@ -560,8 +561,9 @@ export async function processNextInQueue(
 
   if (queue.tasks.length === 0) {
     // Check inbox for high-priority messages before going idle
+    // depth > 0 means we're already in a fix-round — don't recurse further
     const sandbox = sandboxes.get(sessionId);
-    if (sandbox) {
+    if (sandbox && depth === 0) {
       const inboxEntries = InboxManager.read(sandbox.hostSandboxDir, agentName, sessionId);
       const highPriority = inboxEntries.filter(e => e.risk === 'high');
       if (highPriority.length > 0) {
@@ -579,7 +581,7 @@ export async function processNextInQueue(
         };
         queue.tasks.push(fixTask);
         console.log(`[taskDispatcher] ${agentName} has ${highPriority.length} high-priority inbox messages, creating fix-round task`);
-        await processNextInQueue(sessionId, agentName, queue);
+        await processNextInQueue(sessionId, agentName, queue, depth + 1);
         return;
       }
     }

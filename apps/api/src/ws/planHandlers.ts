@@ -80,6 +80,7 @@ export async function handleConfirmPlan(sessionId: string, data: { planId: strin
 
   // Complex plan confirmation: >7 phases requires user approval
   if (tasks.length > 7) {
+    dispatchedPlans.delete(data.planId); // Allow re-dispatch on user confirmation
     pendingPlans.set(data.planId, { sessionId, data, tasks });
     broadcast(sessionId, {
       type: 'plan_confirm_required',

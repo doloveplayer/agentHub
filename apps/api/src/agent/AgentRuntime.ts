@@ -56,6 +56,7 @@ interface AgentEntry {
   compressionPhase: 'none' | 'summarizing'; // compression state
   compressionPendingPrompt: string | null;   // stores user prompt during compression
   intentScanOffset: number;            // position in accumulatedOutput already scanned for intents
+  notifiedKeys: Set<string>;           // per-agent dedup for AgentCoordinator routing
 }
 
 import {
@@ -302,6 +303,7 @@ class AgentRuntime {
       compressionPhase: 'none' as const,
       compressionPendingPrompt: null,
       intentScanOffset: 0,
+      notifiedKeys: new Set<string>(),
     };
 
     provider.onEvent((event: UnifiedAgentEvent) => {
@@ -374,7 +376,7 @@ class AgentRuntime {
             hostSandboxDir: entry.hostSandboxDir,
             resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
             broadcast,
-            notifiedKeys: new Set<string>(),
+            notifiedKeys: entry.notifiedKeys,
           }, {
             type: 'tool_use',
             toolName: event.toolName || '',
@@ -408,7 +410,7 @@ class AgentRuntime {
           hostSandboxDir: entry.hostSandboxDir,
           resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
           broadcast,
-          notifiedKeys: new Set<string>(),
+          notifiedKeys: entry.notifiedKeys,
         }, event.content || '');
         break;
       case 'done':
@@ -456,7 +458,7 @@ class AgentRuntime {
           hostSandboxDir: entry.hostSandboxDir,
           resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
           broadcast,
-          notifiedKeys: new Set<string>(),
+          notifiedKeys: entry.notifiedKeys,
         }, event.exitCode ?? 0, entry.accumulatedOutput?.slice(0, 3000) || '');
 
         // Route NEEDS HELP intents to target agent inboxes
