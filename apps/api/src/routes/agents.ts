@@ -1,9 +1,13 @@
+import { resolve } from 'path';
+import { existsSync, cpSync, mkdirSync, writeFileSync } from 'fs';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { encryptApiKey, decryptApiKey, maskApiKey } from '../lib/crypto.js';
 import { presetSkills } from '../presetSkills.js';
+import { config } from '../config.js';
+import type { SkillDef } from '@agenthub/shared';
 
 const agents = new Hono();
 agents.use('*', authMiddleware);
@@ -267,6 +271,61 @@ agents.post('/', async (c) => {
     if (err.code === 'P2002') return c.json({ error: 'Agent name already exists' }, 409);
     throw err;
   }
+});
+
+// POST /:id/skills — add preset skills to an existing agent (MUST be before /:id routes)
+agents.post('/:id/skills', async (c) => {
+  const { userId } = c.get('user');
+  const id = c.req.param('id');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const { skillNames } = body as { skillNames?: string[] };
+  if (!skillNames || !Array.isArray(skillNames) || skillNames.length === 0) {
+    return c.json({ error: 'skillNames array required' }, 400);
+  }
+
+  const agent = await prisma.agent.findUnique({ where: { id } });
+  if (!agent) return c.json({ error: 'Agent not found' }, 404);
+  if (agent.type !== 'user' && agent.createdBy !== userId) return c.json({ error: 'Forbidden' }, 403);
+
+  const presetMap = new Map(presetSkills.map(s => [s.name, s]));
+  const newSkills: SkillDef[] = [];
+  const skillsDir = resolve(config.agentContainer.hostRoot, id, '.claude', 'skills');
+
+  for (const name of skillNames) {
+    const preset = presetMap.get(name);
+    if (!preset) continue;
+    const targetDir = resolve(skillsDir, name);
+    if (preset.sourceDir && existsSync(preset.sourceDir)) {
+      try {
+        cpSync(preset.sourceDir, targetDir, { recursive: true });
+      } catch (err: any) {
+        console.warn(`[agents] Failed to copy skill dir for ${name}: ${err.message}`);
+        mkdirSync(targetDir, { recursive: true });
+        const md = `---\nname: ${preset.name}\ndescription: ${preset.description}\n---\n\n${preset.content}`;
+        writeFileSync(resolve(targetDir, 'SKILL.md'), md, 'utf-8');
+      }
+    } else {
+      mkdirSync(targetDir, { recursive: true });
+      const md = `---\nname: ${preset.name}\ndescription: ${preset.description}\n---\n\n${preset.content}`;
+      writeFileSync(resolve(targetDir, 'SKILL.md'), md, 'utf-8');
+    }
+    newSkills.push({ name: preset.name, description: preset.description, content: preset.content });
+  }
+
+  // Merge and deduplicate
+  const currentSkills = (agent.skills as SkillDef[] | null) || [];
+  const merged = [...currentSkills];
+  for (const s of newSkills) {
+    if (!merged.find(m => m.name === s.name)) merged.push(s);
+  }
+
+  await prisma.agent.update({
+    where: { id },
+    data: { skills: merged as any },
+  });
+
+  return c.json({ added: newSkills });
 });
 
 // PUT /:id — update agent (MUST be AFTER fixed-path routes)
