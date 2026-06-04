@@ -106,6 +106,21 @@ export const api = {
 
   getAgents: () => request<any[]>("/agents"),
 
+  getPresetSkills: () =>
+    request<{ name: string; description: string }[]>("/agents/preset-skills"),
+
+  createAgent: (body: {
+    name: string;
+    displayName: string;
+    description: string;
+    systemPrompt: string;
+    skills?: import("@agenthub/shared").SkillDef[];
+  }) =>
+    request<any>("/agents", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
   updateAgent: (
     id: string,
     body: {
