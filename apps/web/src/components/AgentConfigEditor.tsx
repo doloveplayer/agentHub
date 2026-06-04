@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Save, RotateCcw, Plus, Pencil, Trash2, Upload, AlertTriangle } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/appStore';
@@ -35,16 +35,21 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showReplaceWarning, setShowReplaceWarning] = useState(false);
+  const initializedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (agent) {
-      setDisplayName(agent.displayName || '');
-      setDescription(agent.description || '');
-      setSystemPrompt(agent.systemPrompt);
-      setSkills((agent.skills || []) as EditableSkill[]);
+    // Only re-initialize when editing a different agent, not on every store update
+    if (initializedFor.current === agentId) return;
+    const a = agents.find((x) => x.id === agentId);
+    if (a) {
+      setDisplayName(a.displayName || '');
+      setDescription(a.description || '');
+      setSystemPrompt(a.systemPrompt);
+      setSkills((a.skills || []) as EditableSkill[]);
       setLoading(false);
+      initializedFor.current = agentId;
     }
-  }, [agent]);
+  }, [agentId, agents]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -58,12 +63,14 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
         skills: cleanSkills.length > 0 ? cleanSkills : null,
       });
       // Update agents store
-      setAgents(agents.map((a) => (a.id === agentId ? { ...a, ...updated } : a)));
+      const currentAgents = useAppStore.getState().agents;
+      setAgents(currentAgents.map((a) => (a.id === agentId ? { ...a, ...updated } : a)));
       // Update session titles if displayName changed
+      const currentSessions = useAppStore.getState().sessions;
       if (agent && agent.displayName !== displayName) {
-        setSessions(sessions.map(s => {
+        setSessions(currentSessions.map(s => {
           if (s.type === 'solo' && s.agents?.[0]?.agentId === agentId) {
-            return { ...s, agents: [{ ...s.agents[0], displayName }] };
+            return { ...s, title: displayName, agents: [{ ...s.agents[0], displayName }] };
           }
           return s;
         }));

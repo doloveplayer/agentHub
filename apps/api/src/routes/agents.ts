@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { encryptApiKey, decryptApiKey, maskApiKey } from '../lib/crypto.js';
+import { presetSkills } from '../presetSkills.js';
 
 const agents = new Hono();
 agents.use('*', authMiddleware);
@@ -232,7 +233,6 @@ agents.post('/skills/validate', async (c) => {
 
 // GET /preset-skills — list available preset skills (MUST be before /:id routes)
 agents.get('/preset-skills', async (c) => {
-  const { presetSkills } = await import('../presetSkills.js');
   const list = presetSkills.map(({ name, description }) => ({ name, description }));
   return c.json(list);
 });
@@ -248,7 +248,6 @@ agents.post('/', async (c) => {
   // Resolve preset skill names to full SkillDef with content
   let skills = parsed.data.skills || [];
   if (skills.length > 0) {
-    const { presetSkills } = await import('../presetSkills.js');
     const presetMap = new Map(presetSkills.map((s: any) => [s.name, s]));
     skills = skills.map((s: any) => (!s.content && presetMap.has(s.name)) ? presetMap.get(s.name)! : s);
   }

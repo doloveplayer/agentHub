@@ -102,11 +102,13 @@ interface Props {
   open: boolean;
   onClose: () => void;
   groupSessionId?: string;
+  /** Called after successful creation (agent + session/add). onClose handles cancel. */
+  onCreated?: () => void;
 }
 
 // ── Component ────────────────────────────────────────────────────────
 
-export function CreateAgentModal({ open, onClose, groupSessionId }: Props) {
+export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: Props) {
   // ---- Store ----
   const agents = useAppStore((s) => s.agents);
 
@@ -132,13 +134,21 @@ export function CreateAgentModal({ open, onClose, groupSessionId }: Props) {
       .catch(() => setPresetSkills([]));
   }, [open]);
 
-  // ---- Build description lookup map from fetched preset skills ----
-  const skillDescriptionMap = useMemo(() => {
+  // ---- Build description lookup map and dynamic groups from fetched preset skills ----
+  const { skillDescriptionMap, skillGroups } = useMemo(() => {
     const map: Record<string, string> = {};
+    const grouped = new Set<string>();
+    const groups: Record<string, string[]> = { ...SKILL_GROUPS };
     for (const s of presetSkills) {
       map[s.name] = s.description;
+      for (const names of Object.values(groups)) {
+        if (names.includes(s.name)) grouped.add(s.name);
+      }
     }
-    return map;
+    // Add unmatched preset skills to "Other"
+    const other = presetSkills.filter(s => !grouped.has(s.name)).map(s => s.name);
+    if (other.length > 0) groups['Other'] = other;
+    return { skillDescriptionMap: map, skillGroups: groups };
   }, [presetSkills]);
 
   // ---- Reset form on open ----
@@ -153,14 +163,15 @@ export function CreateAgentModal({ open, onClose, groupSessionId }: Props) {
     setError(null);
     setCreating(false);
 
-    // Pre-fill systemPrompt from the store's code-agent
-    const codeAgent = agents.find(
-      (a) => a.name === 'code-agent' || a.type === 'system' && a.name === 'code-agent'
+    // Pre-fill systemPrompt from the store's code-agent (use getState to avoid stale closure)
+    const storeAgents = useAppStore.getState().agents;
+    const codeAgent = storeAgents.find(
+      (a) => a.name === 'code-agent' && a.type === 'system'
     );
     if (codeAgent?.systemPrompt) {
       setSystemPrompt(codeAgent.systemPrompt);
     }
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // ---- Handle template selection ----
   const handleTemplateSelect = (template: TemplateDef) => {
@@ -179,8 +190,9 @@ export function CreateAgentModal({ open, onClose, groupSessionId }: Props) {
     setDescription(template.description);
 
     // Look up matching agent from the store for systemPrompt pre-fill
-    const match = agents.find(
-      (a) => a.name === template.key || (a.type === 'system' && a.name === template.key)
+    const storeAgents = useAppStore.getState().agents;
+    const match = storeAgents.find(
+      (a) => a.name === template.key && a.type === 'system'
     );
     setSystemPrompt(match?.systemPrompt ?? '');
   };
@@ -216,7 +228,7 @@ export function CreateAgentModal({ open, onClose, groupSessionId }: Props) {
     const q = searchQuery.toLowerCase().trim();
     const result: { group: string; skills: string[] }[] = [];
 
-    for (const [group, skills] of Object.entries(SKILL_GROUPS)) {
+    for (const [group, skills] of Object.entries(skillGroups)) {
       if (!q) {
         result.push({ group, skills });
         continue;
@@ -238,11 +250,15 @@ export function CreateAgentModal({ open, onClose, groupSessionId }: Props) {
     setCreating(true);
     setError(null);
     try {
-      const name = displayName
+      // Derive machine-readable name from displayName; fallback for non-ASCII input
+      let name = displayName
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-|-$/g, '')
         .slice(0, 32);
+      if (name.length < 2) {
+        name = 'agent-' + Date.now().toString(36).slice(-6);
+      }
       const skills: SkillDef[] = Array.from(selectedSkills).map((sName) => ({
         name: sName,
         description: '',
@@ -256,20 +272,31 @@ export function CreateAgentModal({ open, onClose, groupSessionId }: Props) {
         skills,
       });
 
-      if (groupSessionId) {
-        await api.addSessionAgents(groupSessionId, [agent.id]);
-      } else {
-        const session = await api.createSession({
-          type: 'solo',
-          agentIds: [agent.id],
-        });
-        useAppStore.getState().setActiveSession(session.id);
+      try {
+        if (groupSessionId) {
+          await api.addSessionAgents(groupSessionId, [agent.id]);
+        } else {
+          const session = await api.createSession({
+            type: 'solo',
+            agentIds: [agent.id],
+          });
+          useAppStore.getState().setActiveSession(session.id);
+        }
+      } catch (sessionErr: any) {
+        // Rollback: delete the orphaned agent
+        api.deleteAgent(agent.id).catch(() => {});
+        setError(`Agent created but session failed: ${sessionErr.message || 'Unknown error'}`);
+        setCreating(false);
+        return;
       }
 
       // Refresh stores
-      api.getAgents().then(useAppStore.getState().setAgents);
-      api.getSessions().then(useAppStore.getState().setSessions);
+      Promise.all([
+        api.getAgents().then(useAppStore.getState().setAgents),
+        api.getSessions().then(useAppStore.getState().setSessions),
+      ]).catch(() => {});
 
+      onCreated?.();
       onClose();
     } catch (err: any) {
       setError(err.message || 'Failed to create agent');

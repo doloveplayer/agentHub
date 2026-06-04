@@ -132,7 +132,8 @@ export function AddAgentModal({ sessionId, open, onClose }: Props) {
         <CreateAgentModal
           open={showCreateAgent}
           groupSessionId={sessionId}
-          onClose={() => { setShowCreateAgent(false); onClose(); }}
+          onClose={() => setShowCreateAgent(false)}
+          onCreated={() => { setShowCreateAgent(false); onClose(); }}
         />
       )}
     </>

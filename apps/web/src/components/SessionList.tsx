@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil, ChevronDown, ChevronRight, Bot, Save, Pin, Archive, ArchiveRestore, Search } from 'lucide-react';
+import { Plus, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil, ChevronDown, ChevronRight, Bot, Pin, Archive, ArchiveRestore, Search } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
 import { CreateAgentModal } from './CreateAgentModal';
@@ -139,39 +139,44 @@ export function SessionList({ onCloseMobile }: Props) {
     setShowCreate(false);
   };
 
+  const handleCreateSoloSession = async (agentId: string) => {
+    const session = await api.createSession({ type: 'solo', agentIds: [agentId] });
+    setSessions([session, ...sessions]);
+    if (session.permissionMode) {
+      setSessionPermissionMode(session.id, session.permissionMode);
+    }
+    setActiveSession(session.id);
+  };
+
   const handleSelect = async (id: string) => {
     setActiveSession(id);
     clearUnread(id);
-    const session = await api.getSession(id);
-    useAppStore.setState((s) => {
-      const existingMsgs = s.messages[id] ?? [];
-      // Build a map of existing messages by ID to preserve streamed content
-      const existingMap = new Map(existingMsgs.map(m => [m.id, m]));
-      // Build a set of API message IDs for quick lookup
-      const apiMsgIds = new Set(session.messages.map((m: any) => m.id));
-      // Merge API messages with existing messages:
-      // - Always use API status when it's 'done' or 'error' (authoritative)
-      // - Keep existing content if it's non-empty (streamed content may be more complete)
-      // - Only keep 'streaming' status if API also says 'streaming'
-      const mergedMsgs = session.messages.map((apiMsg: any) => {
-        const existing = existingMap.get(apiMsg.id);
-        if (existing && existing.content) {
-          // Use API status when it's done/error (authoritative), otherwise keep existing
-          const status = (apiMsg.status === 'done' || apiMsg.status === 'error')
-            ? apiMsg.status
-            : existing.status;
-          return { ...apiMsg, content: existing.content, status };
+    try {
+      const session = await api.getSession(id);
+      useAppStore.setState((s) => {
+        const existingMsgs = s.messages[id] ?? [];
+        const existingMap = new Map(existingMsgs.map(m => [m.id, m]));
+        const apiMsgIds = new Set(session.messages.map((m: any) => m.id));
+        const mergedMsgs = session.messages.map((apiMsg: any) => {
+          const existing = existingMap.get(apiMsg.id);
+          if (existing && existing.content) {
+            const status = (apiMsg.status === 'done' || apiMsg.status === 'error')
+              ? apiMsg.status
+              : existing.status;
+            return { ...apiMsg, content: existing.content, status };
+          }
+          return apiMsg;
+        });
+        for (const localMsg of existingMsgs) {
+          if (!apiMsgIds.has(localMsg.id)) {
+            mergedMsgs.push(localMsg);
+          }
         }
-        return apiMsg;
+        return { messages: { ...s.messages, [id]: mergedMsgs } };
       });
-      // Append local messages that are not in API response (e.g., temp messages, streaming messages)
-      for (const localMsg of existingMsgs) {
-        if (!apiMsgIds.has(localMsg.id)) {
-          mergedMsgs.push(localMsg);
-        }
-      }
-      return { messages: { ...s.messages, [id]: mergedMsgs } };
-    });
+    } catch {
+      // Session may have been deleted or network error — silently fallback
+    }
   };
 
   // --- Session rename ---
@@ -432,7 +437,17 @@ export function SessionList({ onCloseMobile }: Props) {
         </div>
 
         {/* Sessions under this agent */}
-        {!isCollapsed && agentSessions.map((s) => renderSessionRow(s))}
+        {!isCollapsed && (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCreateSoloSession(agent.id); }}
+              className="w-full text-left px-4 py-1.5 text-xs text-hub-tertiary hover:text-hub-accent hover:bg-hub-hover transition"
+            >
+              + New Solo Session
+            </button>
+            {agentSessions.map((s) => renderSessionRow(s))}
+          </>
+        )}
       </div>
     );
   };
