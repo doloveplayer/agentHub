@@ -42,6 +42,7 @@ export class RuntimeAgentConfig {
   private _timeoutMs: number;
   private _queueTimeoutMs: number;
   private _perSessionMax: number;
+  private _permissionTimeoutMs: number;
   private _contextTokenBudget: number;
 
   constructor() {
@@ -49,6 +50,7 @@ export class RuntimeAgentConfig {
     this._timeoutMs = optionalInt('AGENT_TIMEOUT_MS', 300_000);
     this._queueTimeoutMs = optionalInt('AGENT_QUEUE_TIMEOUT_MS', 120_000);
     this._perSessionMax = optionalInt('AGENT_PER_SESSION_MAX', 8);
+    this._permissionTimeoutMs = optionalInt('AGENTHUB_PERMISSION_TIMEOUT_MS', optionalInt('PERMISSION_TIMEOUT_MS', 180_000));
     this._contextTokenBudget = optionalInt('CONTEXT_TOKEN_BUDGET', 10_000);
   }
 
@@ -56,7 +58,7 @@ export class RuntimeAgentConfig {
   async loadPersisted(prisma: any) {
     try {
       const rows = await prisma.globalConfig.findMany({
-        where: { key: { in: ['maxConcurrent', 'timeoutMs', 'queueTimeoutMs', 'perSessionMax', 'contextTokenBudget'] } },
+        where: { key: { in: ['maxConcurrent', 'timeoutMs', 'queueTimeoutMs', 'perSessionMax', 'contextTokenBudget', 'permissionTimeoutMs'] } },
       });
       for (const row of rows) {
         const val = Number(row.value);
@@ -93,6 +95,9 @@ export class RuntimeAgentConfig {
   async setContextTokenBudget(prisma: any, v: number) {
     if (v >= 2000 && v <= 50000) { this._contextTokenBudget = v; await this.persist(prisma, 'contextTokenBudget', v); }
   }
+  async setPermissionTimeoutMs(prisma: any, v: number) {
+    if (v >= 5_000 && v <= 600_000) { this._permissionTimeoutMs = v; await this.persist(prisma, 'permissionTimeoutMs', v); }
+  }
 
   // Sync getters/setters (for test compatibility and backward compat)
   get maxConcurrent(): number { return this._maxConcurrent; }
@@ -120,6 +125,11 @@ export class RuntimeAgentConfig {
     if (v >= 2000 && v <= 50000) this._contextTokenBudget = v;
   }
 
+  get permissionTimeoutMs(): number { return this._permissionTimeoutMs; }
+  set permissionTimeoutMs(v: number) {
+    if (v >= 5_000 && v <= 600_000) this._permissionTimeoutMs = v;
+  }
+
   toJSON() {
     return {
       maxConcurrent: this._maxConcurrent,
@@ -127,6 +137,7 @@ export class RuntimeAgentConfig {
       queueTimeoutMs: this._queueTimeoutMs,
       perSessionMax: this._perSessionMax,
       contextTokenBudget: this._contextTokenBudget,
+      permissionTimeoutMs: this._permissionTimeoutMs,
     };
   }
 }
@@ -186,6 +197,7 @@ export const config = {
     get queueTimeoutMs() { return runtimeConfig.agent.queueTimeoutMs; },
     get perSessionMax() { return runtimeConfig.agent.perSessionMax; },
     get contextTokenBudget() { return runtimeConfig.agent.contextTokenBudget; },
+    get permissionTimeoutMs() { return runtimeConfig.agent.permissionTimeoutMs; },
     provider: optional('AGENTHUB_AGENT_PROVIDER', optional('AGENT_PROVIDER', 'claude-code')),
     contextWindowTokens: optionalInt('AGENT_CONTEXT_WINDOW_TOKENS', 200_000), // Claude Sonnet 4 default
   },

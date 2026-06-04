@@ -23,6 +23,15 @@ const FIELDS = [
     parse: (v: number) => v * 1000,
   },
   {
+    key: 'permissionTimeoutMs',
+    label: 'Permission Timeout (seconds)',
+    min: 5,
+    max: 600,
+    hint: 'Auto-approve permission requests after timeout',
+    fmt: (v: number) => v / 1000,
+    parse: (v: number) => v * 1000,
+  },
+  {
     key: 'contextTokenBudget',
     label: 'Context Token Budget',
     min: 2000,

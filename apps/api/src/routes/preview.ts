@@ -73,7 +73,12 @@ preview.post("/:sessionId/forward", async (c) => {
 // and avoid port conflicts.
 const staticServers = new Map<string, { port: number; directory: string }>();
 
+// In-flight deduplication: prevent concurrent requests for the same session
+// from racing (e.g. React StrictMode double-mount, rapid file switching).
+const pendingStaticServers = new Map<string, Promise<Response>>();
+
 const STATIC_SERVER_BASE_PORT = 8765;
+const STATIC_SERVER_PORT_MAX = STATIC_SERVER_BASE_PORT + 20;
 
 preview.post("/:sessionId/serve-static", async (c) => {
   const { userId } = c.get("user");
@@ -92,11 +97,62 @@ preview.post("/:sessionId/serve-static", async (c) => {
   const containerId = await getSessionContainer(sessionId, userId);
   if (!containerId) return c.json({ error: "Sandbox not ready" }, 404);
 
-  // Kill ALL previous static servers in this container (await to ensure port is released)
+  // Deduplicate: if a request for this session+directory is already in-flight,
+  // return the same promise (cloned response) to prevent racing.
+  const dedupeKey = `${sessionId}:${directory}`;
+  const pending = pendingStaticServers.get(dedupeKey);
+  if (pending) {
+    const res = await pending;
+    return res.clone();
+  }
+
+  const promise = doServeStatic(containerId, sessionId, directory);
+  pendingStaticServers.set(dedupeKey, promise);
+  try {
+    const result = await promise;
+    return result;
+  } finally {
+    if (pendingStaticServers.get(dedupeKey) === promise) {
+      pendingStaticServers.delete(dedupeKey);
+    }
+  }
+});
+
+function jsonRes(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+async function doServeStatic(
+  containerId: string,
+  sessionId: string,
+  directory: string,
+): Promise<Response> {
+  // Kill ALL previous static servers in this container
   await SandboxManager.execCapture(
     containerId,
-    `pkill -f "/tmp/_serve.js" 2>/dev/null; sleep 0.5; true`,
+    `pkill -f "/tmp/_serve.js" 2>/dev/null; true`,
   );
+
+  // Wait for ports to actually be released (not blind sleep).
+  // Poll /proc/net/tcp to check the static server port range is clear.
+  for (let attempt = 0; attempt < 25; attempt++) {
+    const tcp = await SandboxManager.execCapture(
+      containerId,
+      `cat /proc/net/tcp /proc/net/tcp6 2>/dev/null || true`,
+    );
+    let occupied = false;
+    for (let p = STATIC_SERVER_BASE_PORT; p < STATIC_SERVER_PORT_MAX; p++) {
+      if (tcp.includes(`:${p.toString(16).padStart(4, "0")}`)) {
+        occupied = true;
+        break;
+      }
+    }
+    if (!occupied) break;
+    await new Promise((r) => setTimeout(r, 200));
+  }
   staticServers.delete(sessionId);
 
   try {
@@ -106,16 +162,16 @@ preview.post("/:sessionId/serve-static", async (c) => {
       `test -d '${directory.replace(/'/g, "'\\''")}' && echo ok || echo missing`,
     );
     if (dirCheck !== "ok") {
-      return c.json({ error: `Directory not found: ${directory}` }, 404);
+      return jsonRes({ error: `Directory not found: ${directory}` }, 404);
     }
 
     // Pick a port not already in use
     const usedPorts = await SandboxManager.detectPorts(containerId);
     let port = STATIC_SERVER_BASE_PORT;
-    while (usedPorts.includes(port) && port < STATIC_SERVER_BASE_PORT + 20)
+    while (usedPorts.includes(port) && port < STATIC_SERVER_PORT_MAX)
       port++;
-    if (port >= STATIC_SERVER_BASE_PORT + 20) {
-      return c.json({ error: "No available port for static server" }, 503);
+    if (port >= STATIC_SERVER_PORT_MAX) {
+      return jsonRes({ error: "No available port for static server" }, 503);
     }
 
     // Write a minimal Node.js static server script to the sandbox and start it.
@@ -139,8 +195,18 @@ const srv=http.createServer((req,res)=>{
     res.end(data);
   });
 });
-srv.on("error",(e)=>{if(e.code==="EADDRINUSE"){process.exit(1)}});
-srv.listen(${port});
+function tryListen(attempt){
+  srv.listen(${port});
+  srv.once("error",function(e){
+    srv.removeAllListeners("error");
+    if(e.code==="EADDRINUSE"&&attempt<5){
+      setTimeout(function(){tryListen(attempt+1)},200);
+    }else{
+      process.exit(1);
+    }
+  });
+}
+tryListen(0);
 ENDOFSCRIPT`,
     );
     SandboxManager.execShell(
@@ -159,26 +225,26 @@ ENDOFSCRIPT`,
         containerId,
         'cat /tmp/_serve.log 2>/dev/null || echo "(no log)"',
       );
-      return c.json({ error: `Static server failed to start: ${log}` }, 500);
+      return jsonRes({ error: `Static server failed to start: ${log}` }, 500);
     }
 
     // Set up port forwarding
     const forward = await SandboxManager.portForward(containerId, port);
     staticServers.set(sessionId, { port, directory });
 
-    return c.json({
+    return jsonRes({
       port,
       directory,
       proxyUrl: `/api/preview/${sessionId}/proxy/${port}/`,
       url: `http://localhost:${forward.hostPort}`,
     });
   } catch (err: any) {
-    return c.json(
+    return jsonRes(
       { error: `Sandbox command failed: ${err?.message || err}` },
       502,
     );
   }
-});
+}
 
 preview.post("/:sessionId/screenshot", async (c) => {
   const { userId } = c.get("user");

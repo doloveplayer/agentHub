@@ -193,6 +193,23 @@ const SessionHeader = React.memo(function SessionHeader({
   );
 });
 
+/** Inline conflict retry button shown below conflict_unresolved messages. */
+function ConflictRetryCard({ planId, taskIds, onRetry }: { planId: string; taskIds: string[]; onRetry: (planId: string, taskIds: string[]) => void }) {
+  const [clicked, setClicked] = useState(false);
+  return (
+    <div className="mx-4 my-1 bg-hub-danger/10 border border-hub-danger/30 rounded-hub-lg px-4 py-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-hub-secondary">Conflict tasks need retry</span>
+        <button
+          onClick={() => { setClicked(true); onRetry(planId, taskIds); }}
+          disabled={clicked}
+          className="ml-auto px-3 py-1 bg-hub-primary hover:bg-hub-primary/80 disabled:opacity-50 text-white text-xs rounded-md font-medium transition"
+        >{clicked ? 'Retrying...' : `Retry ${taskIds.length} Task(s) Sequentially`}</button>
+      </div>
+    </div>
+  );
+}
+
 /** Single message row with bubble, actions, agent info, and inline diff cards. Subscribes only to its own agentEvents. */
 const MessageItem = React.memo(function MessageItem({
   msg, agentDisplayName, agentName, onCopy, onQuote, onPin, onRegenerate, onDelete, respondToPermission,
@@ -241,17 +258,46 @@ const MessageItem = React.memo(function MessageItem({
           {permissionReqs.map((ev) => {
             const pid = ev.details.permissionId ?? ev.id;
             const resolved = resolvedPermissions.has(pid);
+            // Hide the card entirely once resolved
+            if (resolved) return null;
+            const toolInput = (ev.details as any).toolInput as Record<string, unknown> | undefined;
+            const isWrite = ev.details.tool === 'Write' || ev.details.tool === 'Edit' || ev.details.tool === 'MultiEdit';
+            const filePath: string | undefined = ev.details.path || (typeof toolInput?.file_path === 'string' ? toolInput.file_path : undefined);
+            const newContent: string | undefined = typeof toolInput?.content === 'string' ? toolInput.content : undefined;
+            const oldContent: string | undefined = typeof toolInput?.oldContent === 'string' ? toolInput.oldContent : undefined;
             return (
               <div key={ev.id} className="bg-hub-warning/10 border border-hub-warning/30 rounded-hub-lg px-4 py-3 my-2 animate-pulse">
                 <div className="flex items-center gap-2 mb-2">
                   <Shield className="w-4 h-4 text-hub-warning" />
                   <span className="text-sm font-medium text-hub-warning">Permission Request</span>
+                  <span className="text-[10px] text-hub-muted ml-auto">{ev.details.tool}</span>
                 </div>
-                <div className="text-xs text-hub-tertiary space-y-1 mb-3">
-                  <div>Tool: <span className="text-hub-secondary font-mono">{ev.details.tool ?? 'unknown'}</span></div>
-                  {ev.details.path && <div>Path: <span className="text-hub-secondary font-mono">{ev.details.path}</span></div>}
-                </div>
-                {!resolved && msg.status === 'streaming' ? (
+                {filePath && <div className="text-xs text-hub-tertiary mb-2">Path: <span className="text-hub-secondary font-mono">{filePath}</span></div>}
+                {isWrite && (oldContent !== undefined || !!newContent) ? (
+                  <div className="mb-3 space-y-1">
+                    {oldContent !== undefined && (
+                      <details className="text-xs">
+                        <summary className="text-hub-tertiary cursor-pointer hover:text-hub-secondary">View diff (before → after)</summary>
+                        <div className="grid grid-cols-2 gap-1 mt-1 max-h-48 overflow-auto">
+                          <pre className="bg-hub-danger/10 text-hub-danger text-[10px] p-2 rounded whitespace-pre-wrap font-mono">{String(oldContent || '').slice(0, 3000) || '(new file)'}</pre>
+                          <pre className="bg-hub-success/10 text-hub-success text-[10px] p-2 rounded whitespace-pre-wrap font-mono">{String(newContent || '').slice(0, 3000) || '(no content)'}</pre>
+                        </div>
+                      </details>
+                    )}
+                    {oldContent === undefined && newContent && (
+                      <div className="text-xs text-hub-tertiary">
+                        New file <span className="font-mono text-hub-secondary">{filePath}</span> ({newContent.length} chars)
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  ev.details.tool === 'Bash' && typeof toolInput?.command === 'string' && (
+                    <div className="mb-3">
+                      <pre className="bg-hub-raised text-hub-secondary text-[10px] p-2 rounded whitespace-pre-wrap font-mono max-h-32 overflow-auto">{String(toolInput.command).slice(0, 2000)}</pre>
+                    </div>
+                  )
+                )}
+                {msg.status === 'streaming' ? (
                   <div className="flex gap-2">
                     <button onClick={() => { setResolvedPermissions(prev => new Set(prev).add(pid)); respondToPermission(pid, true); }}
                       className="px-4 py-1.5 bg-hub-success hover:bg-hub-success/80 text-white text-xs rounded-md font-medium transition">Allow</button>
@@ -259,7 +305,7 @@ const MessageItem = React.memo(function MessageItem({
                       className="px-4 py-1.5 bg-hub-danger hover:bg-hub-danger/80 text-white text-xs rounded-md font-medium transition">Deny</button>
                   </div>
                 ) : (
-                  <span className="text-xs text-hub-muted italic">{resolved ? 'Response sent' : 'Agent terminated — request expired'}</span>
+                  <span className="text-xs text-hub-muted italic">Agent terminated — request expired</span>
                 )}
               </div>
             );
@@ -670,6 +716,17 @@ export function ChatView() {
                 onDelete={() => handleDeleteMessage(msg)}
                 respondToPermission={respondToPermission}
               />
+              {/* Conflict retry button */}
+              {msg.senderType === 'agent' && (msg as any).metadata?.conflictActions && msg.status === 'done' && (
+                <ConflictRetryCard
+                  planId={(msg as any).metadata.conflictActions.planId}
+                  taskIds={(msg as any).metadata.conflictActions.taskIds}
+                  onRetry={async (planId, taskIds) => {
+                    const ws = await ensureConnection();
+                    ws.send(JSON.stringify({ type: 'conflict_retry', planId, taskIds }));
+                  }}
+                />
+              )}
               {msg.senderType === 'agent' && msg.agentId
                 && (agentMap.get(msg.agentId)?.name === 'planner' || agentMap.get(msg.agentId)?.name?.startsWith('planner-'))
                 && msg.status === 'done' && (

@@ -27,7 +27,13 @@ export const workspaceModes = new Map<string, WorkspaceMode>();
 
 /** sessionId → active agent info (process + timer) */
 export interface AgentProcess {
-  process: { write(input: string): void; kill?(): void; stop?(): void };
+  process: {
+    write(input: string): void;
+    kill?(): void;
+    stop?(): void;
+    respondToPermission?(permissionId: string, allowed: boolean): void;
+    respondControlRequest?(requestId: string, allowed: boolean): void;
+  };
   timer: NodeJS.Timeout | null;
   agentId: string;
   agentName?: string;

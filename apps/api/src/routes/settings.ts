@@ -89,6 +89,7 @@ const updateRuntimeSchema = z.object({
   queueTimeoutMs: z.number().int().min(10000).max(1800000).optional(),
   perSessionMax: z.number().int().min(1).max(50).optional(),
   contextTokenBudget: z.number().int().min(2000).max(50000).optional(),
+  permissionTimeoutMs: z.number().int().min(5000).max(600000).optional(),
 });
 
 settings.put('/runtime', async (c) => {
@@ -124,6 +125,9 @@ settings.put('/runtime', async (c) => {
   }
   if (parsed.data.contextTokenBudget !== undefined) {
     await runtimeConfig.agent.setContextTokenBudget(prisma, parsed.data.contextTokenBudget);
+  }
+  if (parsed.data.permissionTimeoutMs !== undefined) {
+    await runtimeConfig.agent.setPermissionTimeoutMs(prisma, parsed.data.permissionTimeoutMs);
   }
 
   return c.json(runtimeConfig.agent.toJSON());

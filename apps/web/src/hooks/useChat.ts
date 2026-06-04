@@ -165,7 +165,7 @@ export function useChat(sessionId: string) {
                   id: data.permissionId || 'perm-' + Date.now(),
                   type: 'permission_request',
                   timestamp: data.timestamp || Date.now(),
-                  details: { tool: data.tool, path: data.path, permissionId: data.permissionId },
+                  details: { tool: data.tool, path: data.path, permissionId: data.permissionId, toolInput: data.toolInput, oldContent: data.oldContent },
                 });
               }
               break;
@@ -325,14 +325,30 @@ export function useChat(sessionId: string) {
               const conflictingFiles = (data.files || []).map((f: any) =>
                 `  - ${f.filePath} (conflict between ${f.agents.join(', ')})`
               ).join('\n');
+
+              // Extract planId and taskIds from taskContext
+              const taskContext = data.taskContext || [];
+              const planId = taskContext[0]?.agentTasks?.find((a: any) => a.planId)?.planId;
+              const taskIds = taskContext.flatMap((tc: any) =>
+                (tc.agentTasks || []).map((at: any) => at.taskId).filter(Boolean)
+              );
+              const dedupedTaskIds = [...new Set<string>(taskIds)];
+
+              const actionsBlock = planId && dedupedTaskIds.length > 0
+                ? `\n\n**Plan**: ${planId}\n**Conflicting tasks**: ${dedupedTaskIds.join(', ')}\n\nClick below to retry conflicting tasks sequentially.`
+                : '\n\nPlease check the affected files and resolve conflicts manually.';
+
               const cuMsg: Message = {
                 id: 'cu-' + Date.now(),
                 sessionId,
                 senderType: 'agent',
-                content: `## Manual Merge Required\n\nChanges overlap and could not be auto-merged:\n${conflictingFiles}\n\nPlease check the affected files and resolve conflicts manually.`,
+                content: `## File Conflict — Auto-Merge Failed\n\nChanges overlap and could not be auto-merged:\n${conflictingFiles}${actionsBlock}`,
                 status: 'done',
                 createdAt: new Date().toISOString(),
-              };
+                metadata: planId && dedupedTaskIds.length > 0
+                  ? { conflictActions: { planId, taskIds: dedupedTaskIds } }
+                  : undefined,
+              } as any;
               cuStore.addMessage(sessionId, cuMsg);
               break;
             }

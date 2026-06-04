@@ -5,6 +5,8 @@ export type ParsedEvent =
   | { type: 'tool_use'; toolName: string; input: Record<string, unknown> }
   | { type: 'tool_result'; content: string }
   | { type: 'permission_request'; tool: string; path?: string }
+  | { type: 'custom_permission_request'; permissionId: string; tool: string; filePath?: string; input: Record<string, unknown>; oldContent?: string }
+  | { type: 'control_request'; subtype: string; requestId: string; tool: string; filePath?: string; input: Record<string, unknown> }
   | { type: 'subagent_start'; agentType: string; description: string }
   | { type: 'subagent_result'; agentType: string }
   | { type: 'system'; subtype: string; message: string; sessionId?: string }
@@ -96,6 +98,10 @@ export class EventParser {
         return this.parseStreamEvent(data);
       case 'permission_request':
         return this.parsePermissionRequest(data);
+      case 'control_request':
+        return this.parseControlRequest(data);
+      case 'custom_permission_request':
+        return this.parseCustomPermissionRequest(data);
       case 'subagent_start':
         return this.parseSubagentStart(data);
       case 'subagent_result':
@@ -251,6 +257,34 @@ export class EventParser {
     return [{ type: 'permission_request', tool, path }];
   }
 
+  private parseControlRequest(data: StreamJsonLine): ParsedEvent[] {
+    const req = (data as any).request;
+    if (!req) return [];
+    const subtype = req.subtype;
+    const requestId = String((data as any).request_id || '');
+
+    if (subtype === 'can_use_tool') {
+      const tool = String(req.tool_name || '');
+      const input = (req.input || {}) as Record<string, unknown>;
+      const filePath = (input as any).file_path as string | undefined;
+      if (!tool) return [];
+      return [{ type: 'control_request', subtype: 'can_use_tool', requestId, tool, filePath, input }];
+    }
+
+    // Ignore other control_request subtypes (mcp_status, mcp_toggle, etc.)
+    return [];
+  }
+
+  private parseCustomPermissionRequest(data: StreamJsonLine): ParsedEvent[] {
+    const permissionId = String((data as any).permissionId || '');
+    const tool = String((data as any).tool || '');
+    const filePath = (data as any).filePath as string | undefined;
+    const input = ((data as any).input || {}) as Record<string, unknown>;
+    const oldContent = (data as any).oldContent as string | undefined;
+    if (!permissionId || !tool) return [];
+    return [{ type: 'custom_permission_request', permissionId, tool, filePath, input, oldContent }];
+  }
+
   private parseSubagentStart(data: StreamJsonLine): ParsedEvent[] {
     const sa = data.subagent_start || data;
     const agentType = sa.agentType || data.agentType || '';
@@ -288,6 +322,13 @@ export class EventParser {
       case 'subagent_start':      return { ...base, type: 'subagent_start' as const, content: event.agentType };
       case 'subagent_result':     return { ...base, type: 'subagent_result' as const, content: event.agentType };
       case 'permission_request':  return { ...base, type: 'permission_request' as const, tool: event.tool, path: event.path };
+      case 'custom_permission_request': return { ...base, type: 'permission_request' as const, tool: event.tool, path: event.filePath, filePath: event.filePath, toolInput: event.input as Record<string, unknown>, permissionId: event.permissionId };
+      case 'control_request': {
+        if (event.subtype === 'can_use_tool') {
+          return { ...base, type: 'permission_request' as const, tool: event.tool, path: event.filePath, filePath: event.filePath, toolInput: event.input as Record<string, unknown>, requestId: event.requestId };
+        }
+        return null; // ignore other control_request subtypes
+      }
       case 'done':                return { ...base, type: 'done' as const, exitCode: event.exitCode };
       case 'error':               return { ...base, type: 'error' as const, message: event.message };
       case 'token_usage':          return { ...base, type: 'token_usage' as const, inputTokens: event.inputTokens, outputTokens: event.outputTokens, cacheReadTokens: event.cacheReadTokens, cacheCreateTokens: event.cacheCreateTokens };

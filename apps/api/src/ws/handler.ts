@@ -35,6 +35,7 @@ import {
   handleReplanRequest,
   handleForceCompleteTaskMsg,
   handleForceFailTaskMsg,
+  handleConflictRetry,
 } from './planHandlers.js';
 
 import {
@@ -221,6 +222,7 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'approval_approve': handleApprovalApprove(sessionId, ws, data); break;
     case 'approval_reject': handleApprovalReject(sessionId, ws, data); break;
     case 'approval_reply': handleApprovalReply(sessionId, ws, data); break;
+    case 'conflict_retry': handleConflictRetry(sessionId, data); break;
     case 'recover_plan': handleRecoverPlan(sessionId, data, ws); break;
     case 'discard_plan': handleDiscardPlan(sessionId, data, ws); break;
     default: sendTo(ws, { type: 'error', message: `Unknown message type: ${data.type}` });

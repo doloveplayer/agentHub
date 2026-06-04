@@ -388,10 +388,10 @@ ${agentPrompt}`;
       continue;
     }
 
-    // Register in agentStates so stop/pause works via handleStopAgent
+    // Register in agentStates with a placeholder — patched with real provider after sendPrompt
     if (!agentStates.has(sessionId)) agentStates.set(sessionId, new Map());
     agentStates.get(sessionId)!.set(mention.messageId, {
-      process: { write: () => {}, kill: () => {}, stop: () => {} },
+      process: { write: () => {}, kill: () => {}, stop: () => {}, respondToPermission: undefined, respondControlRequest: undefined },
       timer: null,
       agentId: mention.agentId,
       agentName: agentNameForProc || undefined,
@@ -404,7 +404,25 @@ ${agentPrompt}`;
     }
 
     console.log(`[ws] AgentRuntime sendPrompt: session=${sessionId} agent=${mention.agentId} msg=${mention.messageId}`);
-    agentRuntime.sendPrompt(mention.agentId, sessionId, fullPrompt, mention.messageId, sandbox).catch((err: any) => {
+    agentRuntime.sendPrompt(mention.agentId, sessionId, fullPrompt, mention.messageId, sandbox, trustMode).then(() => {
+      // Patch agentStates with real provider reference for permission responses
+      const stateMap = agentStates.get(sessionId);
+      const st = stateMap?.get(mention.messageId);
+      if (st && mention.agentId) {
+        const agentEntry = (agentRuntime as any).agents?.get(mention.agentId);
+        if (agentEntry?.provider) {
+          st.process = {
+            write: (input: string) => agentEntry.provider.write(input),
+            kill: () => agentEntry.provider.stop(),
+            stop: () => agentEntry.provider.stop(),
+            respondToPermission: (permId: string, allowed: boolean) =>
+              agentEntry.provider.respondToPermission?.(permId, allowed),
+            respondControlRequest: (requestId: string, allowed: boolean) =>
+              agentEntry.provider.respondControlRequest?.(requestId, allowed),
+          };
+        }
+      }
+    }).catch((err: any) => {
       console.error(`[ws] AgentRuntime.sendPrompt failed: agent=${mention.agentId} session=${sessionId}`, err.message);
       broadcast(sessionId, {
         type: 'stream_error',
@@ -549,15 +567,25 @@ export function handlePermissionResponse(sessionId: string, data: { permissionId
   const timeout = permissionTimeouts.get(data.permissionId);
   if (timeout) { clearTimeout(timeout); permissionTimeouts.delete(data.permissionId); }
   const stateMap = agentStates.get(sessionId);
-  if (!stateMap) {
-    console.log(`[ws] Permission response ignored: session=${sessionId} has no active agents`);
-    return;
-  }
+  if (!stateMap) return;
   const st = stateMap.get(agentMessageId);
-  if (!st) {
-    console.log(`[ws] Permission response ignored: agent already terminated for msg=${agentMessageId}`);
+  if (!st) return;
+  // Extract raw ID from routed format: "agentMsgId|::|rawId"
+  const rawId = data.permissionId.includes('|::|') ? data.permissionId.split('|::|')[1] : data.permissionId;
+
+  // Legacy custom_permission_request path (canUseTool callback):
+  // The sdk-runner expects {"permissionId":"perm-xxx","allowed":true} on stdin.
+  if (st.process.respondToPermission) {
+    st.process.respondToPermission(rawId, data.allowed);
     return;
   }
+
+  // CONTROL_REQUEST path (SDK native control_request/control_response protocol)
+  if (st.process.respondControlRequest) {
+    st.process.respondControlRequest(rawId, data.allowed);
+    return;
+  }
+
   st.process.write(data.allowed ? 'y\n' : 'n\n');
 }
 

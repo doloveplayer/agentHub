@@ -4,10 +4,13 @@ import { normalizePlan, validateBasic, assessRisk, planHash } from '../agent/Pla
 import { broadcast } from './state.js';
 import type { TaskDispatchNode } from './state.js';
 import { DagPersistence } from '../agent/DagPersistence.js';
+import { addDispatchedPlan } from './planHandlers.js';
 
 const watchers = new Map<string, FSWatcher>();
-const processedHashes = new Map<string, string>();
 const pollingIntervals = new Map<string, NodeJS.Timeout>();
+
+/** Deduplication: maps sessionId → last dispatched plan hash */
+const processedHashes = new Map<string, string>();
 
 interface SandboxInfo {
   containerId: string;
@@ -15,6 +18,25 @@ interface SandboxInfo {
   hostWorkDir: string;
   sandboxDir: string;
   hostSandboxDir: string;
+}
+
+/**
+ * Unified plan dispatch hook.
+ *
+ * Call this whenever a plan.json may have been written or updated:
+ * from AgentRuntime (Planner done event), from PlanWatcher (file system event),
+ * or from any future trigger.
+ *
+ * Handles: read, validate, JSON retry, dedup, DAG reconciliation,
+ * frontend broadcast, and task dispatch.
+ */
+export async function onPlanReady(
+  sessionId: string,
+  hostDir: string,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+): Promise<void> {
+  const planPath = resolve(hostDir, 'plan.json');
+  await dispatchPlan(sessionId, planPath, sandbox, 0);
 }
 
 /**
@@ -40,11 +62,10 @@ export function startPlanWatcher(sessionId: string, hostSandboxDir: string, sand
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       debounceTimer = null;
-      // Check both locations — first found wins
       for (const dir of watchDirs) {
         const planPath = resolve(dir, 'plan.json');
         if (existsSync(planPath)) {
-          handlePlanFile(sessionId, planPath, sandbox).catch((err) => {
+          dispatchPlan(sessionId, planPath, sandbox, 5).catch((err) => {
             console.error(`[PlanWatcher] Error handling plan for ${sessionId.slice(0, 8)}:`, err.message);
           });
           return;
@@ -91,30 +112,17 @@ export function stopPlanWatcher(sessionId: string): void {
   processedHashes.delete(sessionId);
 }
 
-async function handlePlanFile(
+/**
+ * Core plan dispatch logic — read, validate, dedup, dispatch.
+ * Retries on Invalid JSON (Docker bind mount may show file before content syncs).
+ */
+async function dispatchPlan(
   sessionId: string,
   planPath: string,
-  sandbox: SandboxInfo,
-  isExisting = false,
+  sandbox: { containerId: string; workDir: string; hostWorkDir: string },
+  retriesLeft: number,
 ): Promise<void> {
   if (!existsSync(planPath)) return;
-
-  // Defense: on startup, if all plans for this session are archived,
-  // this is a stale plan.json from a previous cycle — clean it up.
-  if (isExisting) {
-    try {
-      const dbPlans = await DagPersistence.recover(sessionId);
-      const hasArchived = dbPlans.some(p => p.status === 'archived');
-      const hasLive = dbPlans.some(p => p.status === 'executing');
-      if (hasArchived && !hasLive) {
-        console.log(`[PlanWatcher] Stale plan.json detected for ${sessionId.slice(0, 8)} (all plans archived), removing`);
-        try { unlinkSync(planPath); } catch { /* best effort */ }
-        return;
-      }
-    } catch {
-      // DB unavailable — proceed normally
-    }
-  }
 
   let raw: string;
   try {
@@ -129,7 +137,13 @@ async function handlePlanFile(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    console.log(`[PlanWatcher] Invalid JSON in plan.json for ${sessionId.slice(0, 8)}, waiting for completion`);
+    if (retriesLeft > 0) {
+      setTimeout(() => {
+        dispatchPlan(sessionId, planPath, sandbox, retriesLeft - 1);
+      }, 500);
+      return;
+    }
+    console.warn(`[PlanWatcher] Invalid JSON in plan.json for ${sessionId.slice(0, 8)} after retries, giving up`);
     return;
   }
 
@@ -153,10 +167,9 @@ async function handlePlanFile(
   const { reconcilePlanWithDag } = await import('./taskDispatcher.js');
   const reconciled = reconcilePlanWithDag(sessionId, plan.planTitle, plan.tasks.map((t) => ({
     id: t.id,
-    status: t.risk, // not used — the plan.json tasks may have their own status field
+    status: t.risk,
   })), sandbox);
 
-  // Also check the raw parsed JSON for task-level status fields
   const planTasks = (parsed.tasks as Array<Record<string, unknown>>) || [];
   const reconciled2 = reconcilePlanWithDag(sessionId, plan.planTitle, planTasks.map((t: Record<string, unknown>) => ({
     id: String(t.id || t.taskId || t.task_id || ''),
@@ -204,35 +217,35 @@ async function handlePlanFile(
     planTitle: plan.planTitle,
     summary: plan.summary,
     risk,
-    requiresConfirmation: risk === 'high',
+    requiresConfirmation: false, // Permission mode gates per-action, plan auto-dispatches
     tasks: taskList,
   });
 
-  if (risk === 'low') {
-    console.log(`[PlanWatcher] Low-risk plan ${planId}, dispatching immediately`);
+  // Always dispatch — permission mode handles action-level gating
+  console.log(`[PlanWatcher] Dispatching plan ${planId} (risk=${risk}, tasks=${plan.tasks.length})`);
 
-    const tasks: TaskDispatchNode[] = plan.tasks.map((t) => ({
-      id: t.id,
-      title: t.title,
-      description: t.description,
-      agentType: t.agentType,
-      dependsOn: t.dependsOn,
-      expectedOutput: t.expectedOutput,
-      priority: 'medium',
-    }));
+  const tasks: TaskDispatchNode[] = plan.tasks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    agentType: t.agentType,
+    dependsOn: t.dependsOn,
+    expectedOutput: t.expectedOutput,
+    priority: 'medium',
+  }));
 
-    const { dispatchTasksToAgents } = await import('./taskDispatcher.js');
+  const { dispatchTasksToAgents } = await import('./taskDispatcher.js');
 
-    dispatchTasksToAgents(sessionId, planId, tasks, sandbox, plan.planTitle)
-      .then(() => {
-        broadcast(sessionId, { type: 'plan_executing', planId });
-      })
-      .catch((err: any) => {
-        broadcast(sessionId, { type: 'stream_error', error: `Failed to dispatch tasks: ${err.message}` });
-      });
-  } else {
-    console.log(`[PlanWatcher] High-risk plan ${planId}, awaiting user confirmation`);
-  }
+  // Prevent double-dispatch if user also clicks "Confirm All" in frontend panel
+  addDispatchedPlan(planId);
+
+  dispatchTasksToAgents(sessionId, planId, tasks, sandbox, plan.planTitle)
+    .then(() => {
+      broadcast(sessionId, { type: 'plan_executing', planId });
+    })
+    .catch((err: any) => {
+      broadcast(sessionId, { type: 'stream_error', error: `Failed to dispatch tasks: ${err.message}` });
+    });
 }
 
 function startPolling(
@@ -247,7 +260,7 @@ function startPolling(
       const stat = statSync(planPath);
       if (stat.mtimeMs > lastMtime) {
         lastMtime = stat.mtimeMs;
-        handlePlanFile(sessionId, planPath, sandbox).catch(() => {});
+        dispatchPlan(sessionId, planPath, sandbox, 5).catch(() => {});
       }
     } catch {
       // File may not exist yet
@@ -262,9 +275,24 @@ function scheduleExistingPlanRead(
   planPath: string,
   sandbox: SandboxInfo,
 ): void {
-  setTimeout(() => {
+  setTimeout(async () => {
     if (!hasWatcherForSession(sessionId) && !pollingIntervals.has(sessionId)) return;
-    handlePlanFile(sessionId, planPath, sandbox, true).catch((err) => {
+
+    // Clean up stale plan.json from previous cycles before dispatching
+    try {
+      const dbPlans = await DagPersistence.recover(sessionId);
+      const hasArchived = dbPlans.some(p => p.status === 'archived');
+      const hasLive = dbPlans.some(p => p.status === 'executing');
+      if (hasArchived && !hasLive) {
+        console.log(`[PlanWatcher] Stale plan.json detected for ${sessionId.slice(0, 8)} (all plans archived), removing`);
+        try { unlinkSync(planPath); } catch { /* best effort */ }
+        return;
+      }
+    } catch {
+      // DB unavailable — proceed normally
+    }
+
+    dispatchPlan(sessionId, planPath, sandbox, 5).catch((err) => {
       console.error(`[PlanWatcher] Error handling existing plan for ${sessionId.slice(0, 8)}:`, err.message);
     });
   }, 100);

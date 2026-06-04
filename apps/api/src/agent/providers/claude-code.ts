@@ -1,10 +1,17 @@
 import { AbstractProvider, EventHandler, ProviderConfig, UnifiedAgentEvent } from './base.js';
-import { mapPermissionMode, mapAllowedTools } from '../ClaudeAgentSDK.js';
+import { mapPermissionMode, mapAllowedTools, type AgentPermissionProfile } from '../ClaudeAgentSDK.js';
 import { EventParser, type ParsedEvent } from '../EventParser.js';
 import { spawnSDKInDocker } from '../SDKContainer.js';
 
 function parsedToUnified(event: ParsedEvent): UnifiedAgentEvent | null {
   return EventParser.toUnified(event);
+}
+
+/** Map session permission mode + trustMode boolean to SDK permission profile. */
+function resolvePermissionProfile(trustMode: boolean, sessionPermMode: string): AgentPermissionProfile {
+  if (trustMode) return "bypass";             // trust / smart → all tools, no prompts
+  if (sessionPermMode === "read_only") return "read_only"; // only Read/Grep/Glob/Bash
+  return "default";                            // ask → all tools, prompt for mutating ops
 }
 
 export class ClaudeCodeProvider implements AbstractProvider {
@@ -24,11 +31,13 @@ export class ClaudeCodeProvider implements AbstractProvider {
   private currentHostWorkDir = '';
   private currentHostSandboxDir = '';
   private currentTrustMode = true;
+  private sessionPermissionMode = 'trust';
   private currentAgentTag = '';
   private currentAgentConfigId: string | undefined;
   private currentAgentHomeDir = '';
   private currentModel: string | undefined;
   private childProc: import('child_process').ChildProcess | null = null;
+  private stdinRef: import('stream').Writable | null = null;
   private pendingCleanup: (() => void) | null = null;
   private partialLine = '';
   private runSeq = 0;
@@ -74,6 +83,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
     this.currentHostWorkDir = hostWorkDir;
     this.currentHostSandboxDir = config.hostSandboxDir || hostWorkDir;
     this.currentTrustMode = config.trustMode ?? true;
+    this.sessionPermissionMode = config.sessionPermissionMode || 'trust';
     this.currentAgentTag = config.agentName || 'agent';
     this.currentAgentConfigId = config.agentName;
     this.currentAgentHomeDir = config.agentHomeDir || '';
@@ -99,7 +109,11 @@ export class ClaudeCodeProvider implements AbstractProvider {
     this.pendingCleanup = null;
     this.eventParser.reset();
 
-    const profile = this.currentTrustMode ? "bypass" : "read_only";
+    // Map session permission mode to SDK permission profile.
+    // trust/smart → bypass (all tools, no prompts)
+    // ask → default (all tools, prompt for mutating operations)
+    // read_only → read_only (only Read/Grep/Glob/Bash, no Write/Edit)
+    const profile = resolvePermissionProfile(this.currentTrustMode, this.sessionPermissionMode);
 
     const { proc, cleanup } = spawnSDKInDocker({
       containerId: this.currentContainerId,
@@ -116,6 +130,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
     });
 
     this.childProc = proc;
+    this.stdinRef = proc.stdin!;
     this.pendingCleanup = cleanup;
     const runId = ++this.runSeq;
 
@@ -187,7 +202,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
 
   /** Kill current in-flight docker exec without killing the provider. */
   stopChild(): void {
-
+    this.stdinRef = null;
     if (this.childProc) {
       try { this.childProc.kill('SIGTERM'); } catch { /* ignore */ }
       this.childProc = null;
@@ -195,6 +210,31 @@ export class ClaudeCodeProvider implements AbstractProvider {
     if (this.pendingCleanup) {
       this.pendingCleanup();
       this.pendingCleanup = null;
+    }
+  }
+
+  /** Write a permission response to the SDK runner's stdin. */
+  respondToPermission(permissionId: string, allowed: boolean): void {
+    const stdin = this.stdinRef;
+    if (!stdin) return;
+    try {
+      stdin.write(JSON.stringify({ permissionId, allowed }) + '\n');
+    } catch {
+      // Pipe may be closed — ignore
+    }
+  }
+
+  /** Write a control_response to the SDK's stdin for the native control_request protocol. */
+  respondControlRequest(requestId: string, allowed: boolean): void {
+    const stdin = this.stdinRef;
+    if (!stdin) return;
+    try {
+      const response = allowed
+        ? { type: 'control_response', response: { subtype: 'success', request_id: requestId } }
+        : { type: 'control_response', response: { subtype: 'error', request_id: requestId, error: 'User denied permission' } };
+      stdin.write(JSON.stringify(response) + '\n');
+    } catch {
+      // Pipe may be closed — ignore
     }
   }
 

@@ -15,7 +15,7 @@ import { IntentParser } from './IntentParser.js';
 import { InboxManager } from './InboxManager.js';
 import { agentCoordinator } from './AgentCoordinator.js';
 import { MilestoneBroadcaster } from './MilestoneBroadcaster.js';
-import { broadcast, clearRunningAgent, quoteBackfillMap, sessionAgentNames } from '../ws/state.js';
+import { broadcast, clearRunningAgent, quoteBackfillMap, sessionAgentNames, sessionPermissionModes, permissionTimeouts, agentStates } from '../ws/state.js';
 import { takeMessageBeforeVersion, broadcastDiffSummary } from '../ws/diffBroadcast.js';
 
 interface QueueItem {
@@ -58,6 +58,8 @@ interface AgentEntry {
   compressionPendingPrompt: string | null;   // stores user prompt during compression
   intentScanOffset: number;            // position in accumulatedOutput already scanned for intents
   notifiedKeys: Set<string>;           // per-agent dedup for AgentCoordinator routing
+  trustMode: boolean;                  // true = bypass permissions (trust/smart), false = ask/read_only
+  sessionPermissionMode: string;        // raw session permission mode string
 }
 
 import {
@@ -158,11 +160,12 @@ class AgentRuntime {
   }
 
   /** Send a prompt to an agent. Queues if busy, starts container if stopped. */
-  async sendPrompt(agentId: string, sessionId: string, prompt: string, agentMessageId?: string, sandbox?: SandboxInfo): Promise<void> {
+  async sendPrompt(agentId: string, sessionId: string, prompt: string, agentMessageId?: string, sandbox?: SandboxInfo, trustMode = true): Promise<void> {
     let entry = this.agents.get(agentId);
 
     if (!entry) {
-      entry = await this.ensureRunning(agentId, sandbox);
+      const sessionPermMode = sessionPermissionModes.get(sessionId) || 'ask';
+      entry = await this.ensureRunning(agentId, sandbox, trustMode, sessionPermMode);
     }
 
     // Detect container mismatch: agent was running in a different session's container.
@@ -225,7 +228,7 @@ class AgentRuntime {
   }
 
   /** Ensure agent container and REPL are running. Lazy-start if stopped. */
-  async ensureRunning(agentId: string, sandbox?: SandboxInfo): Promise<AgentEntry> {
+  async ensureRunning(agentId: string, sandbox?: SandboxInfo, trustMode = true, sessionPermissionMode = 'trust'): Promise<AgentEntry> {
     const agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
 
     // Use session sandbox if provided (solo sessions), otherwise create agent container
@@ -276,7 +279,9 @@ class AgentRuntime {
         hostWorkDir,
         hostSandboxDir,
         agentHomeDir,
-        trustMode: true,
+        agentName: agent.name,
+        trustMode,
+        sessionPermissionMode,
       },
     );
 
@@ -305,6 +310,8 @@ class AgentRuntime {
       compressionPendingPrompt: null,
       intentScanOffset: 0,
       notifiedKeys: new Set<string>(),
+      trustMode,
+      sessionPermissionMode,
     };
 
     provider.onEvent((event: UnifiedAgentEvent) => {
@@ -414,6 +421,61 @@ class AgentRuntime {
           notifiedKeys: entry.notifiedKeys,
         }, event.content || '');
         break;
+      case 'permission_request': {
+        const requestId = event.requestId;
+        const permId = event.permissionId;
+
+        // CONTROL_REQUEST path (SDK native): Write/Edit/MultiEdit trigger popup.
+        // Non-write tools are pre-approved via allowedTools and never reach here.
+        if (requestId && agentMessageId) {
+          const timeoutMs = config.agent.permissionTimeoutMs;
+          const routedId = `${agentMessageId}|::|${requestId}`;
+          broadcast(sessionId, {
+            type: 'permission_request',
+            agentMessageId,
+            permissionId: routedId,
+            tool: event.tool,
+            path: event.path,
+            toolInput: event.toolInput,
+            timestamp: event.timestamp,
+          });
+          const timeout = setTimeout(() => {
+            const stateMap = agentStates.get(sessionId);
+            const st = stateMap?.get(agentMessageId);
+            if (st?.process?.respondControlRequest) {
+              st.process.respondControlRequest(requestId, true);
+            }
+            permissionTimeouts.delete(routedId);
+          }, timeoutMs);
+          permissionTimeouts.set(routedId, timeout);
+          break;
+        }
+
+        // Legacy custom_permission_request path (fallback)
+        if (permId && agentMessageId) {
+          const timeoutMs = config.agent.permissionTimeoutMs;
+          const routedPermId = `${agentMessageId}|::|${permId}`;
+          broadcast(sessionId, {
+            type: 'permission_request',
+            agentMessageId,
+            permissionId: routedPermId,
+            tool: event.tool,
+            path: event.path,
+            toolInput: event.toolInput,
+            timestamp: event.timestamp,
+          });
+          const timeout = setTimeout(() => {
+            const stateMap = agentStates.get(sessionId);
+            const st = stateMap?.get(agentMessageId);
+            if (st?.process?.respondToPermission) {
+              st.process.respondToPermission(permId, true);
+            }
+            permissionTimeouts.delete(routedPermId);
+          }, timeoutMs);
+          permissionTimeouts.set(routedPermId, timeout);
+        }
+        break;
+      }
       case 'done':
         // --- Handle compression completion ---
         if (entry.compressionPhase === 'summarizing') {
@@ -437,7 +499,7 @@ class AgentRuntime {
             fullPrompt,
             entry.containerId,
             '/workspace',
-            { hostWorkDir: entry.hostWorkDir, trustMode: true },
+            { hostWorkDir: entry.hostWorkDir, trustMode: entry.trustMode, sessionPermissionMode: entry.sessionPermissionMode, agentName: entry.currentAgentName || undefined },
           );
 
           entry.provider.onEvent((e: UnifiedAgentEvent) => {
@@ -509,18 +571,26 @@ class AgentRuntime {
         }
 
         // Parse planner output and broadcast plan_result.
-        // Primary path: plan.json written by Planner (detected by PlanWatcher).
+        // Primary path: onPlanReady hook (shared with PlanWatcher).
         // Fallback: text extraction from output (when Write tool unavailable).
         if (entry.isPlanner && entry.accumulatedOutput) {
           const planPath = `${entry.hostWorkDir}/plan.json`;
           let planHandled = false;
 
-          try {
-            if (existsSync(planPath)) {
-              // File watcher will handle this — skip text extraction
+          if (existsSync(planPath)) {
+            try {
+              const { onPlanReady } = await import('../ws/planWatcher.js');
+              await onPlanReady(sessionId, entry.hostWorkDir, {
+                containerId: entry.containerId,
+                workDir: '/workspace',
+                hostWorkDir: entry.hostWorkDir,
+              });
               planHandled = true;
+              console.log(`[AgentRuntime] Plan dispatched via onPlanReady: session=${sessionId.slice(0, 8)}`);
+            } catch (err: any) {
+              console.warn(`[AgentRuntime] onPlanReady failed, falling back to text extraction: ${err.message}`);
             }
-          } catch {}
+          }
 
           if (!planHandled) {
             const plan = extractAndValidate(entry.accumulatedOutput);
@@ -803,7 +873,9 @@ class AgentRuntime {
         hostWorkDir: sandbox.hostWorkDir,
         hostSandboxDir: sandbox.hostSandboxDir,
         agentHomeDir,
-        trustMode: true,
+        agentName: agent.name,
+        trustMode: entry.trustMode,
+        sessionPermissionMode: entry.sessionPermissionMode,
       },
     );
 

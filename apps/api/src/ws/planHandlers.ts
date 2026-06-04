@@ -19,7 +19,12 @@ import {
   handleReplanFailedTask,
   handleForceCompleteTask,
   handleForceFailTask,
+  enqueueTaskAssignments,
+  planExecutions,
+  planKey,
 } from './taskDispatcher.js';
+
+import { resetDoneTaskToRetry, consumeReadyTasks, type DagTaskAssignment } from './dagExecution.js';
 
 import { drainPendingQueue, drainPerSessionQueue } from './chatHandlers.js';
 
@@ -32,7 +37,7 @@ const DISPATCHED_PLAN_TTL_MS = 10 * 60 * 1000; // 10 minutes
 /** Pending plans awaiting user confirmation (>7 phases) */
 const pendingPlans = new Map<string, { sessionId: string; data: any; tasks: TaskDispatchNode[] }>();
 
-function addDispatchedPlan(planId: string): void {
+export function addDispatchedPlan(planId: string): void {
   const now = Date.now();
   // Evict expired entries
   for (const [id, ts] of dispatchedPlans) {
@@ -77,19 +82,6 @@ export async function handleConfirmPlan(sessionId: string, data: { planId: strin
     agentType: t.agentType || 'code-agent', dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn : [],
     expectedOutput: t.expectedOutput || '', priority: t.priority || 'medium',
   }));
-
-  // Complex plan confirmation: >7 phases requires user approval
-  if (tasks.length > 7) {
-    dispatchedPlans.delete(data.planId); // Allow re-dispatch on user confirmation
-    pendingPlans.set(data.planId, { sessionId, data, tasks });
-    broadcast(sessionId, {
-      type: 'plan_confirm_required',
-      planId: data.planId,
-      taskCount: tasks.length,
-      tasks: tasks.map(t => ({ id: t.id, title: t.title, agentType: t.agentType, priority: t.priority })),
-    });
-    return;
-  }
 
   const sessionAgents = await prisma.sessionAgent.findMany({
     where: { sessionId },
@@ -180,6 +172,62 @@ export function handleReplanRequest(sessionId: string, data: { planId: string; t
   console.log(`[ws] Replan request: planId=${data.planId} taskId=${data.taskId}`);
   handleReplanFailedTask(sessionId, data.planId, data.taskId).catch((err: any) => {
     broadcast(sessionId, { type: 'stream_error', error: `Re-plan failed: ${err.message}` });
+  });
+}
+
+// ---- Conflict retry ----
+
+export async function handleConflictRetry(
+  sessionId: string,
+  data: { planId: string; taskIds: string[]; retryOrder?: string[] },
+): Promise<void> {
+  const sb = sandboxes.get(sessionId);
+  if (!sb) {
+    broadcast(sessionId, { type: 'stream_error', error: 'No active sandbox' });
+    return;
+  }
+
+  const execution = planExecutions.get(planKey(sessionId, data.planId));
+  if (!execution) {
+    broadcast(sessionId, { type: 'stream_error', error: `Plan ${data.planId} not found` });
+    return;
+  }
+
+  const orderedIds = data.retryOrder || data.taskIds;
+
+  // Add sequential dependency chain between conflicting tasks
+  for (let i = 1; i < orderedIds.length; i++) {
+    const prevItem = execution.tasks.get(orderedIds[i - 1]);
+    const currItem = execution.tasks.get(orderedIds[i]);
+    if (prevItem && currItem && !currItem.task.dependsOn.includes(orderedIds[i - 1])) {
+      currItem.task.dependsOn = [...currItem.task.dependsOn, orderedIds[i - 1]];
+      prevItem.dependents = [...new Set([...prevItem.dependents, orderedIds[i]])];
+    }
+  }
+
+  // Reset all conflicting tasks to queued
+  const assignments: DagTaskAssignment[] = [];
+  for (const taskId of orderedIds) {
+    const assignment = resetDoneTaskToRetry(execution, taskId);
+    if (assignment) assignments.push(assignment);
+  }
+
+  if (assignments.length === 0) {
+    broadcast(sessionId, { type: 'stream_error', error: 'No tasks could be reset for retry' });
+    return;
+  }
+
+  execution.summaryBroadcasted = false;
+
+  // Only the first task in the chain is ready (others depend on it)
+  const ready = consumeReadyTasks(execution);
+  await enqueueTaskAssignments(sessionId, data.planId, ready, sb);
+
+  broadcast(sessionId, {
+    type: 'conflict_retrying',
+    planId: data.planId,
+    taskIds: orderedIds,
+    message: `Retrying ${orderedIds.length} conflicting task(s) sequentially`,
   });
 }
 

@@ -20,6 +20,9 @@ export interface UnifiedAgentEvent {
   cacheCreateTokens?: number;
   // Skill use fields (REPL)
   skillName?: string;
+  // Permission request fields (REPL — toolInput already defined above)
+  permissionId?: string;
+  requestId?: string; // SDK control_request id for control_response routing
 }
 
 export interface ProviderConfig {
@@ -32,6 +35,8 @@ export interface ProviderConfig {
   hostSandboxDir?: string;
   agentHomeDir?: string;
   trustMode?: boolean;
+  /** Session permission mode: read_only | ask | smart | trust */
+  sessionPermissionMode?: string;
 }
 
 export type EventHandler = (event: UnifiedAgentEvent) => void;
@@ -63,4 +68,6 @@ export interface AbstractProvider {
   updateTrustMode(mode: boolean): void;
   setSessionIdCallback?(cb: (sessionId: string) => void): void;
   stopChild?(): void;
+  respondToPermission?(permissionId: string, allowed: boolean): void;
+  respondControlRequest?(requestId: string, allowed: boolean): void;
 }

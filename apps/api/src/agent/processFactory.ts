@@ -104,7 +104,11 @@ class ClaudeSDKDockerProcess implements OneShotAgentProcess {
     const hwDir = hostWorkDir || _workDir;
     const sbDir = hostSandboxDir || hwDir;
     const agentTag = promptFileId || 'agent';
-    const profile = trustMode ? "bypass" : "read_only";
+    // Map trustMode=false to "default" (not "read_only") — the session's
+    // permission mode (ask/read_only) is set via sessionPermissionMode on the
+    // caller side. trustMode is a boolean summary: true=trust/smart, false=ask/read_only.
+    // In "default" mode, canUseTool callback handles Write/Edit decisions.
+    const profile = trustMode ? "bypass" : "default";
 
     const { proc, cleanup } = spawnSDKInDocker({
       containerId,
