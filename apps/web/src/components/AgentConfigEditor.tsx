@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Save, RotateCcw, Plus, Pencil, Trash2, Upload, AlertTriangle } from 'lucide-react';
+import { X, Save, RotateCcw, Plus, Pencil, Trash2, Upload, AlertTriangle, Package } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/appStore';
 import type { SkillDef } from '@agenthub/shared';
@@ -35,6 +35,9 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showReplaceWarning, setShowReplaceWarning] = useState(false);
+  const [presetList, setPresetList] = useState<{ name: string; description: string }[]>([]);
+  const [showPresetPicker, setShowPresetPicker] = useState(false);
+  const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
   const initializedFor = useRef<string | null>(null);
 
   useEffect(() => {
@@ -50,6 +53,10 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
       initializedFor.current = agentId;
     }
   }, [agentId, agents]);
+
+  useEffect(() => {
+    api.getPresetSkills().then(setPresetList).catch(() => setPresetList([]));
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
@@ -330,12 +337,87 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
                 <Upload className="w-3 h-3" /> {uploading ? 'Validating...' : 'Upload .md'}
                 <input type="file" accept=".md" onChange={handleFileUpload} className="hidden" />
               </label>
+              <button
+                onClick={() => { setShowPresetPicker(true); setSelectedPresets(new Set()); }}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded border border-hub-accent/30 text-hub-accent hover:bg-hub-accent/10 transition"
+              >
+                <Package className="w-3 h-3" /> Add from Presets
+              </button>
             </div>
 
             {/* Upload error */}
             {uploadError && (
               <div className="mt-2 p-2 rounded bg-hub-danger/10 border border-hub-danger/20 text-hub-danger text-xs">
                 {uploadError}
+              </div>
+            )}
+
+            {/* Preset picker modal */}
+            {showPresetPicker && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                <div className="bg-hub-surface rounded-lg shadow-xl w-full max-w-md max-h-[70vh] flex flex-col">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-hub">
+                    <h3 className="text-sm font-semibold text-hub-primary">Add Preset Skills</h3>
+                    <button onClick={() => setShowPresetPicker(false)} className="p-1 rounded hover:bg-hub-hover text-hub-muted">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                    {presetList
+                      .filter(p => !skills.some(s => s.name === p.name))
+                      .map(p => (
+                        <label key={p.name} className="flex items-start gap-2 py-1.5 cursor-pointer hover:bg-hub-hover/50 rounded px-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedPresets.has(p.name)}
+                            onChange={e => {
+                              const next = new Set(selectedPresets);
+                              e.target.checked ? next.add(p.name) : next.delete(p.name);
+                              setSelectedPresets(next);
+                            }}
+                            className="mt-0.5 rounded border-hub bg-hub-input text-hub-accent focus:ring-hub-accent"
+                          />
+                          <div>
+                            <div className="text-sm font-medium text-hub-primary">{p.name}</div>
+                            <div className="text-xs text-hub-tertiary">{p.description}</div>
+                          </div>
+                        </label>
+                      ))}
+                    {presetList.filter(p => !skills.some(s => s.name === p.name)).length === 0 && (
+                      <p className="text-xs text-hub-muted py-4 text-center">All preset skills already added.</p>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-hub">
+                    <button onClick={() => setShowPresetPicker(false)} className="px-3 py-1.5 text-xs text-hub-secondary hover:bg-hub-hover rounded">Cancel</button>
+                    <button
+                      onClick={async () => {
+                        if (selectedPresets.size === 0) return;
+                        const names = Array.from(selectedPresets);
+                        try {
+                          const token = localStorage.getItem('agenthub_token');
+                          const res = await fetch(`/api/agents/${agentId}/skills`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                            body: JSON.stringify({ skillNames: names }),
+                          });
+                          if (!res.ok) {
+                            const err = await res.json().catch(() => ({ error: 'Failed to add skills' }));
+                            throw new Error(err.error || 'Failed to add skills');
+                          }
+                          // Refresh agents to get updated skills
+                          api.getAgents().then(useAppStore.getState().setAgents);
+                          setShowPresetPicker(false);
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to add skills');
+                        }
+                      }}
+                      disabled={selectedPresets.size === 0}
+                      className="px-4 py-1.5 text-xs bg-hub-accent text-white rounded hover:bg-hub-accent/90 disabled:opacity-40 transition"
+                    >
+                      Add ({selectedPresets.size})
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
