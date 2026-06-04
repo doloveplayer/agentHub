@@ -1,6 +1,5 @@
 import { appendFileSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
-import { resolve } from 'path';
-import { dirname } from 'path';
+import { resolve, dirname } from 'path';
 
 function norm(name: string): string {
   return name.toLowerCase();
