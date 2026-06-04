@@ -163,11 +163,9 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
     setError(null);
     setCreating(false);
 
-    // Pre-fill systemPrompt from the store's code-agent (use getState to avoid stale closure)
+    // Pre-fill systemPrompt from the store (match by name, any type)
     const storeAgents = useAppStore.getState().agents;
-    const codeAgent = storeAgents.find(
-      (a) => a.name === 'code-agent' && a.type === 'system'
-    );
+    const codeAgent = storeAgents.find((a) => a.name === 'code-agent');
     if (codeAgent?.systemPrompt) {
       setSystemPrompt(codeAgent.systemPrompt);
     }
@@ -189,11 +187,8 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
     setDisplayName(template.label);
     setDescription(template.description);
 
-    // Look up matching agent from the store for systemPrompt pre-fill
-    const storeAgents = useAppStore.getState().agents;
-    const match = storeAgents.find(
-      (a) => a.name === template.key && a.type === 'system'
-    );
+    // Look up matching agent from the store for systemPrompt pre-fill (by name, any type)
+    const match = useAppStore.getState().agents.find((a) => a.name === template.key);
     setSystemPrompt(match?.systemPrompt ?? '');
   };
 
