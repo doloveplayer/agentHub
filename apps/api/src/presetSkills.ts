@@ -1,10 +1,15 @@
 // Auto-generated preset skills from ~/.claude plugins
 import type { SkillDef } from '@agenthub/shared';
 
-export const presetSkills: SkillDef[] = [
+export interface PresetSkillDef extends SkillDef {
+  sourceDir: string | null;
+}
+
+export const presetSkills: PresetSkillDef[] = [
   {
     name: 'algorithmic-art',
     description: 'Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/algorithmic-art',
     content: `---
 name: algorithmic-art
 description: Creating algorithmic art using p5.js with seeded randomness and interactive parameter exploration. Use this when users request creating art using code, generative art, algorithmic art, flow fields, or particle systems. Create original algorithmic art rather than copying existing artists' work to avoid copyright violations.
@@ -414,6 +419,7 @@ This skill includes helpful templates and documentation:
   {
     name: 'brainstorming',
     description: '"You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming',
     content: `---
 name: brainstorming
 description: "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation."
@@ -583,6 +589,7 @@ If they agree to the companion, read the detailed guide before proceeding:
   {
     name: 'brand-guidelines',
     description: 'Applies Anthropic\'s official brand colors and typography to any sort of artifact that may benefit from having Anthropic\'s look-and-feel. Use it when brand colors or style guidelines, visual formatti',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/brand-guidelines',
     content: `---
 name: brand-guidelines
 description: Applies Anthropic's official brand colors and typography to any sort of artifact that may benefit from having Anthropic's look-and-feel. Use it when brand colors or style guidelines, visual formatting, or company design standards apply.
@@ -661,6 +668,7 @@ To access Anthropic's official brand identity and style resources, use this skil
   {
     name: 'canvas-design',
     description: 'Create beautiful visual art in .png and .pdf documents using design philosophy. You should use this skill when the user asks to create a poster, piece of art, design, or other static piece. Create ori',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/canvas-design',
     content: `---
 name: canvas-design
 description: Create beautiful visual art in .png and .pdf documents using design philosophy. You should use this skill when the user asks to create a poster, piece of art, design, or other static piece. Create original visual designs, never copying existing artists' work to avoid copyright violations.
@@ -795,6 +803,7 @@ To create additional pages when requested, create more creative pages along the 
   {
     name: 'cc-nano-banana',
     description: 'REQUIRED for all image generation requests. Generate and edit images using Nano Banana (Gemini CLI). Handles blog featured images, YouTube thumbnails, icons, diagrams, patterns, illustrations, photos,',
+    sourceDir: '/home/c2216-3090/.claude/skills/cc-nano-banana',
     content: `---
 name: cc-nano-banana
 description: REQUIRED for all image generation requests. Generate and edit images using Nano Banana (Gemini CLI). Handles blog featured images, YouTube thumbnails, icons, diagrams, patterns, illustrations, photos, visual assets, graphics, artwork, pictures. Use this skill whenever the user asks to create, generate, make, draw, design, or edit any image or visual content.
@@ -950,6 +959,7 @@ When the user asks for changes:
   {
     name: 'claude-api',
     description: 'Build, debug, and optimize Claude API / Anthropic SDK apps. Apps built with this skill should include prompt caching. Also handles migrating existing Claude API code between Claude model versions (4.5',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/claude-api',
     content: `---
 name: claude-api
 description: "Build, debug, and optimize Claude API / Anthropic SDK apps. Apps built with this skill should include prompt caching. Also handles migrating existing Claude API code between Claude model versions (4.5 → 4.6, 4.6 → 4.7, retired-model replacements). TRIGGER when: code imports \`anthropic\`/\`@anthropic-ai/sdk\`; user asks for the Claude API, Anthropic SDK, or Managed Agents; user adds/modifies/tunes a Claude feature (caching, thinking, compaction, tool use, batch, files, citations, memory) or model (Opus/Sonnet/Haiku) in a file; questions about prompt caching / cache hit rate in an Anthropic SDK project. SKIP: file imports \`openai\`/other-provider SDK, filename like \`*-openai.py\`/\`*-generic.py\`, provider-neutral code, general programming/ML."
@@ -1280,6 +1290,7 @@ Live documentation URLs are in \`shared/live-sources.md\`.
   {
     name: 'dispatching-parallel-agents',
     description: 'Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/dispatching-parallel-agents',
     content: `---
 name: dispatching-parallel-agents
 description: Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies
@@ -1467,6 +1478,7 @@ From debugging session (2025-10-03):
   {
     name: 'doc-coauthoring',
     description: 'Guide users through a structured workflow for co-authoring documentation. Use when user wants to write documentation, proposals, technical specs, decision docs, or similar structured content. This wor',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/doc-coauthoring',
     content: `---
 name: doc-coauthoring
 description: Guide users through a structured workflow for co-authoring documentation. Use when user wants to write documentation, proposals, technical specs, decision docs, or similar structured content. This workflow helps users efficiently transfer context, refine content through iteration, and verify the doc works for readers. Trigger when user mentions writing docs, creating proposals, drafting specs, or similar documentation tasks.
@@ -1847,6 +1859,7 @@ Announce document completion. Provide a few final tips:
   {
     name: 'docx',
     description: 'Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx files). Triggers include: any mention of \'Word doc\', \'word document\', \'.docx\', or requests to pr',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/docx',
     content: `---
 name: docx
 description: "Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx files). Triggers include: any mention of 'Word doc', 'word document', '.docx', or requests to produce professional documents with formatting like tables of contents, headings, page numbers, or letterheads. Also use when extracting or reorganizing content from .docx files, inserting or replacing images in documents, performing find-and-replace in Word files, working with tracked changes or comments, or converting content into a polished Word document. If the user asks for a 'report', 'memo', 'letter', 'template', or similar deliverable as a Word or .docx file, use this skill. Do NOT use for PDFs, spreadsheets, Google Docs, or general coding tasks unrelated to document generation."
@@ -2442,6 +2455,7 @@ After running \`comment.py\` (see Step 2), add markers to document.xml. For repl
   {
     name: 'executing-plans',
     description: 'Use when you have a written implementation plan to execute in a separate session with review checkpoints',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/executing-plans',
     content: `---
 name: executing-plans
 description: Use when you have a written implementation plan to execute in a separate session with review checkpoints
@@ -2517,6 +2531,7 @@ After all tasks complete and verified:
   {
     name: 'finishing-a-development-branch',
     description: 'Use when implementation is complete, all tests pass, and you need to decide how to integrate the work - guides completion of development work by presenting structured options for merge, PR, or cleanup',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/finishing-a-development-branch',
     content: `---
 name: finishing-a-development-branch
 description: Use when implementation is complete, all tests pass, and you need to decide how to integrate the work - guides completion of development work by presenting structured options for merge, PR, or cleanup
@@ -2773,6 +2788,7 @@ git worktree prune  # Self-healing: clean up any stale registrations
   {
     name: 'frontend-design',
     description: 'Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples inclu',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/frontend-design',
     content: `---
 name: frontend-design
 description: Create distinctive, production-grade frontend interfaces with high design quality. Use this skill when the user asks to build web components, pages, artifacts, posters, or applications (examples include websites, landing pages, dashboards, React components, HTML/CSS layouts, or when styling/beautifying any web UI). Generates creative, polished code and UI design that avoids generic AI aesthetics.
@@ -2820,6 +2836,7 @@ Remember: Claude is capable of extraordinary creative work. Don't hold back, sho
   {
     name: 'internal-comms',
     description: 'A set of resources to help me write all kinds of internal communications, using the formats that my company likes to use. Claude should use this skill whenever asked to write some sort of internal com',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/internal-comms',
     content: `---
 name: internal-comms
 description: A set of resources to help me write all kinds of internal communications, using the formats that my company likes to use. Claude should use this skill whenever asked to write some sort of internal communications (status reports, leadership updates, 3P updates, company newsletters, FAQs, incident reports, project updates, etc.).
@@ -2857,6 +2874,7 @@ If the communication type doesn't match any existing guideline, ask for clarific
   {
     name: 'karpathy-guidelines',
     description: 'Behavioral guidelines to reduce common LLM coding mistakes. Use when writing, reviewing, or refactoring code to avoid overcomplication, make surgical changes, surface assumptions, and define verifiabl',
+    sourceDir: '/home/c2216-3090/.claude/skills/karpathy-guidelines',
     content: `---
 name: karpathy-guidelines
 description: Behavioral guidelines to reduce common LLM coding mistakes. Use when writing, reviewing, or refactoring code to avoid overcomplication, make surgical changes, surface assumptions, and define verifiable success criteria.
@@ -2929,6 +2947,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
   {
     name: 'mcp-builder',
     description: 'Guide for creating high-quality MCP (Model Context Protocol) servers that enable LLMs to interact with external services through well-designed tools. Use when building MCP servers to integrate externa',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/mcp-builder',
     content: `---
 name: mcp-builder
 description: Guide for creating high-quality MCP (Model Context Protocol) servers that enable LLMs to interact with external services through well-designed tools. Use when building MCP servers to integrate external APIs or services, whether in Python (FastMCP) or Node/TypeScript (MCP SDK).
@@ -3170,6 +3189,7 @@ Load these resources as needed during development:
   {
     name: 'pdf',
     description: 'Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rota',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/pdf',
     content: `---
 name: pdf
 description: Use this skill whenever the user wants to do anything with PDF files. This includes reading or extracting text/tables from PDFs, combining or merging multiple PDFs into one, splitting PDFs apart, rotating pages, adding watermarks, creating new PDFs, filling PDF forms, encrypting/decrypting PDFs, extracting images, and OCR on scanned PDFs to make them searchable. If the user mentions a .pdf file or asks to produce one, use this skill.
@@ -3489,6 +3509,7 @@ with open("encrypted.pdf", "wb") as output:
   {
     name: 'pdf-generator',
     description: 'pdf-generator',
+    sourceDir: '/home/c2216-3090/.claude/skills/pdf-generator',
     content: `---
 name: pdf-generator
 description: >
@@ -3631,6 +3652,7 @@ The script will auto-detect language from content and apply reasonable defaults.
   {
     name: 'pptx',
     description: 'Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from a',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/pptx',
     content: `---
 name: pptx
 description: "Use this skill any time a .pptx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates, layouts, speaker notes, or comments. Trigger whenever the user mentions \\"deck,\\" \\"slides,\\" \\"presentation,\\" or references a .pptx filename, regardless of what they plan to do with the content afterward. If a .pptx file needs to be opened, created, or touched, use this skill."
@@ -3868,6 +3890,7 @@ pdftoppm -jpeg -r 150 -f N -l N output.pdf slide-fixed
   {
     name: 'receiving-code-review',
     description: 'Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/receiving-code-review',
     content: `---
 name: receiving-code-review
 description: Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative agreement or blind implementation
@@ -4086,6 +4109,7 @@ No performative agreement. Technical rigor always.
   {
     name: 'requesting-code-review',
     description: 'Use when completing tasks, implementing major features, or before merging to verify work meets requirements',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/requesting-code-review',
     content: `---
 name: requesting-code-review
 description: Use when completing tasks, implementing major features, or before merging to verify work meets requirements
@@ -4194,6 +4218,7 @@ See template at: requesting-code-review/code-reviewer.md
   {
     name: 'skill-creator',
     description: 'Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/skill-creator',
     content: `---
 name: skill-creator
 description: Create new skills, modify and improve existing skills, and measure skill performance. Use when users want to create a skill from scratch, edit, or optimize an existing skill, run evals to test a skill, benchmark skill performance with variance analysis, or optimize a skill's description for better triggering accuracy.
@@ -4684,6 +4709,7 @@ Good luck!
   {
     name: 'slack-gif-creator',
     description: 'Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like "make me a G',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/slack-gif-creator',
     content: `---
 name: slack-gif-creator
 description: Knowledge and utilities for creating animated GIFs optimized for Slack. Provides constraints, validation tools, and animation concepts. Use when users request animated GIFs for Slack like "make me a GIF of X doing Y for Slack."
@@ -4943,6 +4969,7 @@ pip install pillow imageio numpy
   {
     name: 'subagent-driven-development',
     description: 'Use when executing implementation plans with independent tasks in the current session',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/subagent-driven-development',
     content: `---
 name: subagent-driven-development
 description: Use when executing implementation plans with independent tasks in the current session
@@ -5227,6 +5254,7 @@ Done!
   {
     name: 'systematic-debugging',
     description: 'Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/systematic-debugging',
     content: `---
 name: systematic-debugging
 description: Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes
@@ -5528,6 +5556,7 @@ From debugging sessions:
   {
     name: 'test-driven-development',
     description: 'Use when implementing any feature or bugfix, before writing implementation code',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/test-driven-development',
     content: `---
 name: test-driven-development
 description: Use when implementing any feature or bugfix, before writing implementation code
@@ -5904,6 +5933,7 @@ No exceptions without your human partner's permission.
   {
     name: 'theme-factory',
     description: 'Toolkit for styling artifacts with a theme. These artifacts can be slides, docs, reportings, HTML landing pages, etc. There are 10 pre-set themes with colors/fonts that you can apply to any artifact t',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/theme-factory',
     content: `---
 name: theme-factory
 description: Toolkit for styling artifacts with a theme. These artifacts can be slides, docs, reportings, HTML landing pages, etc. There are 10 pre-set themes with colors/fonts that you can apply to any artifact that has been creating, or can generate a new theme on-the-fly.
@@ -5968,6 +5998,7 @@ To handle cases where none of the existing themes work for an artifact, create a
   {
     name: 'using-git-worktrees',
     description: 'Use when starting feature work that needs isolation from current workspace or before executing implementation plans - ensures an isolated workspace exists via native tools or git worktree fallback',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/using-git-worktrees',
     content: `---
 name: using-git-worktrees
 description: Use when starting feature work that needs isolation from current workspace or before executing implementation plans - ensures an isolated workspace exists via native tools or git worktree fallback
@@ -6188,6 +6219,7 @@ Ready to implement <feature-name>
   {
     name: 'verification-before-completion',
     description: 'Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/verification-before-completion',
     content: `---
 name: verification-before-completion
 description: Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always
@@ -6332,6 +6364,7 @@ This is non-negotiable.
   {
     name: 'web-artifacts-builder',
     description: 'Suite of tools for creating elaborate, multi-component claude.ai HTML artifacts using modern frontend web technologies (React, Tailwind CSS, shadcn/ui). Use for complex artifacts requiring state manag',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/web-artifacts-builder',
     content: `---
 name: web-artifacts-builder
 description: Suite of tools for creating elaborate, multi-component claude.ai HTML artifacts using modern frontend web technologies (React, Tailwind CSS, shadcn/ui). Use for complex artifacts requiring state management, routing, or shadcn/ui components - not for simple single-file HTML/JSX artifacts.
@@ -6410,6 +6443,7 @@ To test/visualize the artifact, use available tools (including other Skills or b
   {
     name: 'webapp-testing',
     description: 'Toolkit for interacting with and testing local web applications using Playwright. Supports verifying frontend functionality, debugging UI behavior, capturing browser screenshots, and viewing browser l',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/webapp-testing',
     content: `---
 name: webapp-testing
 description: Toolkit for interacting with and testing local web applications using Playwright. Supports verifying frontend functionality, debugging UI behavior, capturing browser screenshots, and viewing browser logs.
@@ -6510,6 +6544,7 @@ with sync_playwright() as p:
   {
     name: 'writing-plans',
     description: 'Use when you have a spec or requirements for a multi-step task, before touching code',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/writing-plans',
     content: `---
 name: writing-plans
 description: Use when you have a spec or requirements for a multi-step task, before touching code
@@ -6667,6 +6702,7 @@ After saving the plan, offer execution choice:
   {
     name: 'writing-skills',
     description: 'Use when creating new skills, editing existing skills, or verifying skills work before deployment',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/writing-skills',
     content: `---
 name: writing-skills
 description: Use when creating new skills, editing existing skills, or verifying skills work before deployment
@@ -7327,6 +7363,7 @@ If you follow TDD for code, follow it for skills. It's the same discipline appli
   {
     name: 'xlsx',
     description: 'Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., add',
+    sourceDir: '/home/c2216-3090/.claude/plugins/cache/anthropic-agent-skills/document-skills/6a5bb06904ab/skills/xlsx',
     content: `---
 name: xlsx
 description: "Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file (e.g., adding columns, computing formulas, formatting, charting, cleaning messy data); create a new spreadsheet from scratch or from other data sources; or convert between tabular file formats. Trigger especially when the user references a spreadsheet file by name or path — even casually (like \\"the xlsx in my downloads\\") — and wants something done to it or produced from it. Also trigger for cleaning or restructuring messy tabular data files (malformed rows, misplaced headers, junk data) into proper spreadsheets. The deliverable must be a spreadsheet file. Do NOT trigger when the primary deliverable is a Word document, HTML report, standalone Python script, database pipeline, or Google Sheets API integration, even if tabular data is involved."
@@ -7624,6 +7661,7 @@ The script returns JSON with error details:
   {
     name: 'archive-experience',
     description: 'After plan execution, extract reusable experience patterns from execution logs and context bus state, then write to affected agent memory directories',
+    sourceDir: null,
     content: `---
 name: archive-experience
 description: 在 Plan 执行完成后，从执行日志和 Context Bus 黑板状态中提取可复用的经验模式，写入受影响 agent 的 memory 目录
