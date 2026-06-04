@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { X, Search } from 'lucide-react';
+import { X, Plus, Search } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
+import { CreateAgentModal } from './CreateAgentModal';
 import type { AgentConfig } from '@agenthub/shared';
 
 interface Props {
@@ -18,6 +19,7 @@ export function AddAgentModal({ sessionId, open, onClose }: Props) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
+  const [showCreateAgent, setShowCreateAgent] = useState(false);
 
   const session = sessions.find((s) => s.id === sessionId);
   const sessionAgentIds = new Set(((session as any)?.agents || []).map((a: any) => a.agentId));
@@ -70,6 +72,15 @@ export function AddAgentModal({ sessionId, open, onClose }: Props) {
             </button>
           </div>
 
+          <div className="p-4 border-b border-hub">
+            <button
+              onClick={() => setShowCreateAgent(true)}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-dashed border-hub-accent/30 text-hub-accent hover:bg-hub-accent/5 transition text-sm"
+            >
+              <Plus className="w-4 h-4" /> Create New Agent
+            </button>
+          </div>
+
           <div className="px-5 py-3 border-b border-hub">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-hub-tertiary" />
@@ -116,6 +127,14 @@ export function AddAgentModal({ sessionId, open, onClose }: Props) {
           </div>
         </div>
       </div>
+
+      {showCreateAgent && (
+        <CreateAgentModal
+          open={showCreateAgent}
+          groupSessionId={sessionId}
+          onClose={() => { setShowCreateAgent(false); onClose(); }}
+        />
+      )}
     </>
   );
 }
