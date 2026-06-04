@@ -2,9 +2,10 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, unlinkSync } from '
 import { resolve } from 'path';
 import { prisma } from '../db/prisma.js';
 import { getSessionContextBus, ContextBus } from './ContextBus.js';
+import { config } from '../config.js';
 import type { PlanCheckpoint, AgentSessionState } from '@agenthub/shared';
 
-const SANDBOXES_ROOT = '.sandboxes';
+const SANDBOXES_ROOT = config.sandbox.root;
 
 export class CheckpointManager {
   /** Create or update a checkpoint for a plan. */
