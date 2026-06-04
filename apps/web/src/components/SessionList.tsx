@@ -426,13 +426,15 @@ export function SessionList({ onCloseMobile }: Props) {
             >
               <Pencil className="w-3 h-3 text-hub-tertiary" />
             </button>
-            <button
-              onClick={(e) => handleDeleteAgentClick(agent.id, agent.displayName, agentSessions.length, e)}
-              className="p-1 hover:bg-hub-danger/10 rounded transition"
-              title="Delete agent"
-            >
-              <Trash2 className="w-3 h-3 text-hub-tertiary hover:text-hub-danger" />
-            </button>
+            {agent.name !== 'planner' && !agent.name.startsWith('planner-') && (
+              <button
+                onClick={(e) => handleDeleteAgentClick(agent.id, agent.displayName, agentSessions.length, e)}
+                className="p-1 hover:bg-hub-danger/10 rounded transition"
+                title="Delete agent"
+              >
+                <Trash2 className="w-3 h-3 text-hub-tertiary hover:text-hub-danger" />
+              </button>
+            )}
           </div>
         </div>
 

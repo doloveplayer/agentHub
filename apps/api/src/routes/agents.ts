@@ -305,6 +305,10 @@ agents.delete('/:id', async (c) => {
   // Only allow deletion of user-created agents
   if (agent.type !== 'user') return c.json({ error: 'Cannot delete system agents' }, 403);
   if (agent.createdBy !== userId) return c.json({ error: 'Forbidden' }, 403);
+  // Planner is a core agent — never delete
+  if (agent.name === 'planner' || agent.name.startsWith('planner-')) {
+    return c.json({ error: 'Cannot delete the Planner agent' }, 403);
+  }
 
   // Destroy container if running
   if (agent.containerId && agent.containerStatus === 'running') {
