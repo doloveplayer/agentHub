@@ -141,11 +141,9 @@ ${safeBody}
     const agentDir = resolve(sandboxDir, `_agent_${agentName}`);
     const claudeConfigDir = resolve(agentDir, '.claude');
 
-    if (!existsSync(agentDir)) {
-      mkdirSync(agentDir, { recursive: true });
-      mkdirSync(resolve(claudeConfigDir, 'memory'), { recursive: true });
-      mkdirSync(resolve(claudeConfigDir, 'skills'), { recursive: true });
-    }
+    mkdirSync(agentDir, { recursive: true });
+    mkdirSync(resolve(claudeConfigDir, 'memory'), { recursive: true });
+    mkdirSync(resolve(claudeConfigDir, 'skills'), { recursive: true });
 
     // Sync global persistent content into sandbox (init phase: global → sandbox)
     if (agentId) {
