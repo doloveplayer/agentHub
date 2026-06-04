@@ -4,6 +4,7 @@ import type { ExperienceEntry, SkillDef } from '@agenthub/shared';
 import { config } from '../config.js';
 import { CapabilityInventory } from './CapabilityInventory.js';
 import { prisma } from '../db/prisma.js';
+import { presetSkills, type PresetSkillDef } from '../presetSkills.js';
 
 const AGENTS_ROOT = config.agentContainer.hostRoot;
 
@@ -46,13 +47,29 @@ ${systemPrompt}
       writeFileSync(resolve(homeDir, 'CLAUDE.md'), claudeMd, 'utf-8');
     }
 
-    // Write custom skills (only if home dir was just created or skills changed)
+    // Write custom skills
     if (skills && skills.length > 0) {
       const skillsDir = resolve(claudeConfigDir, 'skills');
       mkdirSync(skillsDir, { recursive: true });
+      const presetMap = new Map(presetSkills.map(s => [s.name, s]));
       for (const skill of skills) {
-        const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
-        writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+        const preset = presetMap.get(skill.name) as PresetSkillDef | undefined;
+        if (preset?.sourceDir && existsSync(preset.sourceDir)) {
+          // Full directory copy (includes SKILL.md, scripts, templates, etc.)
+          const targetDir = resolve(skillsDir, skill.name);
+          try {
+            cpSync(preset.sourceDir, targetDir, { recursive: true });
+          } catch (err: any) {
+            // Fallback to .md file if copy fails
+            console.warn(`[AgentDirectory] Failed to copy skill dir for ${skill.name}: ${err.message}`);
+            const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
+            writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+          }
+        } else {
+          // Fallback: write single .md file for skills without sourceDir
+          const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
+          writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+        }
       }
     }
 
@@ -245,9 +262,21 @@ ${plannerSkillsBlock}
     if (skills && skills.length > 0) {
       const skillsDir = resolve(claudeConfigDir, 'skills');
       mkdirSync(skillsDir, { recursive: true });
+      const presetMap = new Map(presetSkills.map(s => [s.name, s]));
       for (const skill of skills) {
-        const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
-        writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+        const preset = presetMap.get(skill.name) as PresetSkillDef | undefined;
+        if (preset?.sourceDir && existsSync(preset.sourceDir)) {
+          try {
+            cpSync(preset.sourceDir, resolve(skillsDir, skill.name), { recursive: true });
+          } catch (err: any) {
+            console.warn(`[AgentDirectory] Failed to copy skill dir for ${skill.name}: ${err.message}`);
+            const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
+            writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+          }
+        } else {
+          const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
+          writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+        }
       }
     }
 
