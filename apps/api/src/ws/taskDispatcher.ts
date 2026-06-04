@@ -427,6 +427,7 @@ function handleProviderTaskEvent(
         hostSandboxDir: sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir,
         resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
         broadcast,
+        notifiedKeys: new Set<string>(),
       }, exitCode, output.slice(0, 3000));
 
       // Scan for NEEDS HELP intents and route to target agents
@@ -483,11 +484,12 @@ function handleProviderTaskEvent(
 
       // Proactive inbox check: notify if other agents have pending messages
       {
+        const sb = sandboxes.get(sessionId);
         const procMap = agentProcesses.get(sessionId);
-        if (procMap) {
+        if (sb && procMap) {
           for (const [name] of procMap) {
             if (name !== agentName) {
-              InboxWakeup.check(sessionId, name, queue.sandbox.hostWorkDir,
+              InboxWakeup.check(sessionId, name, sb.hostSandboxDir,
                 (n) => procMap.has(n), broadcast);
             }
           }
@@ -557,6 +559,30 @@ export async function processNextInQueue(
   }
 
   if (queue.tasks.length === 0) {
+    // Check inbox for high-priority messages before going idle
+    const sandbox = sandboxes.get(sessionId);
+    if (sandbox) {
+      const inboxEntries = InboxManager.read(sandbox.hostSandboxDir, agentName, sessionId);
+      const highPriority = inboxEntries.filter(e => e.risk === 'high');
+      if (highPriority.length > 0) {
+        const inboxSummary = highPriority
+          .map(e => `- From **${e.from}**: ${e.summary}`)
+          .join('\n');
+        const fixTask: TaskDispatchNode = {
+          id: `inbox-fix-${Date.now().toString(36)}`,
+          title: 'Address high-priority inbox messages',
+          description: `You have ${highPriority.length} high-priority inbox message(s) that need your attention:\n\n${inboxSummary}\n\nAddress each message. Reply to the sender with what you did.`,
+          agentType: agentName,
+          dependsOn: [],
+          expectedOutput: '',
+          priority: 'high',
+        };
+        queue.tasks.push(fixTask);
+        console.log(`[taskDispatcher] ${agentName} has ${highPriority.length} high-priority inbox messages, creating fix-round task`);
+        await processNextInQueue(sessionId, agentName, queue);
+        return;
+      }
+    }
     agentTaskQueues.delete(agentName);
     return;
   }

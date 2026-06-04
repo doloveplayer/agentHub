@@ -29,6 +29,9 @@ import { drainPendingQueue, drainPerSessionQueue } from './chatHandlers.js';
 const dispatchedPlans = new Map<string, number>(); // planId → timestamp
 const DISPATCHED_PLAN_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+/** Pending plans awaiting user confirmation (>7 phases) */
+const pendingPlans = new Map<string, { sessionId: string; data: any; tasks: TaskDispatchNode[] }>();
+
 function addDispatchedPlan(planId: string): void {
   const now = Date.now();
   // Evict expired entries
@@ -75,6 +78,18 @@ export async function handleConfirmPlan(sessionId: string, data: { planId: strin
     expectedOutput: t.expectedOutput || '', priority: t.priority || 'medium',
   }));
 
+  // Complex plan confirmation: >7 phases requires user approval
+  if (tasks.length > 7) {
+    pendingPlans.set(data.planId, { sessionId, data, tasks });
+    broadcast(sessionId, {
+      type: 'plan_confirm_required',
+      planId: data.planId,
+      taskCount: tasks.length,
+      tasks: tasks.map(t => ({ id: t.id, title: t.title, agentType: t.agentType, priority: t.priority })),
+    });
+    return;
+  }
+
   const sessionAgents = await prisma.sessionAgent.findMany({
     where: { sessionId },
     include: { agent: { select: { id: true, name: true, displayName: true, systemPrompt: true, providerConfig: true, skills: true } } },
@@ -94,6 +109,24 @@ export async function handleConfirmPlan(sessionId: string, data: { planId: strin
     dispatchedPlans.delete(data.planId);
     broadcast(sessionId, { type: 'stream_error', error: `Failed to dispatch tasks: ${err.message}` });
   });
+}
+
+export async function handlePlanConfirm(sessionId: string, data: { planId: string }): Promise<void> {
+  const pending = pendingPlans.get(data.planId);
+  if (!pending) {
+    broadcast(sessionId, { type: 'stream_error', error: 'No pending plan found to confirm' });
+    return;
+  }
+  pendingPlans.delete(data.planId);
+
+  // Re-trigger the plan dispatch with the stored data
+  await handleConfirmPlan(sessionId, pending.data);
+}
+
+export function handlePlanCancel(sessionId: string, data: { planId: string }): void {
+  if (pendingPlans.delete(data.planId)) {
+    broadcast(sessionId, { type: 'plan_cancelled', planId: data.planId });
+  }
 }
 
 export function handleModifyTask(sessionId: string, data: { planId: string; taskId: string; newDescription: string }): void {

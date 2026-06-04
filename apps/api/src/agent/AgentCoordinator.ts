@@ -59,11 +59,12 @@ export class AgentCoordinator {
       filePath: filePathStr,
     });
 
-    for (const { targetType, entry, ruleId } of deliveries) {
+    for (const { targetType, entry } of deliveries) {
       const targetAgentName = ctx.resolveAgent(targetType);
       if (targetAgentName && targetAgentName !== ctx.agentName) {
-        // Dedup: same sender→target+ruleId within one task only notifies once
-        const key = `${ctx.agentName}->${targetAgentName}:${ruleId}`;
+        // Dedup: same sender→target within one task only notifies once
+        // (regardless of which rule triggered it)
+        const key = `${ctx.agentName}->${targetAgentName}`;
         if (ctx.notifiedKeys?.has(key)) continue;
         ctx.notifiedKeys?.add(key);
 
@@ -85,6 +86,10 @@ export class AgentCoordinator {
     for (const { targetType, entry } of deliveries) {
       const targetAgentName = ctx.resolveAgent(targetType);
       if (targetAgentName && targetAgentName !== ctx.agentName) {
+        const key = `${ctx.agentName}->${targetAgentName}`;
+        if (ctx.notifiedKeys?.has(key)) continue;
+        ctx.notifiedKeys?.add(key);
+
         InboxManager.write(ctx.hostSandboxDir, targetAgentName, entry, ctx.sessionId);
       }
     }
@@ -103,6 +108,10 @@ export class AgentCoordinator {
     for (const { targetType, entry } of deliveries) {
       const targetAgentName = ctx.resolveAgent(targetType);
       if (targetAgentName && targetAgentName !== ctx.agentName) {
+        const key = `${ctx.agentName}->${targetAgentName}`;
+        if (ctx.notifiedKeys?.has(key)) continue;
+        ctx.notifiedKeys?.add(key);
+
         InboxManager.write(ctx.hostSandboxDir, targetAgentName, entry, ctx.sessionId);
       }
     }

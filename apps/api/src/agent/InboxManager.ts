@@ -1,5 +1,6 @@
 import { appendFileSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
+import { dirname } from 'path';
 
 function norm(name: string): string {
   return name.toLowerCase();
@@ -89,6 +90,11 @@ export class InboxManager {
 
     try {
       const raw = readFileSync(inboxPath, 'utf-8');
+      // Archive before clearing (messages persist for audit trail)
+      if (raw.trim()) {
+        const archivePath = resolve(dirname(inboxPath), '_inbox.read.jsonl');
+        try { appendFileSync(archivePath, raw, 'utf-8'); } catch { /* non-critical */ }
+      }
       // Clear after reading to prevent re-processing
       writeFileSync(inboxPath, '', 'utf-8');
       const entries = raw
@@ -161,6 +167,11 @@ You are part of a multi-agent session coordinated by AgentHub.
 
 OTHER AGENTS: The hub will route important messages from other agents to you automatically.
 When you receive a message from another agent, consider it carefully and respond if relevant.
+
+INBOX RULES:
+- When you receive and act on an inbox message, reply to the sender with a brief confirmation of what you did
+- Report to the group what actions you took based on inbox feedback
+- If you fixed something based on review feedback, say so explicitly — the sender needs to know
 
 PERMISSIONS: You have defined capabilities. If you attempt an operation outside your scope,
 the hub will notify you and suggest delegating to the right agent.

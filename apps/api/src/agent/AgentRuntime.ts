@@ -374,6 +374,7 @@ class AgentRuntime {
             hostSandboxDir: entry.hostSandboxDir,
             resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
             broadcast,
+            notifiedKeys: new Set<string>(),
           }, {
             type: 'tool_use',
             toolName: event.toolName || '',
@@ -407,6 +408,7 @@ class AgentRuntime {
           hostSandboxDir: entry.hostSandboxDir,
           resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
           broadcast,
+          notifiedKeys: new Set<string>(),
         }, event.content || '');
         break;
       case 'done':
@@ -454,6 +456,7 @@ class AgentRuntime {
           hostSandboxDir: entry.hostSandboxDir,
           resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
           broadcast,
+          notifiedKeys: new Set<string>(),
         }, event.exitCode ?? 0, entry.accumulatedOutput?.slice(0, 3000) || '');
 
         // Route NEEDS HELP intents to target agent inboxes
