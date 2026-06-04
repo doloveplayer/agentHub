@@ -277,20 +277,19 @@ function isAllowedScreenshotUrl(value: string): boolean {
   }
 }
 
-// -- HMR WebSocket proxy support --
+// -- Injected browser scripts (raw JS strings to avoid tsx/esbuild helpers) --
 
-/** Inject a polyfill script into HTML that rewrites Vite HMR WebSocket URLs
- *  to route through the API proxy path. */
+/** Build the combined <script> tags for HMR proxy, selection capture, and token persistence. */
 function injectHmrScript(
   html: string,
   sessionId: string,
   port: number,
 ): string {
   const proxyPath = `/api/preview/${sessionId}/proxy/${port}`;
-  const hmrScript = `<script>(${hmrPolyfill.toString()})(${JSON.stringify(proxyPath)})</script>`;
-  const selScript = `<script>(${selectionCaptureScript.toString()})()</script>`;
-  const tokenScript = `<script>(${tokenPersistenceScript.toString()})()</script>`;
-  const combined = hmrScript + selScript + tokenScript;
+  const combined =
+    `<script>(${HMR_POLYFILL_JS})(${JSON.stringify(proxyPath)})</script>` +
+    `<script>(${SELECTION_CAPTURE_JS})()</script>` +
+    `<script>(${TOKEN_PERSISTENCE_JS})()</script>`;
   if (html.includes("<head>")) {
     return html.replace("<head>", `<head>${combined}`);
   }
@@ -300,143 +299,114 @@ function injectHmrScript(
   return combined + html;
 }
 
-/** Polyfill function (serialized as a string) — runs in the iframe sandbox.
- *  Hijacks the WebSocket constructor so Vite's HMR client connects via the proxy path
- *  instead of the page origin root. */
-function hmrPolyfill(proxyPath: string): void {
-  const OrigWebSocket = (window as any).WebSocket;
-  (window as any).WebSocket = function (
-    url: string,
-    protocols?: string | string[],
-  ) {
-    let target: string = url;
+/* eslint-disable @typescript-eslint/no-unused-expressions */
+
+/** Hijacks WebSocket constructor so Vite HMR connects through the API proxy path. */
+const HMR_POLYFILL_JS = `function(proxyPath){
+  var OrigWebSocket = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    var target = url;
     if (typeof url === "string") {
       if (url.startsWith("ws://") || url.startsWith("wss://")) {
         try {
-          const a = document.createElement("a");
+          var a = document.createElement("a");
           a.href = url;
-          const path = a.pathname + a.search;
-          target =
-            (location.protocol === "https:" ? "wss:" : "ws:") +
-            "//" +
-            location.host +
-            proxyPath +
+          var path = a.pathname + a.search;
+          target = (location.protocol === "https:" ? "wss:" : "ws:") +
+            "//" + location.host + proxyPath +
             (path.startsWith("/") ? path.slice(1) : path);
-        } catch {
-          /* use original URL */
-        }
+        } catch(e) {}
       } else if (url.startsWith("/")) {
         target = proxyPath + url;
       }
     }
     return new OrigWebSocket(target, protocols);
   };
-  (window as any).WebSocket.prototype = OrigWebSocket.prototype;
-}
+  window.WebSocket.prototype = OrigWebSocket.prototype;
+}`;
 
-/** Token persistence script — injected into every proxied HTML page.
- *  Reads ?token= from the initial URL, stores it in sessionStorage,
- *  and appends it to all same-origin link clicks/form submissions. */
-function tokenPersistenceScript(): void {
-  const sp = new URLSearchParams(location.search);
-  const initial = sp.get("token");
+/** Reads ?token= from the initial URL, stores in sessionStorage,
+ *  appends to same-origin navigations and intercepts link clicks. */
+const TOKEN_PERSISTENCE_JS = `function(){
+  var sp = new URLSearchParams(location.search);
+  var initial = sp.get("token");
   if (initial) sessionStorage.setItem("_apitok", initial);
 
-  function ensureToken(url: string): string {
+  function ensureToken(url) {
     try {
-      const u = new URL(url, location.origin);
+      var u = new URL(url, location.origin);
       if (u.origin !== location.origin) return url;
-      const tok = sessionStorage.getItem("_apitok");
+      var tok = sessionStorage.getItem("_apitok");
       if (!tok) return url;
       u.searchParams.set("token", tok);
       return u.pathname + u.search + u.hash;
-    } catch {
-      return url;
-    }
+    } catch(e) { return url; }
   }
 
-  document.addEventListener(
-    "click",
-    (e) => {
-      const a = (e.target as HTMLElement).closest(
-        "a[href]",
-      ) as HTMLAnchorElement | null;
-      if (!a || a.target === "_blank" || !a.href) return;
-      const tok = sessionStorage.getItem("_apitok");
-      if (!tok) return;
-      try {
-        const u = new URL(a.href, location.origin);
-        if (u.origin !== location.origin) return;
-        if (!u.searchParams.has("token")) {
-          e.preventDefault();
-          u.searchParams.set("token", tok);
-          location.href = u.pathname + u.search + u.hash;
-        }
-      } catch {
-        /* ignore */
-      }
-    },
-    true,
-  );
-
-  const origPushState = history.pushState;
-  history.pushState = function (...args: any[]) {
-    if (args[1] && typeof args[0] === "string") args[0] = ensureToken(args[0]);
-    return origPushState.apply(this, args as any);
-  };
-  const origReplaceState = history.replaceState;
-  history.replaceState = function (...args: any[]) {
-    if (args[1] && typeof args[0] === "string") args[0] = ensureToken(args[0]);
-    return origReplaceState.apply(this, args as any);
-  };
-
-  window.addEventListener("pageshow", () => {
-    const tok = sessionStorage.getItem("_apitok");
+  document.addEventListener("click", function(e) {
+    var a = e.target.closest("a[href]");
+    if (!a || a.target === "_blank" || !a.href) return;
+    var tok = sessionStorage.getItem("_apitok");
     if (!tok) return;
-    const u = new URL(location.href);
+    try {
+      var u = new URL(a.href, location.origin);
+      if (u.origin !== location.origin) return;
+      if (!u.searchParams.has("token")) {
+        e.preventDefault();
+        u.searchParams.set("token", tok);
+        location.href = u.pathname + u.search + u.hash;
+      }
+    } catch(e) {}
+  }, true);
+
+  var origPushState = history.pushState;
+  history.pushState = function() {
+    if (arguments[1] && typeof arguments[0] === "string")
+      arguments[0] = ensureToken(arguments[0]);
+    return origPushState.apply(this, arguments);
+  };
+  var origReplaceState = history.replaceState;
+  history.replaceState = function() {
+    if (arguments[1] && typeof arguments[0] === "string")
+      arguments[0] = ensureToken(arguments[0]);
+    return origReplaceState.apply(this, arguments);
+  };
+
+  window.addEventListener("pageshow", function() {
+    var tok = sessionStorage.getItem("_apitok");
+    if (!tok) return;
+    var u = new URL(location.href);
     if (!u.searchParams.has("token")) {
       u.searchParams.set("token", tok);
       history.replaceState(null, "", u.pathname + u.search + u.hash);
     }
   });
-}
+}`;
 
-/** Selection capture script — injected alongside HMR polyfill.
- *  Listens for text selection changes and posts selected text to parent window. */
-function selectionCaptureScript(): void {
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
-  document.addEventListener("selectionchange", () => {
+/** Listens for text selection changes and posts selected text to parent window. */
+const SELECTION_CAPTURE_JS = `function(){
+  var debounceTimer = null;
+  document.addEventListener("selectionchange", function() {
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      const sel = window.getSelection();
+    debounceTimer = setTimeout(function() {
+      var sel = window.getSelection();
       if (!sel || sel.isCollapsed || !sel.toString().trim()) {
         window.parent.postMessage({ type: "agenthub:selection-clear" }, "*");
         return;
       }
-      const text = sel.toString().trim();
+      var text = sel.toString().trim();
       if (text.length < 2 || text.length > 5000) return;
-
-      const range = sel.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-
-      window.parent.postMessage(
-        {
-          type: "agenthub:selection",
-          text,
-          rect: {
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
-            height: rect.height,
-          },
-          url: window.location.href,
-        },
-        "*",
-      );
+      var range = sel.getRangeAt(0);
+      var rect = range.getBoundingClientRect();
+      window.parent.postMessage({
+        type: "agenthub:selection",
+        text: text,
+        rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+        url: window.location.href
+      }, "*");
     }, 300);
   });
-}
+}`;
 
 // Regex matches /api/preview/{sessionId}/proxy/{port}/{path}
 const PREVIEW_WS_RE = /^\/api\/preview\/([^/]+)\/proxy\/(\d+)\/(.*)$/;

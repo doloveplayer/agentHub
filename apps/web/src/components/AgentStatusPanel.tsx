@@ -4,6 +4,7 @@ import { AgentCard } from './AgentCard';
 import { TaskCard } from './TaskCard';
 import { FileTree } from './FileTree';
 import { VersionTimeline } from './VersionTimeline';
+import { FullscreenDiffViewer } from './FullscreenDiffViewer';
 import { PreviewFrame } from './PreviewFrame';
 import { WorkspaceFileEditor } from './WorkspaceFileEditor';
 import { api } from '../lib/api';
@@ -34,6 +35,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
   const [viewMode, setViewMode] = useState<ViewMode>('detailed');
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [fullscreenFilePath, setFullscreenFilePath] = useState<string | null>(null);
+  const [fullscreenDiff, setFullscreenDiff] = useState<{ from: string; to: string } | null>(null);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const addToast = useAppStore((s) => s.addToast);
   const agentEvents = useAppStore((s) => s.agentEvents);
@@ -248,7 +250,20 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
                 onDownloadOriginal={(path) => downloadWorkspacePath(path, 'file')}
               />
             )}
-            <VersionTimeline sessionId={activeSessionId} />
+            {fullscreenDiff && activeSessionId && (
+              <>
+                <div className="fixed inset-0 z-40 bg-black/70" onClick={() => setFullscreenDiff(null)} />
+                <div className="fixed left-1/2 top-1/2 z-50 h-[calc(100vh-48px)] w-[min(1180px,calc(100vw-48px))] -translate-x-1/2 -translate-y-1/2 shadow-2xl flex flex-col overflow-hidden rounded-md border border-hub bg-hub-surface">
+                  <FullscreenDiffViewer
+                    sessionId={activeSessionId}
+                    from={fullscreenDiff.from}
+                    to={fullscreenDiff.to}
+                    onClose={() => setFullscreenDiff(null)}
+                  />
+                </div>
+              </>
+            )}
+            <VersionTimeline sessionId={activeSessionId} onCompare={(from, to) => setFullscreenDiff({ from, to })} />
           </div>
         )}
         {activeTab === 'Tasks' && (

@@ -1,13 +1,6 @@
 import { WorkspaceManager, type AgentFileDiff, type WorkspaceVersion, type MergeResult } from '../agent/WorkspaceManager.js';
 import { broadcast } from './state.js';
 
-function classifyFile(path: string): 'expected' | 'system' | 'review' {
-  if (path.startsWith('.agenthub/') || path.startsWith('.git/') || path === '.gitignore')
-    return 'system';
-  if (path.startsWith('.'))
-    return 'review';
-  return 'expected';
-}
 
 const beforeVersions = new Map<string, WorkspaceVersion | null>();
 const sessionAgentDiffs = new Map<string, AgentFileDiff[]>();
@@ -116,8 +109,7 @@ export function broadcastDiffSummary(
   if (!sessionBaseRef.has(sessionId)) sessionBaseRef.set(sessionId, beforeVersion.ref);
 
   const files = WorkspaceManager.getWorkspaceDiff(workspacePath, beforeVersion.id)
-    .filter((file) => file.diff.trim().length > 0)
-    .map((file) => ({ ...file, baseVersionId: beforeVersion.id }));
+    .filter((file) => file.diff.trim().length > 0);
   if (files.length === 0) return;
 
   const priorDiffs = sessionAgentDiffs.get(sessionId) ?? [];
@@ -129,36 +121,9 @@ export function broadcastDiffSummary(
   const allDiffs = [...priorDiffs, ...currentDiffs].slice(-200);
   sessionAgentDiffs.set(sessionId, allDiffs);
 
+  // Auto-merge detected conflicts silently (no chat broadcast)
   const conflicts = WorkspaceManager.detectConflicts(allDiffs);
-  const conflictByFile = new Map(conflicts.map((conflict) => [conflict.filePath, conflict]));
-  const filesWithConflicts = files.map((file) => ({
-    ...file,
-    conflict: conflictByFile.get(file.path),
-    classification: classifyFile(file.path),
-  }));
-
   if (conflicts.length > 0) {
-    broadcast(sessionId, {
-      type: 'conflict_detected',
-      conflicts: conflicts.map((conflict) => ({
-        filePath: conflict.filePath,
-        agents: conflict.agents,
-        ranges: conflict.ranges,
-      })),
-    });
-
-    // Attempt auto-merge for detected conflicts
     tryAutoMergeConflicts(sessionId, workspacePath, conflicts);
   }
-
-  broadcast(sessionId, {
-    type: 'diff_summary',
-    id: `diff-${Date.now()}`,
-    title: `${agentName} changed ${files.length} file${files.length === 1 ? '' : 's'}`,
-    agentMessageId,
-    beforeVersionId: beforeVersion.id,
-    afterVersionId: afterVersion.id,
-    files: filesWithConflicts,
-    createdAt: Date.now(),
-  });
 }

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Clock, RotateCcw } from 'lucide-react';
 import { api } from '../lib/api';
-import { DiffViewer } from './DiffViewer';
 
 interface Version {
   id: string;
@@ -13,14 +12,13 @@ interface Version {
 
 interface Props {
   sessionId: string;
+  onCompare?: (from: string, to: string) => void;
 }
 
-export function VersionTimeline({ sessionId }: Props) {
+export function VersionTimeline({ sessionId, onCompare }: Props) {
   const [versions, setVersions] = useState<Version[]>([]);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [diff, setDiff] = useState<any | null>(null);
-  const [loading, setLoading] = useState(false);
 
   const refresh = async () => {
     const data = await api.getVersions(sessionId).catch(() => ({ versions: [] }));
@@ -33,14 +31,10 @@ export function VersionTimeline({ sessionId }: Props) {
     if (sessionId) refresh();
   }, [sessionId]);
 
-  const compare = async () => {
+  const compare = () => {
     if (!from || !to) return;
-    setLoading(true);
-    try {
-      const data = await api.diffVersions(sessionId, from, to);
-      setDiff(data.diff);
-    } finally {
-      setLoading(false);
+    if (onCompare) {
+      onCompare(from, to);
     }
   };
 
@@ -80,7 +74,7 @@ export function VersionTimeline({ sessionId }: Props) {
           </div>
         ))}
       </div>
-      {versions.length >= 2 && (
+      {versions.length >= 2 && onCompare && (
         <div className="space-y-2 rounded-md border border-hub p-2">
           <div className="grid grid-cols-2 gap-2">
             <select value={from} onChange={(e) => setFrom(e.target.value)} className="rounded bg-hub-code px-2 py-1 text-xs text-hub-secondary">
@@ -92,15 +86,12 @@ export function VersionTimeline({ sessionId }: Props) {
           </div>
           <button
             onClick={compare}
-            disabled={loading || !from || !to}
+            disabled={!from || !to}
             className="w-full rounded bg-sky-600/20 px-2 py-1 text-xs text-sky-300 hover:bg-sky-600/30 disabled:opacity-50"
           >
             Compare versions
           </button>
         </div>
-      )}
-      {diff && (
-        <DiffViewer path={diff.path || 'workspace'} diff={diff.diff} hunks={diff.hunks} />
       )}
     </div>
   );

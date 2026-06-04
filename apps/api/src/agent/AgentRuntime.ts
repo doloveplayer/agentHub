@@ -16,6 +16,7 @@ import { InboxManager } from './InboxManager.js';
 import { agentCoordinator } from './AgentCoordinator.js';
 import { MilestoneBroadcaster } from './MilestoneBroadcaster.js';
 import { broadcast, clearRunningAgent, quoteBackfillMap, sessionAgentNames } from '../ws/state.js';
+import { takeMessageBeforeVersion, broadcastDiffSummary } from '../ws/diffBroadcast.js';
 
 interface QueueItem {
   sessionId: string;
@@ -487,6 +488,16 @@ class AgentRuntime {
         }
 
         if (agentMessageId) {
+          // Record after-version and broadcast diff summary
+          const beforeVer = takeMessageBeforeVersion(agentMessageId);
+          if (beforeVer) {
+            broadcastDiffSummary(
+              sessionId, agentMessageId, entry.hostWorkDir,
+              beforeVer, entry.currentAgentName || entry.currentAgentId || 'agent',
+              `After ${entry.currentAgentName || entry.currentAgentId} turn`,
+            );
+          }
+
           clearRunningAgent(sessionId, agentMessageId);
           void prisma.message.updateMany({
             where: { id: agentMessageId, status: 'streaming' },

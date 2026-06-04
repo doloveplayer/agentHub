@@ -420,6 +420,15 @@ function handleProviderTaskEvent(
         });
       }
 
+      // Record after-version and broadcast diff summary
+      const beforeVer = takeMessageBeforeVersion(taskMessageId);
+      if (beforeVer) {
+        broadcastDiffSummary(
+          sessionId, taskMessageId, queue.sandbox.hostWorkDir,
+          beforeVer, agentName, `After ${agentName} task ${task.id}`,
+        );
+      }
+
       // Wire AgentCoordinator: route agent completion events
       agentCoordinator.onAgentDone({
         sessionId, agentName, agentType: agentName,

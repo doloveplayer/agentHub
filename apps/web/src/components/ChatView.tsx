@@ -203,7 +203,8 @@ const MessageItem = React.memo(function MessageItem({
 }) {
   // Subscribe only to this message's agent events — no global store pollution
   const events = useAppStore((s) => s.agentEvents[msg.id]);
-  const diffCards = useAppStore((s) => s.diffCards[msg.sessionId]?.filter((c) => c.agentMessageId === msg.id) ?? EMPTY_DIFF_CARDS);
+  const allDiffCards = useAppStore((s) => s.diffCards[msg.sessionId]);
+  const diffCards = useMemo(() => allDiffCards?.filter((c) => c.agentMessageId === msg.id) ?? EMPTY_DIFF_CARDS, [allDiffCards, msg.id]);
   const [resolvedPermissions, setResolvedPermissions] = useState<Set<string>>(() => new Set());
 
   // Extract token usage

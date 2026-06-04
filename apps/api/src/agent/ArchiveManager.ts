@@ -6,9 +6,10 @@ import { DagPersistence } from './DagPersistence.js';
 import { getSessionContextBus } from './ContextBus.js';
 import { ExperienceExtractor, type ExtractionTask, type FailedTaskInfo } from './ExperienceExtractor.js';
 import { AgentDirectoryManager } from './AgentDirectoryManager.js';
+import { config } from '../config.js';
 import type { ArchiveManifest, ExperienceEntry } from '@agenthub/shared';
 
-const SANDBOXES_ROOT = '.sandboxes';
+const SANDBOXES_ROOT = config.sandbox.root;
 
 export class ArchiveManager {
   /** Execute the full archive pipeline for a completed plan. */

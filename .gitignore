@@ -56,4 +56,4 @@ PRD.backup.*.md
 .superpowers/*
 testAgent/
 
-agentHub/apps/api/uploads/avatars/
+apps/api/uploads/*
