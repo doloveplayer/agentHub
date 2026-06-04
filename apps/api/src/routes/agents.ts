@@ -21,50 +21,10 @@ agents.get('/', async (c) => {
   return c.json(list);
 });
 
-const createSchema = z.object({
-  name: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'name must be kebab-case'),
-  displayName: z.string().min(1).max(100),
-  description: z.string().min(1).max(500),
-  systemPrompt: z.string().min(1),
-  provider: z.enum(['claude-code', 'codex']).default('claude-code'),
-  providerConfig: z.record(z.unknown()).optional(),
-  type: z.enum(['user', 'system']).optional().default('user'),
-  contextMode: z.enum(['shared', 'isolated']).optional().default('shared'),
-});
-
-// POST / — create custom agent
-agents.post('/', async (c) => {
-  const { userId } = c.get('user');
-  let body: unknown;
-  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
-  const parsed = createSchema.safeParse(body);
-  if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
-
-  try {
-    const agent = await prisma.agent.create({
-      data: {
-        name: parsed.data.name,
-        displayName: parsed.data.displayName,
-        description: parsed.data.description,
-        systemPrompt: parsed.data.systemPrompt,
-        provider: parsed.data.provider,
-        providerConfig: (parsed.data.providerConfig ?? {}) as any,
-        type: 'user',
-        contextMode: 'shared',
-        createdBy: userId,
-      },
-    });
-    return c.json(agent, 201);
-  } catch (err: any) {
-    if (err.code === 'P2002') return c.json({ error: 'Agent name already exists' }, 409);
-    throw err;
-  }
-});
-
 const skillDefSchema = z.object({
   name: z.string().min(1).regex(/^[a-z0-9-]+$/, 'name must be kebab-case'),
-  description: z.string().min(1),
-  content: z.string().min(1),
+  description: z.string(),
+  content: z.string(),
 });
 
 const updateSchema = z.object({
@@ -76,6 +36,14 @@ const updateSchema = z.object({
   capabilities: z.record(z.unknown()).optional(),
   isActive: z.boolean().optional(),
   skills: z.array(skillDefSchema).nullable().optional(),
+});
+
+const createSchema = z.object({
+  name: z.string().min(2).max(32).regex(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/, 'Agent name must be lowercase alphanumeric with hyphens'),
+  displayName: z.string().min(1).max(64),
+  description: z.string().min(1).max(500),
+  systemPrompt: z.string().min(1).max(8000),
+  skills: z.array(skillDefSchema).optional(),
 });
 
 // PUT /provider-configs — store encrypted API keys (MUST be before /:id routes to avoid route conflict)
@@ -259,6 +227,46 @@ agents.post('/skills/validate', async (c) => {
     });
   } catch (err: any) {
     return c.json({ valid: false, errors: [{ field: 'file', message: err.message || 'Failed to parse file' }] }, 400);
+  }
+});
+
+// GET /preset-skills — list available preset skills (MUST be before /:id routes)
+agents.get('/preset-skills', async (c) => {
+  const { presetSkills } = await import('../presetSkills.js');
+  const list = presetSkills.map(({ name, description }) => ({ name, description }));
+  return c.json(list);
+});
+
+// POST / — create a new user agent (MUST be before /:id routes)
+agents.post('/', async (c) => {
+  const { userId } = c.get('user');
+  let body: unknown;
+  try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
+  const parsed = createSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
+
+  // Resolve preset skill names to full SkillDef with content
+  let skills = parsed.data.skills || [];
+  if (skills.length > 0) {
+    const { presetSkills } = await import('../presetSkills.js');
+    const presetMap = new Map(presetSkills.map((s: any) => [s.name, s]));
+    skills = skills.map((s: any) => (!s.content && presetMap.has(s.name)) ? presetMap.get(s.name)! : s);
+  }
+
+  try {
+    const agent = await prisma.agent.create({
+      data: {
+        ...parsed.data,
+        skills: skills as any,
+        isActive: true,
+        type: 'user',
+        createdBy: userId,
+      },
+    });
+    return c.json(agent, 201);
+  } catch (err: any) {
+    if (err.code === 'P2002') return c.json({ error: 'Agent name already exists' }, 409);
+    throw err;
   }
 });
 
