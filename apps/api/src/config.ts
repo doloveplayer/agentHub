@@ -45,7 +45,7 @@ export class RuntimeAgentConfig {
   private _contextTokenBudget: number;
 
   constructor() {
-    this._maxConcurrent = optionalInt('MAX_CONCURRENT_AGENTS', 2);
+    this._maxConcurrent = optionalInt('MAX_CONCURRENT_AGENTS', 5);
     this._timeoutMs = optionalInt('AGENT_TIMEOUT_MS', 300_000);
     this._queueTimeoutMs = optionalInt('AGENT_QUEUE_TIMEOUT_MS', 120_000);
     this._perSessionMax = optionalInt('AGENT_PER_SESSION_MAX', 8);

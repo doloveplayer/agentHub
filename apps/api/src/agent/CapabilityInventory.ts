@@ -1,6 +1,7 @@
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { prisma } from '../db/prisma.js';
+import type { SkillDef } from '@agenthub/shared';
 
 export class CapabilityInventory {
   /**
@@ -58,6 +59,18 @@ export class CapabilityInventory {
       writeFileSync(capPath, content, 'utf-8');
       console.log(`[CapabilityInventory] Generated cap-inventory for ${agentName} in session ${sessionId.slice(0, 8)}`);
 
+      // Upsert cap-inventory skill into agent DB record so AgentCard shows it
+      try {
+        const { AgentDirectoryManager } = await import('./AgentDirectoryManager.js');
+        await AgentDirectoryManager.upsertAgentSkill(sa.agentId, {
+          name: 'cap-inventory',
+          description: 'Current session agent capability inventory',
+          content: content,
+        });
+      } catch (err: any) {
+        console.warn(`[CapabilityInventory] Failed to upsert cap-inventory skill for ${agentName}: ${err.message}`);
+      }
+
       // Push inbox notification if Planner is actively running
       try {
         const { InboxManager } = await import('./InboxManager.js');
@@ -86,7 +99,12 @@ function buildInventoryMarkdown(
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const agentTypes = sessionAgents.map((sa: any) => sa.agent.name.toLowerCase());
 
-  let md = `# Agent Capability Inventory
+  let md = `---
+name: cap-inventory
+description: Current session agent capability inventory — available agents, their roles, and agentType values for task planning
+---
+
+# Agent Capability Inventory
 
 > Last updated by AgentHub at ${now}
 > Total agents: ${sessionAgents.length}

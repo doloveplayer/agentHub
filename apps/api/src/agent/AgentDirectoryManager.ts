@@ -3,8 +3,21 @@ import { resolve } from 'path';
 import type { ExperienceEntry, SkillDef } from '@agenthub/shared';
 import { config } from '../config.js';
 import { CapabilityInventory } from './CapabilityInventory.js';
+import { prisma } from '../db/prisma.js';
 
 const AGENTS_ROOT = config.agentContainer.hostRoot;
+
+/** Parse YAML frontmatter from a skill .md file to extract name and description. */
+function parseSkillFrontmatter(content: string): SkillDef {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  const body = content.replace(/^---\n[\s\S]*?\n---\n?/, '');
+  const name = (match?.[1]?.match(/^name:\s*(.+)$/m)?.[1] ?? '').trim();
+  const descMatch = match?.[1]?.match(/^description:\s*>\s*\n([\s\S]*?)(?=\n\w|\n\n|$)/m);
+  const description = descMatch
+    ? descMatch[1].replace(/^\s*/gm, '').replace(/\n/g, ' ').trim()
+    : (match?.[1]?.match(/^description:\s*(.+)$/m)?.[1] ?? '').trim();
+  return { name, description, content: body.trim() };
+}
 
 export class AgentDirectoryManager {
 
@@ -187,6 +200,13 @@ ${safeBody}
       try {
         const skillContent = readFileSync(skillTemplatePath, 'utf-8');
         writeFileSync(resolve(claudeConfigDir, 'skills', 'plan-and-dispatch.md'), skillContent, 'utf-8');
+        // Upsert plan skill into agent DB record so AgentCard shows it
+        if (agentId) {
+          const parsed = parseSkillFrontmatter(skillContent);
+          AgentDirectoryManager.upsertAgentSkill(agentId, parsed).catch((err) =>
+            console.warn(`[AgentDirectory] Failed to upsert plan skill for ${agentName}: ${err.message}`)
+          );
+        }
       } catch (err: any) {
         console.warn(`[AgentDirectory] Could not write plan skill for ${agentName}: ${err.message}`);
       }
@@ -245,5 +265,24 @@ ${plannerSkillsBlock}
   static cleanup(sandboxDir: string, agentName: string): void {
     const agentDir = resolve(sandboxDir, `_agent_${agentName}`);
     // Memory is preserved; full cleanup on session destroy handled by SandboxManager.destroyHostDir
+  }
+
+  /** Upsert a skill into the agent's DB skills array (merge by name, non-destructive). */
+  static async upsertAgentSkill(agentId: string, skill: SkillDef): Promise<void> {
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { skills: true },
+    });
+    const currentSkills = (agent?.skills as SkillDef[] | null) || [];
+    const idx = currentSkills.findIndex((s) => s.name === skill.name);
+    if (idx >= 0) {
+      currentSkills[idx] = skill;
+    } else {
+      currentSkills.push(skill);
+    }
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { skills: currentSkills as any },
+    });
   }
 }
