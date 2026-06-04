@@ -266,6 +266,11 @@ agents.post('/', async (c) => {
         createdBy: userId,
       },
     });
+
+    // Set up agent persistent home with full skill directories
+    const { AgentDirectoryManager } = await import('../agent/AgentDirectoryManager.js');
+    AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt, skills);
+
     return c.json(agent, 201);
   } catch (err: any) {
     if (err.code === 'P2002') return c.json({ error: 'Agent name already exists' }, 409);
