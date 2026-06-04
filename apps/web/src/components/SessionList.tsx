@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, MessageSquare, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil, ChevronDown, ChevronRight, Bot, Save, Pin, Archive, ArchiveRestore, Search } from 'lucide-react';
+import { Plus, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil, ChevronDown, ChevronRight, Bot, Save, Pin, Archive, ArchiveRestore, Search } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
+import { CreateAgentModal } from './CreateAgentModal';
 import type { Session, AgentConfig } from '@agenthub/shared';
 
 interface Props { onCloseMobile?: () => void; }
@@ -22,8 +23,8 @@ export function SessionList({ onCloseMobile }: Props) {
   const [editingTitle, setEditingTitle] = useState('');
   const [collapsedAgents, setCollapsedAgents] = useState<Set<string>>(new Set());
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
-  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
-  const [agentEdit, setAgentEdit] = useState({ displayName: '', description: '', systemPrompt: '' });
+  const setConfigAgentId = useAppStore((s) => s.setConfigAgentId);
+  const [showCreateAgent, setShowCreateAgent] = useState(false);
   // Search
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -120,53 +121,22 @@ export function SessionList({ onCloseMobile }: Props) {
     return { soloGroups: Array.from(soloByAgent.values()), groupSessions: groupList };
   }, [sortedSessions, debouncedSearch]);
 
-  // Agent store lookup for inline editing
+  // Agent store lookup
   const agentMap = useMemo(() => {
     const m = new Map<string, AgentConfig>();
     for (const a of agents) m.set(a.id, a);
     return m;
   }, [agents]);
 
-  const [customAgentMode, setCustomAgentMode] = useState(false);
-  const [customName, setCustomName] = useState('');
-  const [customDisplay, setCustomDisplay] = useState('');
-  const [customDesc, setCustomDesc] = useState('');
-  const [customPrompt, setCustomPrompt] = useState('');
-
-  const handleCreate = async (type: 'solo' | 'group') => {
-    if (type === 'solo' && customAgentMode && customDisplay && customDesc && customPrompt) {
-      let name = customName || customDisplay.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
-      if (!name || name.length < 2) name = 'custom-agent-' + Date.now().toString(36);
-      const session = await api.createSession({
-        type: 'solo',
-        customAgent: { name, displayName: customDisplay, description: customDesc, systemPrompt: customPrompt },
-      });
-      setSessions([session, ...sessions]);
-      api.getAgents().then(setAgents).catch(console.error);
-      if (session.permissionMode) setSessionPermissionMode(session.id, session.permissionMode);
-      setActiveSession(session.id);
-      resetCreate();
-      return;
-    }
-    const session = await api.createSession(type === 'group' ? { type: 'group' } : {});
+  const handleCreate = async (type: 'group') => {
+    const session = await api.createSession({ type: 'group' });
     setSessions([session, ...sessions]);
-    if (type === 'group') {
-      api.getAgents().then(setAgents).catch(console.error);
-    }
+    api.getAgents().then(setAgents).catch(console.error);
     if (session.permissionMode) {
       setSessionPermissionMode(session.id, session.permissionMode);
     }
     setActiveSession(session.id);
-    resetCreate();
-  };
-
-  const resetCreate = () => {
     setShowCreate(false);
-    setCustomAgentMode(false);
-    setCustomName('');
-    setCustomDisplay('');
-    setCustomDesc('');
-    setCustomPrompt('');
   };
 
   const handleSelect = async (id: string) => {
@@ -272,57 +242,6 @@ export function SessionList({ onCloseMobile }: Props) {
   };
 
   const cancelDelete = () => setDeleteTarget(null);
-
-  // --- Agent inline edit ---
-  const handleStartEditAgent = (agentId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const agent = agentMap.get(agentId);
-    if (!agent) return;
-    setEditingAgentId(agentId);
-    setAgentEdit({
-      displayName: agent.displayName || '',
-      description: agent.description || '',
-      systemPrompt: agent.systemPrompt || '',
-    });
-  };
-
-  const [agentEditError, setAgentEditError] = useState<string | null>(null);
-
-  const handleSaveAgent = async (agentId: string) => {
-    setAgentEditError(null);
-    try {
-      await api.updateAgent(agentId, {
-        displayName: agentEdit.displayName,
-        description: agentEdit.description,
-        systemPrompt: agentEdit.systemPrompt,
-      });
-      // Update agents store
-      const updated = agents.map(a => a.id === agentId
-        ? { ...a, displayName: agentEdit.displayName, description: agentEdit.description, systemPrompt: agentEdit.systemPrompt }
-        : a
-      );
-      setAgents(updated);
-      // Update session titles that reference this agent's displayName
-      const oldAgent = agentMap.get(agentId);
-      if (oldAgent && oldAgent.displayName !== agentEdit.displayName) {
-        const updatedSessions = sessions.map(s => {
-          if (s.type === 'solo' && s.agents?.[0]?.agentId === agentId) {
-            return { ...s, agents: [{ ...s.agents[0], displayName: agentEdit.displayName }] };
-          }
-          return s;
-        });
-        setSessions(updatedSessions);
-      }
-      setEditingAgentId(null);
-    } catch (err: any) {
-      console.error('Failed to update agent:', err);
-      setAgentEditError(err.message || 'Failed to save');
-    }
-  };
-
-  const handleCancelEditAgent = () => {
-    setEditingAgentId(null);
-  };
 
   // --- Agent delete ---
   const handleDeleteAgentClick = (agentId: string, agentName: string, sessionCount: number, e: React.MouseEvent) => {
@@ -472,7 +391,6 @@ export function SessionList({ onCloseMobile }: Props) {
   const renderAgentGroup = (group: AgentGroup) => {
     const { agent, sessions: agentSessions } = group;
     const isCollapsed = collapsedAgents.has(agent.id);
-    const isEditing = editingAgentId === agent.id;
     const fullAgent = agentMap.get(agent.id);
 
     return (
@@ -497,9 +415,9 @@ export function SessionList({ onCloseMobile }: Props) {
           {/* Agent action buttons — hover */}
           <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition">
             <button
-              onClick={(e) => handleStartEditAgent(agent.id, e)}
+              onClick={(e) => { e.stopPropagation(); setConfigAgentId(agent.id); }}
               className="p-1 hover:bg-hub-hover rounded transition"
-              title="Edit agent"
+              title="Configure agent"
             >
               <Pencil className="w-3 h-3 text-hub-tertiary" />
             </button>
@@ -512,56 +430,6 @@ export function SessionList({ onCloseMobile }: Props) {
             </button>
           </div>
         </div>
-
-        {/* Agent inline editor */}
-        {isEditing && (
-          <div className="px-4 py-3 bg-hub-active/50 border-y border-hub space-y-2" onClick={(e) => e.stopPropagation()}>
-            <div>
-              <label className="text-[10px] text-hub-tertiary uppercase tracking-wider">Display Name</label>
-              <input
-                value={agentEdit.displayName}
-                onChange={(e) => setAgentEdit(prev => ({ ...prev, displayName: e.target.value }))}
-                className="w-full mt-0.5 px-2 py-1 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-hub-tertiary uppercase tracking-wider">Description</label>
-              <input
-                value={agentEdit.description}
-                onChange={(e) => setAgentEdit(prev => ({ ...prev, description: e.target.value }))}
-                className="w-full mt-0.5 px-2 py-1 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-hub-tertiary uppercase tracking-wider">System Prompt</label>
-              <textarea
-                value={agentEdit.systemPrompt}
-                onChange={(e) => setAgentEdit(prev => ({ ...prev, systemPrompt: e.target.value }))}
-                rows={4}
-                className="w-full mt-0.5 px-2 py-1 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent resize-none font-mono"
-              />
-            </div>
-            {agentEditError && (
-              <div className="text-[11px] text-hub-danger bg-hub-danger/10 px-2 py-1 rounded">
-                {agentEditError}
-              </div>
-            )}
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={handleCancelEditAgent}
-                className="px-3 py-1 text-[11px] text-hub-secondary hover:bg-hub-hover rounded transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleSaveAgent(agent.id)}
-                className="px-3 py-1 text-[11px] bg-hub-accent text-white rounded hover:bg-hub-accent-hover transition font-medium flex items-center gap-1"
-              >
-                <Save className="w-3 h-3" /> Save
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Sessions under this agent */}
         {!isCollapsed && agentSessions.map((s) => renderSessionRow(s))}
@@ -584,50 +452,12 @@ export function SessionList({ onCloseMobile }: Props) {
           </button>
           {showCreate && (
             <div className="absolute top-full left-0 mt-1 bg-hub-raised border border-hub rounded-hub-lg shadow-xl z-50 w-72 overflow-hidden">
-              {!customAgentMode ? (
-                <>
-                  <button onClick={() => handleCreate('solo')} className="w-full text-left px-4 py-2.5 text-sm text-hub-secondary hover:bg-hub-hover flex items-center gap-2 transition font-medium">
-                    <MessageSquare className="w-3.5 h-3.5" /> Solo Session (Default Agent)
-                  </button>
-                  <button onClick={() => setCustomAgentMode(true)} className="w-full text-left px-4 py-2.5 text-sm text-hub-secondary hover:bg-hub-hover flex items-center gap-2 transition font-medium border-t border-hub">
-                    <MessageSquare className="w-3.5 h-3.5" /> Solo Session (Custom Agent)
-                  </button>
-                  <button onClick={() => handleCreate('group')} className="w-full text-left px-4 py-2.5 text-sm text-hub-secondary hover:bg-hub-hover flex items-center gap-2 transition font-medium border-t border-hub">
-                    <Users className="w-3.5 h-3.5" /> Group Session
-                  </button>
-                </>
-              ) : (
-                <div className="p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-hub-primary">Custom Agent</span>
-                    <button onClick={resetCreate} className="p-0.5 hover:bg-hub-hover rounded text-hub-tertiary">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                  <input
-                    type="text" value={customDisplay} onChange={e => setCustomDisplay(e.target.value)}
-                    placeholder="Display Name *" autoFocus
-                    className="w-full px-2 py-1.5 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent"
-                  />
-                  <input
-                    type="text" value={customDesc} onChange={e => setCustomDesc(e.target.value)}
-                    placeholder="Description (e.g. Python data analyst)"
-                    className="w-full px-2 py-1.5 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent"
-                  />
-                  <textarea
-                    value={customPrompt} onChange={e => setCustomPrompt(e.target.value)}
-                    placeholder="System Prompt (role, capabilities, constraints...)" rows={4}
-                    className="w-full px-2 py-1.5 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent resize-none"
-                  />
-                  <button
-                    onClick={() => handleCreate('solo')}
-                    disabled={!customDisplay || !customDesc || !customPrompt}
-                    className="w-full px-3 py-1.5 text-xs font-medium bg-hub-accent text-white rounded hover:bg-hub-accent-hover transition disabled:opacity-40"
-                  >
-                    Create
-                  </button>
-                </div>
-              )}
+              <button onClick={(e) => { e.stopPropagation(); setShowCreateAgent(true); }} className="w-full text-left px-3 py-2 text-sm text-hub-secondary hover:bg-hub-hover transition flex items-center gap-2">
+                <Bot className="w-3.5 h-3.5" /> Create Agent
+              </button>
+              <button onClick={() => handleCreate('group')} className="w-full text-left px-3 py-2 text-sm text-hub-secondary hover:bg-hub-hover transition flex items-center gap-2">
+                <Users className="w-3.5 h-3.5" /> Group Session
+              </button>
             </div>
           )}
         </div>
@@ -860,6 +690,10 @@ export function SessionList({ onCloseMobile }: Props) {
             </div>
           </div>
         </div>
+      )}
+
+      {showCreateAgent && (
+        <CreateAgentModal open={showCreateAgent} onClose={() => setShowCreateAgent(false)} />
       )}
     </div>
   );
