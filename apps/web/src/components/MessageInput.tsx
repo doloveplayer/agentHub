@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, KeyboardEvent, useMemo } from 'react';
-import { Send, Paperclip } from 'lucide-react';
+import { Send, Paperclip, Square } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { AgentMentionPopup } from './AgentMentionPopup';
 import { SlashCommandPopup } from './SlashCommandPopup';
@@ -27,9 +27,11 @@ interface Props {
   onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null, skillInvocation?: string | null) => void;
   disabled?: boolean;
   mentionableAgents?: AgentConfig[];
+  streamingMessageIds?: string[];
+  onStopAgent?: (agentMessageId: string) => void;
 }
 
-export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
+export function MessageInput({ onSend, disabled, mentionableAgents, streamingMessageIds, onStopAgent }: Props) {
   const agents = useAppStore((s) => s.agents);
   const sessions = useAppStore((s) => s.sessions);
   const orchestrationMode = useAppStore((s) => s.orchestrationMode);
@@ -40,7 +42,10 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   const addToast = useAppStore((s) => s.addToast);
   const messages = useAppStore((s) => s.messages);
   const recentMessages = (messages[activeSessionId ?? ''] ?? []).slice(-20).map(m => m.content).filter(Boolean);
+  const myHistory = (messages[activeSessionId ?? ''] ?? []).filter((m: any) => m.senderType === 'human').map((m: any) => m.content);
   const [value, setValue] = useState('');
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const savedInput = useRef('');
   const [showPopup, setShowPopup] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -57,6 +62,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
 
   const matchSource = mentionableAgents ?? agents;
   const matchedAgents = recommendAgents(mentionQuery, matchSource, recentMessages);
+  const isStreaming = (streamingMessageIds?.length ?? 0) > 0;
 
   const agentSkills = useMemo(() => {
     if (!activeSessionId) return [];
@@ -101,6 +107,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     const pos = e.target.selectionStart ?? 0;
+    if (historyIdx >= 0) { setHistoryIdx(-1); savedInput.current = ''; }
     setValue(newValue);
     setCursorPos(pos);
 
@@ -233,6 +240,34 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
       if (e.key === 'Escape') { setPendingSkillAgents([]); return; }
     }
 
+    // Up arrow → cycle backward through sent message history
+    if (e.key === 'ArrowUp' && !showPopup && !showSlash) {
+      e.preventDefault();
+      if (myHistory.length === 0) return;
+      if (historyIdx === -1) {
+        savedInput.current = value;
+        setHistoryIdx(myHistory.length - 1);
+        setValue(myHistory[myHistory.length - 1]);
+      } else if (historyIdx > 0) {
+        setHistoryIdx(historyIdx - 1);
+        setValue(myHistory[historyIdx - 1]);
+      }
+      return;
+    }
+    // Down arrow → cycle forward through history
+    if (e.key === 'ArrowDown' && historyIdx >= 0 && !showPopup && !showSlash) {
+      e.preventDefault();
+      if (historyIdx < myHistory.length - 1) {
+        setHistoryIdx(historyIdx + 1);
+        setValue(myHistory[historyIdx + 1]);
+      } else {
+        setHistoryIdx(-1);
+        setValue(savedInput.current);
+        savedInput.current = '';
+      }
+      return;
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -284,6 +319,8 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
         }
       }
       setValue('');
+      setHistoryIdx(-1);
+      savedInput.current = '';
       ref.current?.focus();
       return;
     }
@@ -347,7 +384,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   };
 
   return (
-    <div className="border-t border-hub p-4">
+    <div className="border-t border-hub p-4 bg-hub-root">
       {tags.length > 0 && (
         <div className="flex gap-1.5 mb-2 flex-wrap">
           {tags.map((tag) => (
@@ -369,7 +406,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
           onKeyDown={handleKeyDown}
           placeholder="Type a message... @ to mention an agent"
           rows={1}
-          className="flex-1 bg-hub-input text-hub-primary rounded-hub-lg px-4 py-3 resize-none focus:outline-none focus:ring-1 focus:ring-hub-accent text-body placeholder:text-hub-muted"
+          className="flex-1 bg-hub-surface border border-hub-border text-hub-primary rounded-2xl px-4 py-3 resize-none focus:outline-none focus:ring-1 focus:ring-hub-accent text-body placeholder:text-hub-muted"
           disabled={disabled}
         />
 
@@ -438,13 +475,26 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
           <span className="text-sm font-bold">{orchestrationMode === 'parallel' ? '∥' : '→'}</span>
         </button>
 
-        <button
-          onClick={handleSend}
-          disabled={disabled || !value.trim()}
-          className="p-3 bg-hub-accent text-white rounded-md hover:bg-hub-accent-hover active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed transition"
-        >
-          <Send className="w-4 h-4" />
-        </button>
+        {isStreaming && onStopAgent ? (
+          <button
+            onClick={() => {
+              const ids = streamingMessageIds ?? [];
+              ids.forEach((id) => onStopAgent(id));
+            }}
+            className="p-3 bg-[oklch(0.88_0.003_95)] text-hub-primary rounded-md hover:bg-[oklch(0.83_0.003_95)] active:scale-[0.97] transition flex items-center gap-1.5"
+            title="Stop generation"
+          >
+            <Square className="w-4 h-4 text-hub-accent" fill="currentColor" />
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            disabled={disabled || !value.trim()}
+            className="p-3 bg-hub-accent text-white rounded-md hover:bg-hub-accent-hover active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed transition"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </div>
   );
