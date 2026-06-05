@@ -1,38 +1,53 @@
 /** @type {import('tailwindcss').Config} */
+/*
+ * Light theme (DeerFlow-inspired). Add class="dark" to <html> for dark mode.
+ * Colors use OKLCH with <alpha-value> for opacity modifier support.
+ */
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        'hub-root':          '#121212',
-        'hub-surface':       '#1e1e1e',
-        'hub-raised':        '#252526',
-        'hub-hover':         '#2a2d2e',
-        'hub-active':        '#1a3a3a',
-        'hub-input':         '#1e1e1e',
-        'hub-code':          '#0d1117',
-        'hub-border':        '#333333',
-        'hub-border-2':      '#3a3a3a',
-        'hub-accent':        '#4fd1c5',
-        'hub-accent-hover':  '#38b2a0',
-        'hub-warning':       '#d69e2e',
-        'hub-danger':        '#e53e3e',
-        'hub-success':       '#38a169',
-        'hub-link':          '#569cd6',
-        'hub-primary':       'rgba(248,250,252,0.94)',
-        'hub-secondary':     'rgba(203,213,225,0.82)',
-        'hub-tertiary':      'rgba(148,163,184,0.55)',
-        'hub-muted':         'rgba(148,163,184,0.30)',
-        'agent-code':        '#8b5cf6',
-        'agent-review':      '#38a169',
-        'agent-devops':      '#ea580c',
-        'agent-planner':     '#4fd1c5',
-        'agent-test':        '#569cd6',
-        'agent-security':    '#d69e2e',
+        /* Background layers — light */
+        'hub-root':          'oklch(0.97 0.005 95 / <alpha-value>)',
+        'hub-sidebar':       'oklch(0.945 0.005 95 / <alpha-value>)',
+        'hub-surface':       'oklch(1 0 0 / <alpha-value>)',
+        'hub-raised':        'oklch(1 0 0 / <alpha-value>)',
+        'hub-hover':         'oklch(0.95 0.005 95 / <alpha-value>)',
+        'hub-active':        'oklch(0.90 0.04 185 / <alpha-value>)',
+        'hub-input':         'oklch(0.96 0.005 95 / <alpha-value>)',
+        'hub-code':          'oklch(0.97 0.005 95 / <alpha-value>)',
+
+        /* Borders — light */
+        'hub-border':        'oklch(0 0 0 / <alpha-value>)',
+        'hub-border-2':      'oklch(0 0 0 / <alpha-value>)',
+
+        /* Accent — light */
+        'hub-accent':        'oklch(0.50 0.12 185 / <alpha-value>)',
+        'hub-accent-hover':  'oklch(0.43 0.12 185 / <alpha-value>)',
+        'hub-warning':       'oklch(0.65 0.18 80 / <alpha-value>)',
+        'hub-danger':        'oklch(0.50 0.22 25 / <alpha-value>)',
+        'hub-success':       'oklch(0.50 0.18 150 / <alpha-value>)',
+        'hub-link':          'oklch(0.50 0.15 245 / <alpha-value>)',
+        'hub-info':          'oklch(0.50 0.20 280 / <alpha-value>)',
+
+        /* Text — light */
+        'hub-primary':       'oklch(0.15 0 0 / <alpha-value>)',
+        'hub-secondary':     'oklch(0.35 0.005 250 / <alpha-value>)',
+        'hub-tertiary':      'oklch(0.50 0.005 250 / <alpha-value>)',
+        'hub-muted':         'oklch(0.65 0.005 250 / <alpha-value>)',
+
+        /* Agent identity colors */
+        'agent-code':        'oklch(0.50 0.22 280 / <alpha-value>)',
+        'agent-review':      'oklch(0.50 0.18 145 / <alpha-value>)',
+        'agent-devops':      'oklch(0.50 0.20 40 / <alpha-value>)',
+        'agent-planner':     'oklch(0.55 0.12 185 / <alpha-value>)',
+        'agent-test':        'oklch(0.50 0.15 250 / <alpha-value>)',
+        'agent-security':    'oklch(0.55 0.18 85 / <alpha-value>)',
       },
       borderColor: {
-        'hub': '#333333',
+        'hub': 'oklch(0 0 0 / 8%)',
       },
       borderRadius: {
         'hub-sm':  '4px',
@@ -45,6 +60,11 @@ export default {
         'hub-fast': '120ms',
         'hub':      '180ms',
         'hub-slow': '250ms',
+      },
+      fontSize: {
+        'caption':  ['0.75rem',   { lineHeight: '1rem',    fontWeight: '400' }],
+        'footnote': ['0.688rem',  { lineHeight: '1rem',    fontWeight: '400' }],
+        'body':     ['0.8125rem', { lineHeight: '1.25rem', fontWeight: '400' }],
       },
     },
   },

@@ -625,6 +625,9 @@ class AgentRuntime {
           entry.intentScanOffset = 0;
         }
 
+        // Clear accumulated output for ALL agents after done
+        entry.accumulatedOutput = '';
+
         // Backfill QuoteReference with the agent's response message ID (exact ID match)
         if (agentMessageId) {
           const backfillInfo = quoteBackfillMap.get(agentMessageId);
@@ -688,11 +691,9 @@ class AgentRuntime {
           clearRunningAgent(sessionId, agentMessageId);
           this.tokenUsageMap.delete(agentMessageId);
         }
-        // Reset planner accumulated output
-        if (entry.isPlanner) {
-          entry.accumulatedOutput = '';
-          entry.intentScanOffset = 0;
-        }
+        // Reset accumulated output for all agents
+        entry.accumulatedOutput = '';
+        entry.intentScanOffset = 0;
         entry.currentSession = null;
         entry.currentMessageId = null;
         entry.currentAgentId = null;

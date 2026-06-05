@@ -164,7 +164,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   token: localStorage.getItem('agenthub_token'),
   user: null,
   sessions: [],
-  activeSessionId: null,
+  activeSessionId: localStorage.getItem('agenthub_active_session'),
   messages: {},
   agentEvents: {},
   agents: [],
@@ -222,6 +222,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     } else {
       set({ activeSessionId: id });
     }
+    if (id) localStorage.setItem('agenthub_active_session', id);
+    else localStorage.removeItem('agenthub_active_session');
   },
 
   setAgents: (agents) => set({ agents }),

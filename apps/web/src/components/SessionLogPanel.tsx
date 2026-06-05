@@ -3,11 +3,11 @@ import { api } from '../lib/api';
 import type { CommLogEntry, CommLogCategory } from '@agenthub/shared';
 
 const CATEGORY_COLORS: Record<CommLogCategory, string> = {
-  contextbus: 'text-blue-400',
-  inbox: 'text-green-400',
-  task: 'text-yellow-400',
-  plan: 'text-purple-400',
-  agent: 'text-cyan-400',
+  contextbus: 'text-blue-600',
+  inbox: 'text-green-600',
+  task: 'text-amber-600',
+  plan: 'text-purple-600',
+  agent: 'text-teal-600',
 };
 
 const CATEGORY_LABELS: Record<CommLogCategory, string> = {
@@ -34,15 +34,15 @@ function LogEntryRow({ entry }: { entry: CommLogEntry }) {
 
   return (
     <div
-      className="font-mono text-xs leading-5 px-3 py-0.5 hover:bg-white/5 cursor-pointer border-b border-white/5"
+      className="font-mono text-xs leading-5 px-3 py-0.5 hover:bg-hub-hover cursor-pointer border-b border-hub"
       onClick={() => setExpanded(!expanded)}
     >
-      <span className="text-gray-500">[{formatTime(entry.ts)}]</span>{' '}
+      <span className="text-hub-tertiary">[{formatTime(entry.ts)}]</span>{' '}
       <span className={`${color} font-bold`}>[{label}]</span>{' '}
-      <span className="text-gray-300">{entry.action}</span>{' '}
-      <span className="text-gray-400 truncate inline-block max-w-[60vw] align-bottom">— {detail}</span>
+      <span className="text-hub-primary">{entry.action}</span>{' '}
+      <span className="text-hub-secondary truncate inline-block max-w-[60vw] align-bottom">— {detail}</span>
       {expanded && (
-        <pre className="mt-1 ml-6 p-2 bg-black/30 rounded text-[10px] text-gray-300 whitespace-pre-wrap overflow-x-auto">
+        <pre className="mt-1 ml-6 p-2 bg-hub-input rounded text-[10px] text-hub-secondary whitespace-pre-wrap overflow-x-auto">
           {JSON.stringify(entry.payload, null, 2)}
         </pre>
       )}
@@ -117,10 +117,10 @@ export function SessionLogPanel({ sessionId, wsEntries }: Props) {
   const categories: CommLogCategory[] = ['contextbus', 'inbox', 'task', 'plan', 'agent'];
 
   return (
-    <div className="flex flex-col h-full bg-[#1e1e1e]">
+    <div className="flex flex-col h-full bg-hub-root">
       {/* Filter bar */}
-      <div className="flex items-center gap-3 px-3 py-2 bg-[#252526] border-b border-white/10 text-xs">
-        <span className="text-gray-500 font-medium">Filter:</span>
+      <div className="flex items-center gap-3 px-3 py-2 bg-hub-surface border-b border-hub text-xs">
+        <span className="text-hub-tertiary font-medium">Filter:</span>
         {categories.map(cat => (
           <label key={cat} className="flex items-center gap-1 cursor-pointer select-none">
             <input
@@ -132,7 +132,7 @@ export function SessionLogPanel({ sessionId, wsEntries }: Props) {
             <span className={CATEGORY_COLORS[cat]}>{CATEGORY_LABELS[cat]}</span>
           </label>
         ))}
-        <span className="ml-auto text-gray-500">{filtered.length} entries</span>
+        <span className="ml-auto text-hub-tertiary">{filtered.length} entries</span>
       </div>
 
       {/* Log entries */}
