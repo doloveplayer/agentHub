@@ -222,6 +222,7 @@ const MessageItem = React.memo(function MessageItem({
   const events = useAppStore((s) => s.agentEvents[msg.id]);
   const allDiffCards = useAppStore((s) => s.diffCards[msg.sessionId]);
   const diffCards = useMemo(() => allDiffCards?.filter((c) => c.agentMessageId === msg.id) ?? EMPTY_DIFF_CARDS, [allDiffCards, msg.id]);
+  const storeResolvedIds = useAppStore((s) => s.resolvedPermissionIds);
   const [resolvedPermissions, setResolvedPermissions] = useState<Set<string>>(() => new Set());
 
   // Extract token usage
@@ -257,7 +258,7 @@ const MessageItem = React.memo(function MessageItem({
           )}
           {permissionReqs.map((ev) => {
             const pid = ev.details.permissionId ?? ev.id;
-            const resolved = resolvedPermissions.has(pid);
+            const resolved = resolvedPermissions.has(pid) || storeResolvedIds.has(pid);
             // Hide the card entirely once resolved
             if (resolved) return null;
             const toolInput = (ev.details as any).toolInput as Record<string, unknown> | undefined;
@@ -348,6 +349,14 @@ export function ChatView() {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
   const agents = useAppStore((s) => s.agents);
+  const setAgents = useAppStore((s) => s.setAgents);
+
+  // Ensure agents are loaded when entering a session (handles race with loadSessions)
+  useEffect(() => {
+    if (agents.length === 0 && activeSessionId) {
+      api.getAgents().then(setAgents).catch(() => {});
+    }
+  }, [activeSessionId, agents.length, setAgents]);
 
   // useShallow: batch selectors to avoid re-render on reference change when content is same
   const [messages, taskPlans] = useAppStore(useShallow((s) => [

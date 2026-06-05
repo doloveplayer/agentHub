@@ -84,7 +84,7 @@ import {
 import {
   broadcast, sessionPermissionModes, agentProcesses, agentStates, agentTaskQueues,
   agentCurrentTask, agentCurrentMessage, sandboxes, sessionAgentNames,
-  incRunningAgentCount, clearRunningAgent, populateSessionAgentNames, permissionTimeouts,
+  incRunningAgentCount, clearRunningAgent, populateSessionAgentNames, permissionTimeouts, pendingPermissions,
   type AgentTaskQueue, type TaskDispatchNode,
 } from './state.js';
 import {
@@ -402,6 +402,7 @@ function handleProviderTaskEvent(
           toolInput: event.toolInput,
           timestamp: event.timestamp,
         });
+        pendingPermissions.set(routedId, { sessionId, agentMessageId: taskMessageId });
         const timeout = setTimeout(() => {
           const stateMap = agentStates.get(sessionId);
           const st = stateMap?.get(taskMessageId);
@@ -409,6 +410,7 @@ function handleProviderTaskEvent(
             st.process.respondControlRequest(requestId, true);
           }
           permissionTimeouts.delete(routedId);
+          pendingPermissions.delete(routedId);
         }, timeoutMs);
         permissionTimeouts.set(routedId, timeout);
         break;
@@ -427,6 +429,7 @@ function handleProviderTaskEvent(
           toolInput: event.toolInput,
           timestamp: event.timestamp,
         });
+        pendingPermissions.set(routedPermId, { sessionId, agentMessageId: taskMessageId });
         const timeout = setTimeout(() => {
           const stateMap = agentStates.get(sessionId);
           const st = stateMap?.get(taskMessageId);
@@ -434,6 +437,7 @@ function handleProviderTaskEvent(
             st.process.respondToPermission(permId, true);
           }
           permissionTimeouts.delete(routedPermId);
+          pendingPermissions.delete(routedPermId);
         }, timeoutMs);
         permissionTimeouts.set(routedPermId, timeout);
       }

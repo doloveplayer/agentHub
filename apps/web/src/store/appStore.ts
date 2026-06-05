@@ -108,6 +108,8 @@ interface AppState {
   updateMessageTokens: (sessionId: string, msgId: string, tokens: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number }) => void;
   addAgentEvent: (messageId: string, event: AgentEvent) => void;
   addStreamingMessage: (sessionId: string, msgId: string) => void;
+  resolvedPermissionIds: Set<string>;
+  addResolvedPermission: (permissionId: string) => void;
   setTrustMode: (mode: boolean) => void;
   setSessionPermissionMode: (sessionId: string, mode: string) => void;
   updateSessionInList: (sessionId: string, updates: Partial<Session>) => void;
@@ -168,6 +170,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   agents: [],
   configAgentId: null,
   streamingMessages: {},
+  resolvedPermissionIds: new Set<string>(),
   trustMode: true,
   sessionPermissionModes: {},
   orchestrationMode: 'parallel' as const,
@@ -267,6 +270,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeStreamingMessage: (sessionId, msgId) => set((state) => {
     const existing = state.streamingMessages[sessionId] ?? [];
     return { streamingMessages: { ...state.streamingMessages, [sessionId]: existing.filter((id) => id !== msgId) } };
+  }),
+
+  addResolvedPermission: (permissionId) => set((state) => {
+    const next = new Set(state.resolvedPermissionIds);
+    next.add(permissionId);
+    return { resolvedPermissionIds: next };
   }),
 
   isSessionStreaming: (sessionId) => {

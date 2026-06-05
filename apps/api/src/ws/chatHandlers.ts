@@ -20,7 +20,7 @@ import {
   perSessionPendingQueues, enqueuePerSession, dequeuePerSession,
   sessionsWithMilestones, sequentialQueues,
   agentCurrentMessage,
-  permissionTimeouts,
+  permissionTimeouts, pendingPermissions,
   quoteBackfillMap,
   generateId, getOrCreateSandbox, broadcast,
   clearRunningAgent,
@@ -566,6 +566,7 @@ export function handlePermissionResponse(sessionId: string, data: { permissionId
   // Clear timeout regardless of agent state — prevents stale timeout from writing after death
   const timeout = permissionTimeouts.get(data.permissionId);
   if (timeout) { clearTimeout(timeout); permissionTimeouts.delete(data.permissionId); }
+  pendingPermissions.delete(data.permissionId);
   const stateMap = agentStates.get(sessionId);
   if (!stateMap) return;
   const st = stateMap.get(agentMessageId);
@@ -602,5 +603,29 @@ export function handlePermissionModeChange(sessionId: string, data: { mode: stri
       }
     }
   }
+
+  // Auto-approve all pending permission requests when switching to trust mode
+  if (trustMode) {
+    const stateMap = agentStates.get(sessionId);
+    for (const [permId, info] of pendingPermissions) {
+      if (info.sessionId !== sessionId) continue;
+      // Clear timeout
+      const timeout = permissionTimeouts.get(permId);
+      if (timeout) { clearTimeout(timeout); permissionTimeouts.delete(permId); }
+      pendingPermissions.delete(permId);
+      // Approve the permission request
+      const st = stateMap?.get(info.agentMessageId);
+      if (!st) continue;
+      const rawId = permId.includes('|::|') ? permId.split('|::|')[1] : permId;
+      if (st.process.respondToPermission) {
+        st.process.respondToPermission(rawId, true);
+      } else if (st.process.respondControlRequest) {
+        st.process.respondControlRequest(rawId, true);
+      }
+      // Notify frontend to dismiss the popup
+      broadcast(sessionId, { type: 'permission_resolved', permissionId: permId, allowed: true });
+    }
+  }
+
   console.log(`[ws] Permission mode changed: session=${sessionId.slice(0, 8)} mode=${data.mode} trustMode=${trustMode}`);
 }

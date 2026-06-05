@@ -140,6 +140,14 @@ export function populateSessionAgentNames(sessionId: string, agents: { name: str
 
 /** Permission timeouts */
 export const permissionTimeouts = new Map<string, NodeJS.Timeout>();
+
+/**
+ * Pending permission requests per session, keyed by routed permissionId.
+ * Used to auto-approve all pending requests when switching to trust mode.
+ * Entries are added in taskDispatcher on permission_request and removed on
+ * response or timeout.
+ */
+export const pendingPermissions = new Map<string, { sessionId: string; agentMessageId: string }>();
 function optionalPositiveInt(key: string): number | null {
   const raw = process.env[key];
   if (!raw) return null;
