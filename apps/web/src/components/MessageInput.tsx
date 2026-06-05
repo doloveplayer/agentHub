@@ -154,14 +154,15 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
     const skillName = command.slice(1);
     const owners = agentSkills.filter(s => s.name === skillName);
 
-    if (owners.length === 1) {
+    // Solo sessions don't support mentions — skip auto-tag
+    if (activeSessionType === 'group' && owners.length === 1) {
       const owner = owners[0];
       setTags((prev) => {
         if (prev.some(t => t.agentId === owner.agentId)) return prev;
         return [...prev, { agentId: owner.agentId, agentName: owner.name, displayName: owner.agentDisplayName }];
       });
       setValue(command + ' ');
-    } else if (owners.length > 1) {
+    } else if (activeSessionType === 'group' && owners.length > 1) {
       const agentConfigs: AgentConfig[] = owners.map(o => {
         const full = agents.find(a => a.id === o.agentId);
         return full || { id: o.agentId, name: '', displayName: o.agentDisplayName, description: '', systemPrompt: '', provider: 'claude-code', type: 'user', skills: [] } as AgentConfig;
@@ -337,9 +338,9 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
       }
     }
 
-    // Fallback: if skillInvocation is set but no tags, auto-find owner
+    // Fallback: if skillInvocation is set but no tags, auto-find owner (group only)
     let sendTags = tags;
-    if (skillInvocation && tags.length === 0) {
+    if (skillInvocation && tags.length === 0 && activeSessionType === 'group') {
       const owners = agentSkills.filter(s => s.name === skillInvocation);
       if (owners.length === 1) {
         const owner = owners[0];
