@@ -4,7 +4,7 @@ import { serve } from "@hono/node-server";
 import type { Server } from "http";
 import type http from "http";
 import type net from "net";
-import { execSync } from "child_process";
+
 import { writeFileSync, readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import { config, runtimeConfig } from "./config.js";
@@ -31,40 +31,6 @@ import avatarRoutes from "./routes/avatar.js";
 import quoteRefRoutes from "./routes/quoteReferences.js";
 import pinnedRoutes from "./routes/pinned.js";
 import { seedAgentTemplates } from "./defaultAgents.js";
-
-// Startup cleanup: remove orphaned sandbox containers and directories
-// from previous backend runs
-try {
-  execSync(
-    "docker rm -f $(docker ps -aq --filter name=agenthub-sandbox) 2>/dev/null",
-    { encoding: "utf8" },
-  );
-  execSync(
-    "docker rm -f $(docker ps -aq --filter name=agenthub-agent-) 2>/dev/null",
-    { encoding: "utf8" },
-  );
-  execSync(
-    "docker rm -f $(docker ps -aq --filter name=agenthub-repl-) 2>/dev/null",
-    { encoding: "utf8" },
-  );
-  console.log("[startup] Cleaned orphaned containers");
-} catch {
-  /* no orphaned containers */
-}
-try {
-  const sandboxRoot = config.sandbox.root;
-  if (!sandboxRoot.includes(".sandboxes")) {
-    console.error(
-      "[startup] Refusing to clean non-sandbox directory:",
-      sandboxRoot,
-    );
-  } else {
-    execSync(`rm -rf ${sandboxRoot}/* 2>/dev/null`, { encoding: "utf8" });
-    console.log("[startup] Cleaned orphaned sandbox directories");
-  }
-} catch {
-  /* nothing to clean */
-}
 
 // Clean up stale streaming messages from previous run
 try {
