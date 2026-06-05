@@ -439,6 +439,7 @@ function ensureGitRepo(absPath: string): void {
     '_repl_prompt_*',
     '_env*',
     '_inbox_*',
+    '_comm_*',
     '.agenthub/',
     '.claude/',
     '',
