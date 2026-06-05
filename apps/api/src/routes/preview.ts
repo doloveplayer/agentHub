@@ -130,10 +130,11 @@ async function doServeStatic(
   sessionId: string,
   directory: string,
 ): Promise<Response> {
-  // Kill ALL previous static servers in this container
+  // Kill ALL previous static servers in this container.
+  // pkill/kill may not exist in minimal sandbox images, so use Node.js to find and kill.
   await SandboxManager.execCapture(
     containerId,
-    `pkill -f "/tmp/_serve.js" 2>/dev/null; true`,
+    `node -e 'const fs=require("fs");for(const d of fs.readdirSync("/proc")){if(!/^\\d+$/.test(d))continue;try{const c=fs.readFileSync("/proc/"+d+"/cmdline","utf8").replace(/\\0/g," ");if(c.includes("/tmp/_serve.js"))process.kill(Number(d),"SIGKILL")}catch{}}' 2>/dev/null; true`,
   );
 
   // Wait for ports to actually be released (not blind sleep).
@@ -157,12 +158,31 @@ async function doServeStatic(
 
   try {
     // Check directory exists before attempting to serve (use single-quoted path to prevent injection)
+    const safeDir = directory.replace(/'/g, "'\\''");
     const dirCheck = await SandboxManager.execCapture(
       containerId,
-      `test -d '${directory.replace(/'/g, "'\\''")}' && echo ok || echo missing`,
+      `test -d '${safeDir}' && echo ok || echo missing`,
     );
     if (dirCheck !== "ok") {
       return jsonRes({ error: `Directory not found: ${directory}` }, 404);
+    }
+
+    // Auto-detect build-tool projects (Vite, webpack, etc.): if dist/index.html
+    // exists and the root index.html references source files, serve from dist/.
+    let serveDir = directory;
+    const distCheck = await SandboxManager.execCapture(
+      containerId,
+      `test -f '${safeDir}/dist/index.html' && echo exists || echo missing`,
+    );
+    if (distCheck === "exists") {
+      const rootHtml = await SandboxManager.execCapture(
+        containerId,
+        `head -20 '${safeDir}/index.html' 2>/dev/null || true`,
+      );
+      // If root index.html references source files (src/main.tsx, src/main.ts, etc.), use dist/
+      if (/src\/main\.(tsx?|jsx?)/.test(rootHtml) || /type="module".*src=/.test(rootHtml)) {
+        serveDir = `${directory}/dist`;
+      }
     }
 
     // Pick a port not already in use
@@ -177,7 +197,7 @@ async function doServeStatic(
     // Write a minimal Node.js static server script to the sandbox and start it.
     // Uses the container's own Node runtime — zero extra deps.
     // Use JSON.stringify for safe JS string literal generation (handles all escaping)
-    const dirJsLiteral = JSON.stringify(directory);
+    const dirJsLiteral = JSON.stringify(serveDir);
     await SandboxManager.execCapture(
       containerId,
       `cat > /tmp/_serve.js << 'ENDOFSCRIPT'
