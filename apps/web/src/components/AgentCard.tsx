@@ -23,8 +23,8 @@ function deriveCapabilityTags(agentName?: string, displayName?: string): string[
 /** Get provider info for display. */
 function getProviderInfo(provider?: AgentProvider) {
   switch (provider) {
-    case 'codex':
-      return { label: 'Codex', color: 'bg-green-500/20 text-green-400', caps: 'CLI · One-shot' };
+    case 'opencode':
+      return { label: 'OpenCode', color: 'bg-blue-500/20 text-blue-400', caps: 'SDK · Session · Stream' };
     case 'claude-code':
     default:
       return { label: 'Claude', color: 'bg-orange-500/20 text-orange-400', caps: 'SDK · Session · Stream' };

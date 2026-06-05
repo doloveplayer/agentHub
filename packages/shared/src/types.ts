@@ -7,7 +7,7 @@ export interface User {
 
 export type PermissionMode = 'read_only' | 'ask' | 'smart' | 'trust';
 
-export type AgentProvider = 'claude-code' | 'codex';
+export type AgentProvider = 'claude-code' | 'opencode';
 
 export interface AgentProviderConfig {
   model?: string;
@@ -54,7 +54,7 @@ export interface SessionAgentInfo {
 export interface Message {
   id: string;
   sessionId: string;
-  senderType: 'human' | 'agent';
+  senderType: 'human' | 'agent' | 'system';
   agentId?: string;
   content: string;
   status: 'sending' | 'queued' | 'streaming' | 'done' | 'error';

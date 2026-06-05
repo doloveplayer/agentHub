@@ -1,6 +1,6 @@
 import type { ParsedEvent } from "./EventParser.js";
 
-export type AgentRuntimeSource = "claude" | "codex" | "openclaw";
+export type AgentRuntimeSource = "claude" | "openclaw";
 
 export interface AgentTaskInput {
   nodeRunId: string;

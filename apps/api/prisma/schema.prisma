@@ -13,7 +13,7 @@ model User {
   password         String
   avatarUrl        String        @default("")
   email            String?
-  encryptedApiKeys String?       // AES-256-GCM encrypted JSON: { "codex": "encrypted_key", ... }
+  encryptedApiKeys String?       // AES-256-GCM encrypted JSON: (provider API keys)
   sessions         Session[]
   settings         UserSettings?
   createdAt        DateTime      @default(now())
