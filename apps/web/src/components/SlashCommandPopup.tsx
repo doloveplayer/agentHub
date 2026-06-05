@@ -14,6 +14,7 @@ const SLASH_COMMANDS = [
 interface SkillItem {
   name: string;
   description: string;
+  agentDisplayName?: string;
 }
 
 interface Props {
@@ -27,15 +28,23 @@ interface Props {
 
 export function SlashCommandPopup({ query, focusedIndex, onSelect, onClose, position, agentSkills }: Props) {
   const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const allCommands = useMemo(() => {
-    const skills: { name: string; description: string; icon: string }[] = (agentSkills || []).map(s => ({
+    const skills: { name: string; description: string; icon: string; agentDisplayName?: string }[] = (agentSkills || []).map(s => ({
       name: '/' + s.name,
       description: s.description,
       icon: '🔧',
+      agentDisplayName: s.agentDisplayName,
     }));
-    return [...SLASH_COMMANDS, ...skills];
+    return [...SLASH_COMMANDS.map(c => ({ ...c, agentDisplayName: undefined as string | undefined })), ...skills];
   }, [agentSkills]);
+
+  // Auto-scroll focused item into view
+  useEffect(() => {
+    const el = listRef.current?.querySelector(`[data-index="${focusedIndex}"]`);
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }, [focusedIndex]);
 
   const filtered = query
     ? allCommands.filter((c) => c.name.startsWith(query) || c.name.includes(query.slice(1)))
@@ -60,10 +69,11 @@ export function SlashCommandPopup({ query, focusedIndex, onSelect, onClose, posi
       <div className="px-3 py-1.5 border-b border-hub">
         <span className="text-[10px] text-hub-muted font-medium">Commands</span>
       </div>
-      <div className="max-h-56 overflow-y-auto">
+      <div ref={listRef} className="max-h-56 overflow-y-auto">
         {filtered.map((cmd, i) => (
           <div
-            key={cmd.name}
+            key={cmd.name + (cmd.agentDisplayName || '')}
+            data-index={i}
             onClick={() => onSelect(cmd.name)}
             className={`px-3 py-2 flex items-center gap-2.5 cursor-pointer transition text-sm ${
               i === focusedIndex ? 'bg-hub-active text-hub-primary' : 'text-hub-tertiary hover:bg-hub-hover hover:text-hub-secondary'
@@ -72,6 +82,9 @@ export function SlashCommandPopup({ query, focusedIndex, onSelect, onClose, posi
             <span className="text-xs w-5 text-center">{cmd.icon}</span>
             <span className="font-medium font-mono text-xs">{cmd.name}</span>
             <span className="text-[11px] text-hub-muted flex-1 truncate">{cmd.description}</span>
+            {cmd.agentDisplayName && (
+              <span className="text-[10px] text-hub-muted shrink-0 ml-1">{cmd.agentDisplayName}</span>
+            )}
           </div>
         ))}
       </div>
