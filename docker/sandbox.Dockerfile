@@ -28,3 +28,4 @@ USER node
 WORKDIR /workspace
 
 CMD ["tail", "-f", "/dev/null"]
+RUN npm install -g opencode-ai@1.15.13

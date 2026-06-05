@@ -22,8 +22,11 @@ import { TestReportCard } from './TestReportCard';
 import { ReviewCard } from './ReviewCard';
 import { WorkspaceSelector } from './WorkspaceSelector';
 import { PptxCard } from './PptxCard';
+import { HtmlPreviewCard } from './HtmlPreviewCard';
 import { SessionLogPanel } from './SessionLogPanel';
 import { RecoveryBanner } from './RecoveryBanner';
+import { PinnedPanel } from './PinnedPanel';
+import { PinnedPinMenu } from './PinnedPinMenu';
 import type { Message, AgentConfig } from '@agenthub/shared';
 import { safeContent, formatTokens } from '../lib/text';
 
@@ -192,15 +195,16 @@ const SessionHeader = React.memo(function SessionHeader({
 
 /** Single message row with bubble, actions, agent info, and inline diff cards. Subscribes only to its own agentEvents. */
 const MessageItem = React.memo(function MessageItem({
-  msg, agentDisplayName, agentName, onCopy, onQuote, onRegenerate, onDelete, respondToPermission,
+  msg, agentDisplayName, agentName, onCopy, onQuote, onPin, onRegenerate, onDelete, respondToPermission,
 }: {
   msg: Message; agentDisplayName?: string; agentName?: string;
-  onCopy: () => void; onQuote: () => void; onRegenerate: () => void; onDelete: () => void;
+  onCopy: () => void; onQuote: () => void; onPin: () => void; onRegenerate: () => void; onDelete: () => void;
   respondToPermission: (id: string, allowed: boolean) => void;
 }) {
   // Subscribe only to this message's agent events — no global store pollution
   const events = useAppStore((s) => s.agentEvents[msg.id]);
-  const diffCards = useAppStore((s) => s.diffCards[msg.sessionId]?.filter((c) => c.agentMessageId === msg.id) ?? EMPTY_DIFF_CARDS);
+  const allDiffCards = useAppStore((s) => s.diffCards[msg.sessionId]);
+  const diffCards = useMemo(() => allDiffCards?.filter((c) => c.agentMessageId === msg.id) ?? EMPTY_DIFF_CARDS, [allDiffCards, msg.id]);
   const [resolvedPermissions, setResolvedPermissions] = useState<Set<string>>(() => new Set());
 
   // Extract token usage
@@ -209,6 +213,17 @@ const MessageItem = React.memo(function MessageItem({
   const inputTokens = lastToken?.input ?? 0;
   const outputTokens = lastToken?.output ?? 0;
   const permissionReqs = events?.filter((ev) => ev.type === 'permission_request') ?? [];
+
+  // System notifications: compact centered banner
+  if (msg.senderType === 'system') {
+    return (
+      <div className="flex justify-center py-1.5 px-4">
+        <span className="text-[11px] text-hub-tertiary bg-hub-surface/50 rounded-full px-3 py-0.5">
+          {msg.content}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -220,7 +235,7 @@ const MessageItem = React.memo(function MessageItem({
         {msg.status !== 'streaming' && msg.status !== 'sending' && (
           <div className={`flex-shrink-0 flex items-start pt-2.5 ${msg.senderType === 'human' ? 'mr-3 order-first' : 'ml-1'}`}>
             <MessageActions message={msg} agentDisplayName={agentDisplayName}
-              onCopy={onCopy} onQuote={onQuote} onRegenerate={onRegenerate} onDelete={onDelete} />
+              onCopy={onCopy} onQuote={onQuote} onPin={onPin} onRegenerate={onRegenerate} onDelete={onDelete} />
           </div>
         )}
       </div>
@@ -318,8 +333,12 @@ export function ChatView() {
   const renderedPlanIds = useRef(new Set<string>());
 
   // Session Log tab state
-  const [activeTab, setActiveTab] = useState<'chat' | 'log'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'pinned' | 'log'>('chat');
   const [commLogEntries, setCommLogEntries] = useState<any[]>([]);
+
+  // Pinned tab state
+  const [pinnedEvents, setPinnedEvents] = useState<Array<{ type: string; pinned?: any; pinnedId?: string }>>([]);
+  const [pinnedCount, setPinnedCount] = useState(0);
 
   // Listen for real-time comm_log events from WebSocket
   useEffect(() => {
@@ -331,66 +350,96 @@ export function ChatView() {
     return () => window.removeEventListener('comm_log', handler);
   }, []);
 
-  // Clear comm log entries when session changes
+  // Listen for real-time pinned events from WebSocket
   useEffect(() => {
-    setCommLogEntries([]);
-    setActiveTab('chat');
+    const handler = (e: Event) => {
+      const data = (e as CustomEvent).detail;
+      if (!data || (data.sessionId && data.sessionId !== activeSessionId)) return;
+      setPinnedEvents(prev => [...prev, data]);
+      if (data.type === 'pinned_added') setPinnedCount(c => c + 1);
+      if (data.type === 'pinned_removed') setPinnedCount(c => Math.max(0, c - 1));
+    };
+    window.addEventListener('pinned_event', handler);
+    return () => window.removeEventListener('pinned_event', handler);
   }, [activeSessionId]);
 
-  // Workspace PPTX detection — only show the single newest file
-  const [latestPptx, setLatestPptx] = useState<{ path: string; name: string } | null>(null);
-  const [dismissedPptxPath, setDismissedPptxPath] = useState<string | null>(null);
+  // Clear comm log and pinned entries when session changes
+  useEffect(() => {
+    setCommLogEntries([]);
+    setPinnedEvents([]);
+    setPinnedCount(0);
+    setActiveTab('chat');
+    // Fetch initial pinned count
+    if (activeSessionId) {
+      api.getPinned(activeSessionId).then(items => setPinnedCount(items.length)).catch(() => {});
+    }
+  }, [activeSessionId]);
 
-  const scanWorkspacePptx = useCallback(async () => {
+  // New artifact detection — snapshot-based: only show files created AFTER session starts
+  const initialFilesRef = useRef<Set<string>>(new Set());
+  const snapshotReadyRef = useRef(false);
+  const [latestArtifact, setLatestArtifact] = useState<{ path: string; name: string; type: 'pptx' | 'html' } | null>(null);
+  const [dismissedPaths, setDismissedPaths] = useState<Set<string>>(new Set());
+
+  // Reset snapshot when session changes
+  useEffect(() => {
+    initialFilesRef.current = new Set();
+    snapshotReadyRef.current = false;
+    setLatestArtifact(null);
+    setDismissedPaths(new Set());
+  }, [activeSessionId]);
+
+  const scanNewArtifacts = useCallback(async () => {
     if (!activeSessionId) return;
     try {
       const result = await api.getWorkspaceTree(activeSessionId);
-      const roots: any[] = [
-        ...(result?.tree ?? []),
-        ...(result?.workspaceTree ?? []),
-      ];
+      const roots: any[] = [...(result?.tree ?? []), ...(result?.workspaceTree ?? [])];
 
-      const collectPptx = (nodes: any[]): { path: string; name: string; modifiedAt: number }[] => {
-        const out: { path: string; name: string; modifiedAt: number }[] = [];
+      // Collect all file paths
+      const allFiles: { path: string; name: string; modifiedAt: number }[] = [];
+      const collect = (nodes: any[]) => {
         for (const node of nodes) {
-          if (node.type === 'file' && /\.pptx$/i.test(node.name)) {
-            out.push({ path: node.path, name: node.name, modifiedAt: node.modifiedAt ?? 0 });
-          }
-          if (node.type === 'directory' && node.children?.length) {
-            out.push(...collectPptx(node.children));
-          }
+          if (node.type === 'file') allFiles.push({ path: node.path, name: node.name, modifiedAt: node.modifiedAt ?? 0 });
+          if (node.type === 'directory' && node.children?.length) collect(node.children);
         }
-        return out;
       };
+      collect(roots);
 
-      const pptxList = collectPptx(roots);
-      pptxList.sort((a, b) => b.modifiedAt - a.modifiedAt);
-      const newest = pptxList[0] ?? null;
-
-      if (newest && newest.path !== dismissedPptxPath) {
-        setLatestPptx({ path: newest.path, name: newest.name });
-      } else if (!newest) {
-        setLatestPptx(null);
+      // First call: take snapshot, don't show any cards
+      if (!snapshotReadyRef.current) {
+        initialFilesRef.current = new Set(allFiles.map(f => f.path));
+        snapshotReadyRef.current = true;
+        return;
       }
-    } catch {
-      // Workspace tree may not exist until the sandbox is created.
-    }
-  }, [activeSessionId, dismissedPptxPath]);
 
-  const dismissPptxCard = useCallback(() => {
-    const current = latestPptx;
-    if (current) {
-      setDismissedPptxPath(current.path);
-      setLatestPptx(null);
-    }
-  }, [latestPptx]);
+      // Subsequent calls: find new files not in snapshot and not dismissed
+      const newFiles = allFiles.filter(f => !initialFilesRef.current.has(f.path) && !dismissedPaths.has(f.path));
+      const previewable = newFiles.filter(f => /\.pptx$/i.test(f.name) || /\.html?$/i.test(f.name));
+      previewable.sort((a, b) => b.modifiedAt - a.modifiedAt);
+      const newest = previewable[0] ?? null;
 
-  // Poll workspace tree every 3s so PPTX card appears as soon as file is created
+      if (newest) {
+        const type = /\.pptx$/i.test(newest.name) ? 'pptx' as const : 'html' as const;
+        setLatestArtifact({ path: newest.path, name: newest.name, type });
+      } else {
+        setLatestArtifact(null);
+      }
+    } catch { /* sandbox not ready */ }
+  }, [activeSessionId, dismissedPaths]);
+
+  const dismissArtifact = useCallback(() => {
+    if (latestArtifact) {
+      setDismissedPaths(prev => new Set(prev).add(latestArtifact.path));
+      setLatestArtifact(null);
+    }
+  }, [latestArtifact]);
+
+  // Poll workspace tree every 3s for new artifacts
   useEffect(() => {
-    scanWorkspacePptx();
-    const interval = setInterval(scanWorkspacePptx, 3000);
+    scanNewArtifacts();
+    const interval = setInterval(scanNewArtifacts, 3000);
     return () => clearInterval(interval);
-  }, [scanWorkspacePptx]);
+  }, [scanNewArtifacts]);
 
   // Memoize agentMap — only rebuild when agents array changes
   const agentMap = useMemo(() => {
@@ -457,7 +506,8 @@ export function ChatView() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showAddAgents, setShowAddAgents] = useState(false);
   const [showRemoveAgents, setShowRemoveAgents] = useState(false);
-  const [configAgentId, setConfigAgentId] = useState<string | null>(null);
+  const configAgentId = useAppStore((s) => s.configAgentId);
+  const setConfigAgentId = useAppStore((s) => s.setConfigAgentId);
   const [showWorkspaceSelector, setShowWorkspaceSelector] = useState(false);
   const [previewSelection, setPreviewSelection] = useState<{
     text: string;
@@ -529,6 +579,19 @@ export function ChatView() {
     addToast('Message deleted', 'info');
   }, [deleteMessage, addToast]);
 
+  const handlePinMessage = useCallback((msg: Message) => {
+    api.createPinned(activeSessionId!, {
+      sourceType: 'message',
+      content: msg.content,
+      sourceMessageId: msg.id,
+      title: msg.content.slice(0, 80).split('\n')[0],
+    }).then(() => {
+      addToast('Message pinned', 'success');
+    }).catch(() => {
+      addToast('Failed to pin message', 'error');
+    });
+  }, [activeSessionId, addToast]);
+
   if (!activeSessionId) {
     return (
       <div className="flex-1 flex items-center justify-center text-hub-muted">
@@ -565,13 +628,34 @@ export function ChatView() {
             Chat
           </button>
           <button
+            className={`px-4 py-1.5 font-medium transition-colors ${activeTab === 'pinned' ? 'text-hub-accent border-b-2 border-hub-accent' : 'text-hub-muted hover:text-hub-secondary'}`}
+            onClick={() => setActiveTab('pinned')}
+          >
+            Pinned{pinnedCount > 0 ? ` (${pinnedCount})` : ''}
+          </button>
+          <button
             className={`px-4 py-1.5 font-medium transition-colors ${activeTab === 'log' ? 'text-hub-accent border-b-2 border-hub-accent' : 'text-hub-muted hover:text-hub-secondary'}`}
             onClick={() => setActiveTab('log')}
           >
             Session Log
           </button>
         </div>
-        {activeTab === 'log' ? (
+        {activeTab === 'pinned' ? (
+          <div className="flex flex-col h-full">
+            <div className="flex items-center justify-between px-3 py-2 bg-[#252526] border-b border-white/10">
+              <span className="text-xs text-hub-secondary font-medium">Pinned Messages</span>
+              <PinnedPinMenu
+                sessionId={activeSessionId!}
+                messages={messages}
+                onPinned={() => {
+                  api.getPinned(activeSessionId!).then(items => setPinnedCount(items.length));
+                }}
+                onError={(msg) => addToast(msg, 'error')}
+              />
+            </div>
+            <PinnedPanel sessionId={activeSessionId!} wsPinnedEvents={pinnedEvents} />
+          </div>
+        ) : activeTab === 'log' ? (
           <SessionLogPanel sessionId={activeSessionId!} wsEntries={commLogEntries} />
         ) : (
         <div className="flex-1 overflow-y-auto chat-scroll" ref={scrollContainerRef} onScroll={handleChatScroll}>
@@ -592,6 +676,7 @@ export function ChatView() {
                 agentName={msg.agentId ? agentMap.get(msg.agentId)?.name : undefined}
                 onCopy={() => handleCopyMessage(msg)}
                 onQuote={() => handleQuoteMessage(msg)}
+                onPin={() => handlePinMessage(msg)}
                 onRegenerate={() => handleRegenerateMessage(msg)}
                 onDelete={() => handleDeleteMessage(msg)}
                 respondToPermission={respondToPermission}
@@ -606,14 +691,23 @@ export function ChatView() {
             </React.Fragment>
           ))}
           <ArtifactFeed sessionId={activeSessionId!} />
-          {/* Inline PPTX preview card — only the newest workspace .pptx file */}
-          {latestPptx && (
+          {/* Inline artifact preview — only newly created PPTX/HTML files */}
+          {latestArtifact?.type === 'pptx' && (
             <PptxCard
-              key={latestPptx.path}
+              key={latestArtifact.path}
               sessionId={activeSessionId}
-              filePath={latestPptx.path}
-              fileName={latestPptx.name}
-              onDismiss={dismissPptxCard}
+              filePath={latestArtifact.path}
+              fileName={latestArtifact.name}
+              onDismiss={dismissArtifact}
+            />
+          )}
+          {latestArtifact?.type === 'html' && (
+            <HtmlPreviewCard
+              key={latestArtifact.path}
+              sessionId={activeSessionId}
+              filePath={latestArtifact.path}
+              fileName={latestArtifact.name}
+              onDismiss={dismissArtifact}
             />
           )}
           <div ref={bottomRef} />

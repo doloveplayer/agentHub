@@ -1,6 +1,6 @@
 import { AbstractProvider } from './base.js';
 import { ClaudeCodeProvider } from './claude-code.js';
-import { CodexProvider } from './codex.js';
+import { OpenCodeProvider } from './opencode.js';
 import { TestAgentProvider } from './test.js';
 
 const registry = new Map<string, () => AbstractProvider>();
@@ -27,10 +27,10 @@ export class ProviderFactory {
   /** Initialize built-in providers. Called once on startup. */
   static init(): void {
     ProviderFactory.register('claude-code', () => new ClaudeCodeProvider());
-    ProviderFactory.register('codex', () => new CodexProvider());
+    ProviderFactory.register('opencode', () => new OpenCodeProvider());
     ProviderFactory.register('test', () => new TestAgentProvider());
     console.log('[provider] Registered: claude-code');
-    console.log('[provider] Registered: codex');
+    console.log('[provider] Registered: opencode');
     console.log('[provider] Registered: test');
   }
 }

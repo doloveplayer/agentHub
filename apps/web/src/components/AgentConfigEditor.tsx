@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { X, Save, RotateCcw, Plus, Pencil, Trash2, Upload, AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Save, RotateCcw, Plus, Pencil, Trash2, Upload, AlertTriangle, Package } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/appStore';
 import type { SkillDef } from '@agenthub/shared';
@@ -21,9 +21,14 @@ interface EditableSkill {
 export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
   const agents = useAppStore((s) => s.agents);
   const setAgents = useAppStore((s) => s.setAgents);
+  const setSessions = useAppStore((s) => s.setSessions);
+  const sessions = useAppStore((s) => s.sessions);
   const agent = agents.find((a) => a.id === agentId);
 
+  const [displayName, setDisplayName] = useState('');
+  const [description, setDescription] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [provider, setProvider] = useState('claude-code');
   const [skills, setSkills] = useState<EditableSkill[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -31,27 +36,55 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showReplaceWarning, setShowReplaceWarning] = useState(false);
+  const [presetList, setPresetList] = useState<{ name: string; description: string }[]>([]);
+  const [showPresetPicker, setShowPresetPicker] = useState(false);
+  const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
+  const initializedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (agent) {
-      setSystemPrompt(agent.systemPrompt);
-      setSkills((agent.skills || []) as EditableSkill[]);
+    // Only re-initialize when editing a different agent, not on every store update
+    if (initializedFor.current === agentId) return;
+    const a = agents.find((x) => x.id === agentId);
+    if (a) {
+      setDisplayName(a.displayName || '');
+      setDescription(a.description || '');
+      setSystemPrompt(a.systemPrompt);
+      setProvider(a.provider || 'claude-code');
+      setSkills((a.skills || []) as EditableSkill[]);
       setLoading(false);
+      initializedFor.current = agentId;
     }
-  }, [agent]);
+  }, [agentId, agents]);
+
+  useEffect(() => {
+    api.getPresetSkills().then(setPresetList).catch(() => setPresetList([]));
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
-      // Strip internal fields before saving
       const cleanSkills: SkillDef[] = skills.map(({ _editing, _isNew, ...s }) => s);
       const updated = await api.updateAgent(agentId, {
+        displayName,
+        description,
         systemPrompt,
+        provider,
         skills: cleanSkills.length > 0 ? cleanSkills : null,
       });
-      // Update store
-      setAgents(agents.map((a) => (a.id === agentId ? { ...a, ...updated } : a)));
+      // Update agents store
+      const currentAgents = useAppStore.getState().agents;
+      setAgents(currentAgents.map((a) => (a.id === agentId ? { ...a, ...updated } : a)));
+      // Update session titles if displayName changed
+      const currentSessions = useAppStore.getState().sessions;
+      if (agent && agent.displayName !== displayName) {
+        setSessions(currentSessions.map(s => {
+          if (s.type === 'solo' && s.agents?.[0]?.agentId === agentId) {
+            return { ...s, title: displayName, agents: [{ ...s.agents[0], displayName }] };
+          }
+          return s;
+        }));
+      }
       onSaved?.();
     } catch (err: any) {
       setError(err.message || 'Failed to save config');
@@ -60,8 +93,13 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
     }
   };
 
-  const handleResetSystemPrompt = () => {
-    if (agent) setSystemPrompt(agent.systemPrompt);
+  const handleResetAll = () => {
+    if (agent) {
+      setDisplayName(agent.displayName || '');
+      setDescription(agent.description || '');
+      setSystemPrompt(agent.systemPrompt);
+      setSkills((agent.skills || []) as EditableSkill[]);
+    }
   };
 
   // --- Skills management ---
@@ -150,6 +188,34 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
+          {/* Display Name */}
+          <div>
+            <label className="text-sm font-medium text-hub-primary mb-2 block">
+              Display Name
+            </label>
+            <input
+              type="text"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-hub-raised border border-hub
+                         text-hub-primary text-sm focus:border-hub-accent focus:outline-none"
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="text-sm font-medium text-hub-primary mb-2 block">
+              Description
+            </label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-hub-raised border border-hub
+                         text-hub-primary text-sm focus:border-hub-accent focus:outline-none"
+            />
+          </div>
+
           {/* System Prompt */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -158,7 +224,7 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
               </label>
               {systemPrompt !== agent?.systemPrompt && (
                 <button
-                  onClick={handleResetSystemPrompt}
+                  onClick={() => agent && setSystemPrompt(agent.systemPrompt)}
                   className="flex items-center gap-1 text-xs text-hub-muted hover:text-hub-accent"
                 >
                   <RotateCcw className="w-3 h-3" />
@@ -172,6 +238,26 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
               className="w-full h-36 px-3 py-2 rounded-lg bg-hub-raised border border-hub
                          text-hub-primary text-sm font-mono resize-none focus:border-hub-accent focus:outline-none"
             />
+          </div>
+
+          {/* Provider Selector */}
+          <div>
+            <label className="text-sm font-medium text-hub-primary mb-2 block">
+              Platform
+            </label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-hub-raised border border-hub
+                         text-hub-primary text-sm focus:border-hub-accent focus:outline-none
+                         appearance-none cursor-pointer"
+            >
+              <option value="claude-code">Claude Code</option>
+              <option value="opencode">OpenCode (DeepSeek)</option>
+            </select>
+            <p className="text-xs text-hub-tertiary mt-1">
+              Select which AI platform this agent uses. Changing the platform takes effect immediately after saving.
+            </p>
           </div>
 
           {/* Skills */}
@@ -274,12 +360,91 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
                 <Upload className="w-3 h-3" /> {uploading ? 'Validating...' : 'Upload .md'}
                 <input type="file" accept=".md" onChange={handleFileUpload} className="hidden" />
               </label>
+              <button
+                onClick={() => { setShowPresetPicker(true); setSelectedPresets(new Set()); }}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded border border-hub-accent/30 text-hub-accent hover:bg-hub-accent/10 transition"
+              >
+                <Package className="w-3 h-3" /> Add from Presets
+              </button>
             </div>
 
             {/* Upload error */}
             {uploadError && (
               <div className="mt-2 p-2 rounded bg-hub-danger/10 border border-hub-danger/20 text-hub-danger text-xs">
                 {uploadError}
+              </div>
+            )}
+
+            {/* Preset picker modal */}
+            {showPresetPicker && (
+              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+                <div className="bg-hub-surface rounded-lg shadow-xl w-full max-w-md max-h-[70vh] flex flex-col">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-hub">
+                    <h3 className="text-sm font-semibold text-hub-primary">Add Preset Skills</h3>
+                    <button onClick={() => setShowPresetPicker(false)} className="p-1 rounded hover:bg-hub-hover text-hub-muted">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-1">
+                    {presetList
+                      .filter(p => !skills.some(s => s.name === p.name))
+                      .map(p => (
+                        <label key={p.name} className="flex items-start gap-2 py-1.5 cursor-pointer hover:bg-hub-hover/50 rounded px-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedPresets.has(p.name)}
+                            onChange={e => {
+                              const next = new Set(selectedPresets);
+                              e.target.checked ? next.add(p.name) : next.delete(p.name);
+                              setSelectedPresets(next);
+                            }}
+                            className="mt-0.5 rounded border-hub bg-hub-input text-hub-accent focus:ring-hub-accent"
+                          />
+                          <div>
+                            <div className="text-sm font-medium text-hub-primary">{p.name}</div>
+                            <div className="text-xs text-hub-tertiary">{p.description}</div>
+                          </div>
+                        </label>
+                      ))}
+                    {presetList.filter(p => !skills.some(s => s.name === p.name)).length === 0 && (
+                      <p className="text-xs text-hub-muted py-4 text-center">All preset skills already added.</p>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-hub">
+                    <button onClick={() => setShowPresetPicker(false)} className="px-3 py-1.5 text-xs text-hub-secondary hover:bg-hub-hover rounded">Cancel</button>
+                    <button
+                      onClick={async () => {
+                        if (selectedPresets.size === 0) return;
+                        const names = Array.from(selectedPresets);
+                        try {
+                          const token = localStorage.getItem('agenthub_token');
+                          const res = await fetch(`/api/agents/${agentId}/skills`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                            body: JSON.stringify({ skillNames: names }),
+                          });
+                          if (!res.ok) {
+                            const err = await res.json().catch(() => ({ error: 'Failed to add skills' }));
+                            throw new Error(err.error || 'Failed to add skills');
+                          }
+                          // Refresh agents and local skills state
+                          api.getAgents().then(updatedAgents => {
+                            useAppStore.getState().setAgents(updatedAgents);
+                            const a = updatedAgents.find((x: any) => x.id === agentId);
+                            if (a) setSkills((a.skills || []) as EditableSkill[]);
+                          });
+                          setShowPresetPicker(false);
+                        } catch (err: any) {
+                          setError(err.message || 'Failed to add skills');
+                        }
+                      }}
+                      disabled={selectedPresets.size === 0}
+                      className="px-4 py-1.5 text-xs bg-hub-accent text-white rounded hover:bg-hub-accent/90 disabled:opacity-40 transition"
+                    >
+                      Add ({selectedPresets.size})
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -301,26 +466,36 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-hub">
+        <div className="flex items-center justify-between px-4 py-3 border-t border-hub">
           <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-lg text-sm text-hub-secondary hover:bg-hub-hover transition"
+            onClick={handleResetAll}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm text-hub-muted hover:text-hub-secondary hover:bg-hub-hover transition"
+            title="Revert all fields to saved values"
           >
-            Cancel
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset to default
           </button>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-hub-accent text-white text-sm
-                       hover:bg-hub-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition"
-          >
-            {saving ? (
-              <span className="animate-spin">⏳</span>
-            ) : (
-              <Save className="w-4 h-4" />
-            )}
-            Save
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm text-hub-secondary hover:bg-hub-hover transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-hub-accent text-white text-sm
+                         hover:bg-hub-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            >
+              {saving ? (
+                <span className="animate-spin">⏳</span>
+              ) : (
+                <Save className="w-4 h-4" />
+              )}
+              Save
+            </button>
+          </div>
         </div>
       </div>
     </div>

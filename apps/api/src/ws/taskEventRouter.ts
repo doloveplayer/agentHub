@@ -7,6 +7,7 @@ export interface ActiveTaskRun<TQueue = unknown, TTask = unknown> {
   queue?: TQueue;
   task?: TTask;
   output: string;
+  notifiedKeys: Set<string>;
 }
 
 const activeRuns = new Map<string, ActiveTaskRun<any, any>>();
@@ -16,11 +17,12 @@ function runKey(sessionId: string, agentName: string): string {
 }
 
 export function setActiveTaskRun<TQueue, TTask>(
-  run: Omit<ActiveTaskRun<TQueue, TTask>, 'output'> & { output?: string },
+  run: Omit<ActiveTaskRun<TQueue, TTask>, 'output' | 'notifiedKeys'> & { output?: string; notifiedKeys?: Set<string> },
 ): void {
   activeRuns.set(runKey(run.sessionId, run.agentName), {
     ...run,
     output: run.output ?? '',
+    notifiedKeys: run.notifiedKeys ?? new Set<string>(),
   });
 }
 

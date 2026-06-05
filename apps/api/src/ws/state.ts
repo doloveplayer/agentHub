@@ -114,6 +114,24 @@ export const agentCurrentTask = new Map<string, { planId: string; taskId: string
 /** REPL event routing: agentName → current messageId */
 export const agentCurrentMessage = new Map<string, string>();
 
+/** sessionId → Map<normalizedName, fullAgentName> for resolving base names to DB names */
+export const sessionAgentNames = new Map<string, Map<string, string>>();
+
+export function populateSessionAgentNames(sessionId: string, agents: { name: string }[]): void {
+  const map = new Map<string, string>();
+  for (const a of agents) {
+    const full = a.name;
+    const lower = full.toLowerCase();
+    map.set(lower, full);
+    // Also register base name: 'planner-ec7338a2' → key 'planner' → value 'planner-ec7338a2'
+    const base = lower.replace(/-\w{6,}$/, '');
+    if (base !== lower && !map.has(base)) {
+      map.set(base, full);
+    }
+  }
+  sessionAgentNames.set(sessionId, map);
+}
+
 /** Permission timeouts */
 export const permissionTimeouts = new Map<string, NodeJS.Timeout>();
 function optionalPositiveInt(key: string): number | null {

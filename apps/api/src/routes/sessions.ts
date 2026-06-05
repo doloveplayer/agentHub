@@ -391,7 +391,7 @@ sessions.patch('/:id', async (c) => {
       const groupCtx = await buildGroupContext(sessionId, parsed.data.title);
       if (groupCtx) {
         for (const sa of sessionAgents) {
-          InboxManager.write(sb.hostWorkDir, sa.agent.name, {
+          InboxManager.write(sb.hostSandboxDir, sa.agent.name, {
             type: 'context_update',
             id: `rename-${Date.now()}-${sa.agent.name}`,
             from: 'system',

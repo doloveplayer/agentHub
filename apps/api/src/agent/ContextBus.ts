@@ -1,4 +1,5 @@
 import type { ContextEntry, ContextEntryType, ContextEntryStatus } from '@agenthub/shared';
+import { estimateTokens } from '@agenthub/shared';
 
 interface SetOptions {
   key: string;
@@ -31,6 +32,19 @@ export class ContextBus {
     this.maxEntries = maxEntries;
   }
 
+  /** Calculate priority weight for an entry. */
+  private calcWeight(e: ContextEntry): number {
+    const typeScores: Record<ContextEntryType, number> = {
+      'convention': 100, 'decision': 80, 'known-issue': 70,
+      'dependency-map': 60, 'task-handoff': 50, 'project-fact': 40, 'artifact': 20,
+    };
+    const baseScore = typeScores[e.type] ?? 0;
+    const ageHours = (Date.now() - e.updatedAt) / (1000 * 60 * 60);
+    const decayFactor = Math.max(0, 1 - ageHours / 168); // 7-day linear decay
+    const refBonus = (e._refCount ?? 0) * 10;
+    return baseScore * decayFactor + refBonus;
+  }
+
   set(opts: SetOptions): ContextEntry {
     const now = Date.now();
     const existing = this.store.get(opts.key);
@@ -46,6 +60,7 @@ export class ContextBus {
       status: opts.status,
       createdAt: existing ? existing.createdAt : now,
       updatedAt: now,
+      _refCount: existing?._refCount,
     };
     this.store.set(opts.key, entry);
     this.newKeys.add(opts.key);
@@ -120,35 +135,45 @@ export class ContextBus {
   }
 
   getProjectDigest(maxTokens: number): string {
+    if (maxTokens <= 0) return '';
     const active = this.query({ status: 'active' });
     if (active.length === 0) return '';
 
-    const maxChars = maxTokens * 4;
+    // Sort by weight descending
+    const weighted = active
+      .map(e => ({ entry: e, weight: this.calcWeight(e) }))
+      .sort((a, b) => b.weight - a.weight);
+
     let digest = '## Project State\n\n';
-    let remaining = maxChars - digest.length;
+    let remainingTokens = maxTokens - estimateTokens(digest);
 
-    const priority = (e: ContextEntry): number => {
-      const order: ContextEntryType[] = ['convention', 'decision', 'known-issue', 'dependency-map', 'project-fact', 'task-handoff', 'artifact'];
-      return order.indexOf(e.type);
-    };
-    const sorted = [...active].sort((a, b) => {
-      const p = priority(a) - priority(b);
-      if (p !== 0) return p;
-      return a.createdAt - b.createdAt;
-    });
+    for (const { entry } of weighted) {
+      const valStr = typeof entry.value === 'string'
+        ? entry.value.slice(0, 200)
+        : JSON.stringify(entry.value).slice(0, 200);
+      const line = `- [${entry.type}] **${entry.key}**: ${valStr}\n`;
+      const lineTokens = estimateTokens(line);
 
-    for (const e of sorted) {
-      const valStr = typeof e.value === 'string' ? e.value.slice(0, 80) : JSON.stringify(e.value).slice(0, 80);
-      const line = `- [${e.type}] **${e.key}**: ${valStr}\n`;
-      if (line.length > remaining) break;
+      if (lineTokens > remainingTokens) {
+        // Level 1 compression: try truncated value
+        const overheadPrefix = `- [${entry.type}] **${entry.key}**: `;
+        const overheadTokens = estimateTokens(overheadPrefix);
+        const maxValChars = Math.floor((remainingTokens - overheadTokens) / 1.5);
+        if (maxValChars > 20) {
+          const truncated = valStr.slice(0, maxValChars) + '...';
+          digest += `- [${entry.type}] **${entry.key}**: ${truncated}\n`;
+        }
+        break;
+      }
+
       digest += line;
-      remaining -= line.length;
+      remainingTokens -= lineTokens;
     }
 
     return digest;
   }
 
-  getRelevantExperience(agentType: string, taskDescription: string): string {
+  getRelevantExperience(agentType: string, taskDescription: string, maxTokens = 400): string {
     const normalizedType = agentType.toLowerCase();
     const experiences = this.query({ status: 'active' }).filter(e =>
       e.type === 'known-issue' || e.type === 'convention'
@@ -156,10 +181,12 @@ export class ContextBus {
 
     if (experiences.length === 0) return '';
 
+    // Match by agent type tag
     let relevant = experiences.filter(e =>
       e.tags.some(t => t.toLowerCase() === normalizedType)
     );
 
+    // Match by keyword
     const taskWords = taskDescription.toLowerCase().split(/\s+/).filter(w => w.length > 3);
     const keywordMatches = experiences.filter(e =>
       !relevant.includes(e) &&
@@ -169,11 +196,25 @@ export class ContextBus {
 
     if (relevant.length === 0) return '';
 
-    let result = '\n## Relevant Experience\n\n';
-    for (const e of relevant.slice(0, 5)) {
-      const label = typeof e.value === 'string' ? e.value : JSON.stringify(e.value).slice(0, 150);
-      result += `- [${e.type}] ${e.key}: ${label}\n`;
+    // Increment refCount for matched entries
+    for (const e of relevant) {
+      e._refCount = (e._refCount ?? 0) + 1;
     }
+
+    let result = '\n## Relevant Experience\n\n';
+    let remainingTokens = maxTokens - estimateTokens(result);
+
+    for (const e of relevant.slice(0, 5)) {
+      const label = typeof e.value === 'string'
+        ? e.value.slice(0, 150)
+        : JSON.stringify(e.value).slice(0, 150);
+      const line = `- [${e.type}] ${e.key}: ${label}\n`;
+      const lineTokens = estimateTokens(line);
+      if (lineTokens > remainingTokens) break;
+      result += line;
+      remainingTokens -= lineTokens;
+    }
+
     return result;
   }
 
@@ -207,14 +248,30 @@ export class ContextBus {
     return entries;
   }
 
-  gc(ageMs = 7 * 24 * 60 * 60 * 1000): number {
+  /** Mark entries older than staleHours as 'stale'. */
+  markStale(staleHours = 168): number {
+    const cutoff = Date.now() - staleHours * 60 * 60 * 1000;
+    let marked = 0;
+    for (const [, entry] of this.store) {
+      if (entry.status === 'active' && entry.updatedAt < cutoff) {
+        entry.status = 'stale';
+        marked++;
+      }
+    }
+    return marked;
+  }
+
+  /** Enhanced GC: remove stale entries older than staleGcDays, resolved older than resolvedGcDays. */
+  gc(staleGcDays = 30, resolvedGcDays = 7): number {
     const now = Date.now();
     let removed = 0;
     for (const [key, entry] of this.store) {
-      if (
-        (entry.status === 'resolved' || entry.status === 'superseded') &&
-        now - entry.updatedAt > ageMs
-      ) {
+      const ageMs = now - entry.updatedAt;
+      if (entry.status === 'stale' && ageMs > staleGcDays * 24 * 60 * 60 * 1000) {
+        this.store.delete(key);
+        this.newKeys.delete(key);
+        removed++;
+      } else if (entry.status === 'resolved' && ageMs > resolvedGcDays * 24 * 60 * 60 * 1000) {
         this.store.delete(key);
         this.newKeys.delete(key);
         removed++;
@@ -256,5 +313,7 @@ export function getSessionContextBus(sessionId: string): ContextBus {
 }
 
 export function destroySessionContextBus(sessionId: string): void {
+  const bus = sessionBuses.get(sessionId);
+  if (bus) bus.markStale();
   sessionBuses.delete(sessionId);
 }

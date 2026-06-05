@@ -6,13 +6,13 @@ import { getSessionContextBus } from '../agent/ContextBus.js';
 import { findClosestAgent } from '../agent/turns.js';
 import { prisma } from '../db/prisma.js';
 import { config } from '../config.js';
+import { PinnedStore } from '../agent/PinnedStore.js';
 import { DagPersistence } from '../agent/DagPersistence.js';
-import { agentCoordinator } from '../agent/AgentCoordinator.js';
+import { agentCoordinator, type CoordinationContext } from '../agent/AgentCoordinator.js';
 import { MilestoneBroadcaster } from '../agent/MilestoneBroadcaster.js';
 import { IntentParser } from '../agent/IntentParser.js';
 import { InboxManager } from '../agent/InboxManager.js';
 import { InboxWakeup } from '../agent/InboxWakeup.js';
-import { resolveAgentNameInCache } from '../agent/sessionAgentCache.js';
 import { calcContextPct } from '@agenthub/shared/constants';
 import { getManagerLoop } from '../agent/ManagerLoop.js';
 import { agentRuntime } from '../agent/AgentRuntime.js';
@@ -83,8 +83,8 @@ import {
 } from './dagExecution.js';
 import {
   broadcast, sessionPermissionModes, agentProcesses, agentStates, agentTaskQueues,
-  agentCurrentTask, agentCurrentMessage, sandboxes,
-  incRunningAgentCount, clearRunningAgent,
+  agentCurrentTask, agentCurrentMessage, sandboxes, sessionAgentNames,
+  incRunningAgentCount, clearRunningAgent, populateSessionAgentNames,
   type AgentTaskQueue, type TaskDispatchNode,
 } from './state.js';
 import {
@@ -133,18 +133,27 @@ export function resolveAgentNameInSession(sessionId: string, agentType: string):
   const normalized = agentType.toLowerCase();
   const procMap = agentProcesses.get(sessionId);
   if (procMap) {
+    // 1. Exact match
     for (const [name] of procMap) {
       const lower = name.toLowerCase();
       if (lower === normalized || lower.startsWith(normalized + '-')) return name;
     }
+    // 2. Prefix match: 'test-agent' matches 'test-agent-b13eebaa'
+    for (const [name] of procMap) {
+      if (name.toLowerCase().startsWith(normalized + '-')) return name;
+    }
   }
+  // 3. Same for agentTaskQueues
   for (const [name] of agentTaskQueues) {
     const lower = name.toLowerCase();
     if (lower === normalized || lower.startsWith(normalized + '-')) return name;
   }
-  // Fallback to session agent cache (populated at sandbox init)
-  const cached = resolveAgentNameInCache(sessionId, agentType);
-  if (cached) return cached;
+  // 4. Session agent name cache (populated by dispatchTasksToAgents)
+  const nameCache = sessionAgentNames.get(sessionId);
+  if (nameCache) {
+    const cached = nameCache.get(normalized);
+    if (cached) return cached;
+  }
   // Target agent not found — return null to skip inbox write
   return null;
 }
@@ -153,13 +162,28 @@ function planKey(sessionId: string, planId: string): string {
   return `${sessionId}:${planId}`;
 }
 
-function buildTaskPrompt(task: TaskDispatchNode, sessionId?: string): string {
+async function buildTaskPrompt(task: TaskDispatchNode, sessionId?: string): Promise<string> {
   let contextBlock = '';
   if (sessionId) {
+    const budget = config.agent.contextTokenBudget;
+    const pinnedBudget = Math.floor(budget * 0.4);
+    const stateBudget = Math.floor(budget * 0.4);
+    const experienceBudget = Math.floor(budget * 0.2);
+
+    const sandbox = sandboxes.get(sessionId);
+    const hostWorkDir = sandbox?.hostWorkDir;
+
+    // 1. Pinned context
+    const pinnedPrompt = await PinnedStore.buildInjectionPrompt(sessionId, pinnedBudget, hostWorkDir);
+    if (pinnedPrompt) contextBlock += pinnedPrompt + '\n';
+
+    // 2. Project state
     const bus = getSessionContextBus(sessionId);
-    const digest = bus.getProjectDigest(400);
-    const experience = bus.getRelevantExperience(task.agentType, task.description);
+    const digest = bus.getProjectDigest(stateBudget);
     if (digest) contextBlock += digest + '\n';
+
+    // 3. Relevant experience
+    const experience = bus.getRelevantExperience(task.agentType, task.description, experienceBudget);
     if (experience) contextBlock += experience + '\n';
   }
 
@@ -218,6 +242,19 @@ function handleProviderTaskEvent(
   const execution = planExecutions.get(planKey(sessionId, queue.planId));
   if (execution) touchTask(execution, task.id);
 
+  const sandbox = sandboxes.get(sessionId);
+  const coordCtx: CoordinationContext | null = sandbox ? {
+    sessionId,
+    agentName,
+    agentType: task.agentType,
+    messageId: taskMessageId,
+    hostWorkDir: sandbox.hostWorkDir,
+    hostSandboxDir: sandbox.hostSandboxDir,
+    resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
+    broadcast,
+    notifiedKeys: run.notifiedKeys,
+  } : null;
+
   switch (event.type) {
     case 'thinking': {
       const chunk = event.content || '';
@@ -233,6 +270,16 @@ function handleProviderTaskEvent(
       break;
     }
     case 'tool_use':
+      if (coordCtx) {
+        const resolvedToolName = event.toolName || (typeof event.toolInput?.toolName === 'string' ? event.toolInput.toolName : undefined);
+        if (resolvedToolName) {
+          agentCoordinator.onToolUse(coordCtx, {
+            type: 'tool_use' as const,
+            toolName: resolvedToolName,
+            input: event.toolInput ?? {},
+          });
+        }
+      }
       broadcast(sessionId, {
         type: 'agent_status',
         status: 'tool_use',
@@ -251,6 +298,7 @@ function handleProviderTaskEvent(
         agentCoordinator.onToolUse({
           sessionId, agentName, agentType: agentName,
           messageId: taskMessageId, hostWorkDir: queue.sandbox.hostWorkDir,
+          hostSandboxDir: sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir,
           resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
           broadcast,
         }, {
@@ -269,6 +317,9 @@ function handleProviderTaskEvent(
       }
       break;
     case 'tool_result':
+      if (coordCtx) {
+        agentCoordinator.onToolResult(coordCtx, event.content || '');
+      }
       broadcast(sessionId, {
         type: 'agent_status',
         status: 'tool_result',
@@ -280,6 +331,7 @@ function handleProviderTaskEvent(
       agentCoordinator.onToolResult({
         sessionId, agentName, agentType: agentName,
         messageId: taskMessageId, hostWorkDir: queue.sandbox.hostWorkDir,
+        hostSandboxDir: sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir,
         resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
         broadcast,
       }, event.content || '');
@@ -337,6 +389,9 @@ function handleProviderTaskEvent(
       const exitCode = event.exitCode ?? 0;
       const succeeded = exitCode === 0;
       const output = getActiveTaskRun<AgentTaskQueue, TaskDispatchNode>(sessionId, agentName)?.output || '';
+      if (coordCtx) {
+        agentCoordinator.onAgentDone(coordCtx, exitCode, output.slice(0, 500));
+      }
       broadcast(sessionId, { type: 'stream_end', agentMessageId: taskMessageId, fullContent: output, exitCode });
       broadcast(sessionId, {
         type: succeeded ? 'task_completed' : 'task_failed',
@@ -365,12 +420,23 @@ function handleProviderTaskEvent(
         });
       }
 
+      // Record after-version and broadcast diff summary
+      const beforeVer = takeMessageBeforeVersion(taskMessageId);
+      if (beforeVer) {
+        broadcastDiffSummary(
+          sessionId, taskMessageId, queue.sandbox.hostWorkDir,
+          beforeVer, agentName, `After ${agentName} task ${task.id}`,
+        );
+      }
+
       // Wire AgentCoordinator: route agent completion events
       agentCoordinator.onAgentDone({
         sessionId, agentName, agentType: agentName,
         messageId: taskMessageId, hostWorkDir: queue.sandbox.hostWorkDir,
+        hostSandboxDir: sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir,
         resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
         broadcast,
+        notifiedKeys: new Set<string>(),
       }, exitCode, output.slice(0, 3000));
 
       // Scan for NEEDS HELP intents and route to target agents
@@ -378,7 +444,7 @@ function handleProviderTaskEvent(
         const intents = IntentParser.scan(output);
         for (const intent of intents) {
           const targetName = resolveAgentNameInSession(sessionId, intent.targetAgentName) || intent.targetAgentName;
-          InboxManager.write(queue.sandbox.hostWorkDir, targetName, {
+          InboxManager.write(sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir, targetName, {
             type: 'help_request',
             id: `help-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
             from: agentName,
@@ -427,11 +493,12 @@ function handleProviderTaskEvent(
 
       // Proactive inbox check: notify if other agents have pending messages
       {
+        const sb = sandboxes.get(sessionId);
         const procMap = agentProcesses.get(sessionId);
-        if (procMap) {
+        if (sb && procMap) {
           for (const [name] of procMap) {
             if (name !== agentName) {
-              InboxWakeup.check(sessionId, name, queue.sandbox.hostWorkDir,
+              InboxWakeup.check(sessionId, name, sb.hostSandboxDir,
                 (n) => procMap.has(n), broadcast);
             }
           }
@@ -474,6 +541,7 @@ export async function processNextInQueue(
   sessionId: string,
   agentName: string,
   queue: AgentTaskQueue,
+  depth: number = 0,
 ): Promise<void> {
   // Skip tasks whose expected output already exists (agent already did the work)
   while (queue.tasks.length > 0) {
@@ -501,6 +569,31 @@ export async function processNextInQueue(
   }
 
   if (queue.tasks.length === 0) {
+    // Check inbox for high-priority messages before going idle
+    // depth > 0 means we're already in a fix-round — don't recurse further
+    const sandbox = sandboxes.get(sessionId);
+    if (sandbox && depth === 0) {
+      const inboxEntries = InboxManager.read(sandbox.hostSandboxDir, agentName, sessionId);
+      const highPriority = inboxEntries.filter(e => e.risk === 'high');
+      if (highPriority.length > 0) {
+        const inboxSummary = highPriority
+          .map(e => `- From **${e.from}**: ${e.summary}`)
+          .join('\n');
+        const fixTask: TaskDispatchNode = {
+          id: `inbox-fix-${Date.now().toString(36)}`,
+          title: 'Address high-priority inbox messages',
+          description: `You have ${highPriority.length} high-priority inbox message(s) that need your attention:\n\n${inboxSummary}\n\nAddress each message. Reply to the sender with what you did.`,
+          agentType: agentName,
+          dependsOn: [],
+          expectedOutput: '',
+          priority: 'high',
+        };
+        queue.tasks.push(fixTask);
+        console.log(`[taskDispatcher] ${agentName} has ${highPriority.length} high-priority inbox messages, creating fix-round task`);
+        await processNextInQueue(sessionId, agentName, queue, depth + 1);
+        return;
+      }
+    }
     agentTaskQueues.delete(agentName);
     return;
   }
@@ -520,7 +613,7 @@ export async function processNextInQueue(
     const retryNote = dagItem && dagItem.retryCount > 0
       ? `\n\n⚠️ 上次执行失败 (attempt ${dagItem.retryCount}): 请避免重复相同操作。`
       : '';
-    const basePrompt = buildTaskPrompt(task, sessionId);
+    const basePrompt = await buildTaskPrompt(task, sessionId);
     const taskPrompt = basePrompt + retryNote;
     const taskMessageId = buildTaskMessageId(queue.planId, task.id);
     recordMessageBeforeVersion(
@@ -558,6 +651,7 @@ export async function processNextInQueue(
     const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({
       sessionId, agentName, agentType: agentName,
       messageId: taskMessageId, hostWorkDir: queue.sandbox.hostWorkDir,
+      hostSandboxDir: sandboxes.get(sessionId)?.hostSandboxDir || queue.sandbox.hostWorkDir,
       resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type),
       broadcast,
     });
@@ -592,10 +686,11 @@ async function startReplForTask(
   const taskMsgId = buildTaskMessageId(queue.planId, task.id);
   const coordinationPrompt = agentCoordinator.buildCoordinationPrompt({
     sessionId, agentName: agent.name, agentType: agent.name,
-    messageId: taskMsgId, hostWorkDir: sandbox.hostWorkDir,
+    messageId: taskMsgId, hostWorkDir: sandbox.hostWorkDir, hostSandboxDir: sandbox.hostSandboxDir,
     resolveAgent: (type: string) => resolveAgentNameInSession(sessionId, type), broadcast,
   });
-  const fullPrompt = `${agent.systemPrompt}${languageConsistencyPrompt(detectLanguage(task.description || task.title))}\n\n---\n\n${buildTaskPrompt(task, sessionId)}\n${coordinationPrompt}`;
+  const taskPromptPart = await buildTaskPrompt(task, sessionId);
+  const fullPrompt = `${agent.systemPrompt}${languageConsistencyPrompt(detectLanguage(task.description || task.title))}\n\n---\n\n${taskPromptPart}\n${coordinationPrompt}`;
 
   try {
     const { ProviderFactory } = await import('../agent/providers/factory.js');
@@ -639,6 +734,7 @@ async function startReplForTask(
     }).catch(() => {});
 
     const agentHomeDir = AgentDirectoryManager.getAgentHome(agent.id);
+    AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null, sessionId, agent.skills as any[] | null, agent.id);
     AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt, agent.skills as any[] | null);
     console.log(`[ws] Task REPL started: agent=${agentName} task=${task.id}`);
     await provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
@@ -686,6 +782,9 @@ export async function dispatchTasksToAgents(
     broadcast(sessionId, { type: 'stream_error', error: 'No agents in this session to execute tasks' });
     return;
   }
+
+  // Cache agent name mappings so resolveAgentNameInSession can resolve base names
+  populateSessionAgentNames(sessionId, sessionAgents.map(sa => ({ name: sa.agent.name })));
 
   const agentsByType = new Map<string, typeof sessionAgents[number]['agent'][]>();
   for (const sa of sessionAgents) {
@@ -808,7 +907,7 @@ export async function handleDispatchedTaskFinished(
 
     const sandbox = sandboxes.get(sessionId);
     const fileTree = sandbox ? collectFileTree(sandbox.hostWorkDir) : undefined;
-    const taskPrompt = failedTask ? buildTaskPrompt(failedTask.task, sessionId) : undefined;
+    const taskPrompt = failedTask ? await buildTaskPrompt(failedTask.task, sessionId) : undefined;
 
     // Stage 1: auto-retry (before max retries)
     if (currentRetryCount < MAX_AUTO_RETRIES) {
@@ -1075,7 +1174,7 @@ export async function handleReplanFailedTask(
 
   const sandbox = sandboxes.get(sessionId);
   const fileTree = sandbox ? collectFileTree(sandbox.hostWorkDir) : undefined;
-  const taskPrompt = buildTaskPrompt(failedTask.task, sessionId);
+  const taskPrompt = await buildTaskPrompt(failedTask.task, sessionId);
 
   broadcast(sessionId, {
     type: "manager_reviewing",

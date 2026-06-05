@@ -307,13 +307,13 @@ export function useChat(sessionId: string) {
             case 'conflict_resolved': {
               const crStore = useAppStore.getState();
               const mergedFiles = (data.files || []).map((f: any) =>
-                `  - ${f.filePath} (auto-merged from ${f.agents.join(', ')})`
-              ).join('\n');
+                f.filePath
+              ).join(', ');
               const crMsg: Message = {
                 id: 'cr-' + Date.now(),
                 sessionId,
-                senderType: 'agent',
-                content: `## Auto-Merge Succeeded\n\nNon-overlapping changes automatically merged:\n${mergedFiles}`,
+                senderType: 'system',
+                content: `Auto-merged: ${mergedFiles}`,
                 status: 'done',
                 createdAt: new Date().toISOString(),
               };
@@ -323,13 +323,13 @@ export function useChat(sessionId: string) {
             case 'conflict_unresolved': {
               const cuStore = useAppStore.getState();
               const conflictingFiles = (data.files || []).map((f: any) =>
-                `  - ${f.filePath} (conflict between ${f.agents.join(', ')})`
-              ).join('\n');
+                f.filePath
+              ).join(', ');
               const cuMsg: Message = {
                 id: 'cu-' + Date.now(),
                 sessionId,
-                senderType: 'agent',
-                content: `## Manual Merge Required\n\nChanges overlap and could not be auto-merged:\n${conflictingFiles}\n\nPlease check the affected files and resolve conflicts manually.`,
+                senderType: 'system',
+                content: `Merge conflict: ${conflictingFiles} — resolve manually`,
                 status: 'done',
                 createdAt: new Date().toISOString(),
               };
@@ -576,6 +576,11 @@ export function useChat(sessionId: string) {
                 window.dispatchEvent(new CustomEvent('comm_log', { detail: data.entry }));
               }
               break;
+            case 'pinned_added':
+            case 'pinned_removed':
+            case 'pinned_updated':
+              window.dispatchEvent(new CustomEvent('pinned_event', { detail: data }));
+              break;
           }
         } catch { /* ignore parse errors */ }
       };
@@ -601,7 +606,7 @@ export function useChat(sessionId: string) {
     });
   }, [sessionId, token, appendToMessage, setMessageStatus, addAgentEvent, removeStreamingMessage, addToast]);
 
-  const send = useCallback(async (content: string, mentionedAgents: MentionTag[] = [], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null) => {
+  const send = useCallback(async (content: string, mentionedAgents: MentionTag[] = [], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null, skillInvocation?: string | null) => {
     const msgId = 'temp-' + Date.now();
     const userMsg: Message = {
       id: msgId,
@@ -672,6 +677,7 @@ export function useChat(sessionId: string) {
         quoteReferenceId: quoteReferenceId || null,
         trustMode,
         orchestrationMode: mode || orchestrationMode,
+        skillInvocation: skillInvocation || null,
       }));
     } catch (err: any) {
       console.error('[WS] Failed to send message:', err);

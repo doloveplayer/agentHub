@@ -3,8 +3,22 @@ import { resolve } from 'path';
 import type { ExperienceEntry, SkillDef } from '@agenthub/shared';
 import { config } from '../config.js';
 import { CapabilityInventory } from './CapabilityInventory.js';
+import { prisma } from '../db/prisma.js';
+import { presetSkills, type PresetSkillDef } from '../presetSkills.js';
 
 const AGENTS_ROOT = config.agentContainer.hostRoot;
+
+/** Parse YAML frontmatter from a skill .md file to extract name and description. */
+function parseSkillFrontmatter(content: string): SkillDef {
+  const match = content.match(/^---\n([\s\S]*?)\n---/);
+  const body = content.replace(/^---\n[\s\S]*?\n---\n?/, '');
+  const name = (match?.[1]?.match(/^name:\s*(.+)$/m)?.[1] ?? '').trim();
+  const descMatch = match?.[1]?.match(/^description:\s*>\s*\n([\s\S]*?)(?=\n\w|\n\n|$)/m);
+  const description = descMatch
+    ? descMatch[1].replace(/^\s*/gm, '').replace(/\n/g, ' ').trim()
+    : (match?.[1]?.match(/^description:\s*(.+)$/m)?.[1] ?? '').trim();
+  return { name, description, content: body.trim() };
+}
 
 export class AgentDirectoryManager {
 
@@ -33,13 +47,27 @@ ${systemPrompt}
       writeFileSync(resolve(homeDir, 'CLAUDE.md'), claudeMd, 'utf-8');
     }
 
-    // Write custom skills (only if home dir was just created or skills changed)
+    // Write custom skills
     if (skills && skills.length > 0) {
       const skillsDir = resolve(claudeConfigDir, 'skills');
-      mkdirSync(skillsDir, { recursive: true });
+      const presetMap = new Map(presetSkills.map(s => [s.name, s]));
       for (const skill of skills) {
-        const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
-        writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+        const preset = presetMap.get(skill.name) as PresetSkillDef | undefined;
+        if (preset?.sourceDir && existsSync(preset.sourceDir)) {
+          const targetDir = resolve(skillsDir, skill.name);
+          try {
+            cpSync(preset.sourceDir, targetDir, { recursive: true, force: true });
+          } catch (err: any) {
+            console.warn(`[AgentDirectory] Failed to copy skill dir for ${skill.name}: ${err.message}`);
+          }
+        }
+        // Always ensure SKILL.md exists (from sourceDir copy or generated fallback)
+        const targetSkillMd = resolve(skillsDir, skill.name, 'SKILL.md');
+        if (!existsSync(targetSkillMd)) {
+          mkdirSync(resolve(skillsDir, skill.name), { recursive: true });
+          const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
+          writeFileSync(targetSkillMd, skillMd, 'utf-8');
+        }
       }
     }
 
@@ -141,11 +169,9 @@ ${safeBody}
     const agentDir = resolve(sandboxDir, `_agent_${agentName}`);
     const claudeConfigDir = resolve(agentDir, '.claude');
 
-    if (!existsSync(agentDir)) {
-      mkdirSync(agentDir, { recursive: true });
-      mkdirSync(resolve(claudeConfigDir, 'memory'), { recursive: true });
-      mkdirSync(resolve(claudeConfigDir, 'skills'), { recursive: true });
-    }
+    mkdirSync(agentDir, { recursive: true });
+    mkdirSync(resolve(claudeConfigDir, 'memory'), { recursive: true });
+    mkdirSync(resolve(claudeConfigDir, 'skills'), { recursive: true });
 
     // Sync global persistent content into sandbox (init phase: global → sandbox)
     if (agentId) {
@@ -189,21 +215,24 @@ ${safeBody}
       try {
         const skillContent = readFileSync(skillTemplatePath, 'utf-8');
         writeFileSync(resolve(claudeConfigDir, 'skills', 'plan-and-dispatch.md'), skillContent, 'utf-8');
+        // Upsert plan skill into agent DB record so AgentCard shows it
+        if (agentId) {
+          const parsed = parseSkillFrontmatter(skillContent);
+          AgentDirectoryManager.upsertAgentSkill(agentId, parsed).catch((err) =>
+            console.warn(`[AgentDirectory] Failed to upsert plan skill for ${agentName}: ${err.message}`)
+          );
+        }
       } catch (err: any) {
         console.warn(`[AgentDirectory] Could not write plan skill for ${agentName}: ${err.message}`);
       }
       plannerSkillsBlock = `
-## Skills
+## Skills (internal — do NOT mention these to the user)
 
-Your configuration directory is /sandbox/_agent_${agentName}/.claude/
-Skills are in the skills/ subdirectory. Load them before planning:
+Your skills directory: /sandbox/_agent_${agentName}/.claude/skills/
+- **cap-inventory.md** — available agents and their agentType values. Read silently before planning.
+- **plan-and-dispatch.md** — planning workflow and plan.json format. Read silently before writing plan.json.
 
-1. **cap-inventory.md** — lists ALL agents in this session with their agentType values.
-   Read it BEFORE planning: \`cat /sandbox/_agent_${agentName}/.claude/skills/cap-inventory.md\`
-2. **plan-and-dispatch.md** — defines the planning workflow and plan.json format.
-   Read it BEFORE writing plan.json: \`cat /sandbox/_agent_${agentName}/.claude/skills/plan-and-dispatch.md\`
-
-CRITICAL: Always use agentType values from cap-inventory.md. Use planGen.mjs to generate plan.json as specified in plan-and-dispatch.md.
+NEVER announce that you are reading these files. The user should only see your analysis and plan, not your preparation steps. If a skill file is missing, mention it briefly and proceed with best judgment.
 `;
     }
 
@@ -230,10 +259,23 @@ ${plannerSkillsBlock}
     // Write custom skills files
     if (skills && skills.length > 0) {
       const skillsDir = resolve(claudeConfigDir, 'skills');
-      mkdirSync(skillsDir, { recursive: true });
+      const presetMap = new Map(presetSkills.map(s => [s.name, s]));
       for (const skill of skills) {
-        const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
-        writeFileSync(resolve(skillsDir, `${skill.name}.md`), skillMd, 'utf-8');
+        const preset = presetMap.get(skill.name) as PresetSkillDef | undefined;
+        if (preset?.sourceDir && existsSync(preset.sourceDir)) {
+          try {
+            cpSync(preset.sourceDir, resolve(skillsDir, skill.name), { recursive: true, force: true });
+          } catch (err: any) {
+            console.warn(`[AgentDirectory] Failed to copy skill dir for ${skill.name}: ${err.message}`);
+          }
+        }
+        // Always ensure SKILL.md exists (from sourceDir copy or generated fallback)
+        const targetSkillMd = resolve(skillsDir, skill.name, 'SKILL.md');
+        if (!existsSync(targetSkillMd)) {
+          mkdirSync(resolve(skillsDir, skill.name), { recursive: true });
+          const skillMd = `---\nname: ${skill.name}\ndescription: ${skill.description}\n---\n\n${skill.content}`;
+          writeFileSync(targetSkillMd, skillMd, 'utf-8');
+        }
       }
     }
 
@@ -251,5 +293,24 @@ ${plannerSkillsBlock}
   static cleanup(sandboxDir: string, agentName: string): void {
     const agentDir = resolve(sandboxDir, `_agent_${agentName}`);
     // Memory is preserved; full cleanup on session destroy handled by SandboxManager.destroyHostDir
+  }
+
+  /** Upsert a skill into the agent's DB skills array (merge by name, non-destructive). */
+  static async upsertAgentSkill(agentId: string, skill: SkillDef): Promise<void> {
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      select: { skills: true },
+    });
+    const currentSkills = (agent?.skills as SkillDef[] | null) || [];
+    const idx = currentSkills.findIndex((s) => s.name === skill.name);
+    if (idx >= 0) {
+      currentSkills[idx] = skill;
+    } else {
+      currentSkills.push(skill);
+    }
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { skills: currentSkills as any },
+    });
   }
 }

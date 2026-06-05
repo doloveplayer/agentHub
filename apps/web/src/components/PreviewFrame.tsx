@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
-import { ExternalLink, RefreshCcw } from 'lucide-react';
-import { api } from '../lib/api';
-import { ScreenshotComparisonCard } from './ScreenshotComparisonCard';
+import { useEffect, useState } from "react";
+import { ExternalLink, RefreshCcw } from "lucide-react";
+import { api, appendTokenParam } from "../lib/api";
+import { ScreenshotComparisonCard } from "./ScreenshotComparisonCard";
 
 interface SelectionData {
   text: string;
@@ -18,10 +18,10 @@ interface Props {
 export function PreviewFrame({ sessionId, onSelection }: Props) {
   const [ports, setPorts] = useState<number[]>([]);
   const [port, setPort] = useState<number>(5175);
-  const [url, setUrl] = useState('');
-  const [directUrl, setDirectUrl] = useState('');
-  const [beforeShot, setBeforeShot] = useState('');
-  const [afterShot, setAfterShot] = useState('');
+  const [url, setUrl] = useState("");
+  const [directUrl, setDirectUrl] = useState("");
+  const [beforeShot, setBeforeShot] = useState("");
+  const [afterShot, setAfterShot] = useState("");
   const [loading, setLoading] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -40,17 +40,17 @@ export function PreviewFrame({ sessionId, onSelection }: Props) {
     setLoading(true);
     try {
       const result = await api.forwardPreviewPort(sessionId, port);
-      setUrl(result.proxyUrl || result.url);
+      setUrl(appendTokenParam(result.proxyUrl) || result.url);
       setDirectUrl(result.url);
     } finally {
       setLoading(false);
     }
   };
 
-  const capture = async (slot: 'before' | 'after') => {
+  const capture = async (slot: "before" | "after") => {
     if (!directUrl) return;
     const result = await api.capturePreviewScreenshot(sessionId, directUrl);
-    if (slot === 'before') setBeforeShot(result.image);
+    if (slot === "before") setBeforeShot(result.image);
     else setAfterShot(result.image);
   };
 
@@ -70,19 +70,21 @@ export function PreviewFrame({ sessionId, onSelection }: Props) {
       }
     };
     tryPorts(0);
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
   useEffect(() => {
     const handler = (event: MessageEvent) => {
-      if (event.data?.type === 'agenthub:selection') {
+      if (event.data?.type === "agenthub:selection") {
         onSelection?.(event.data as SelectionData);
-      } else if (event.data?.type === 'agenthub:selection-clear') {
+      } else if (event.data?.type === "agenthub:selection-clear") {
         onSelection?.(null);
       }
     };
-    window.addEventListener('message', handler);
-    return () => window.removeEventListener('message', handler);
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
   }, [onSelection]);
 
   return (
@@ -94,7 +96,9 @@ export function PreviewFrame({ sessionId, onSelection }: Props) {
           className="h-8 rounded border border-hub bg-hub-input px-2 text-xs text-hub-primary"
         >
           {[...new Set([port, ...ports])].map((item) => (
-            <option key={item} value={item}>:{item}</option>
+            <option key={item} value={item}>
+              :{item}
+            </option>
           ))}
         </select>
         <button
@@ -125,8 +129,18 @@ export function PreviewFrame({ sessionId, onSelection }: Props) {
         )}
         {url && (
           <>
-            <button onClick={() => capture('before')} className="rounded px-2 py-1 text-[11px] text-hub-secondary hover:bg-hub-hover">Before</button>
-            <button onClick={() => capture('after')} className="rounded px-2 py-1 text-[11px] text-hub-secondary hover:bg-hub-hover">After</button>
+            <button
+              onClick={() => capture("before")}
+              className="rounded px-2 py-1 text-[11px] text-hub-secondary hover:bg-hub-hover"
+            >
+              Before
+            </button>
+            <button
+              onClick={() => capture("after")}
+              className="rounded px-2 py-1 text-[11px] text-hub-secondary hover:bg-hub-hover"
+            >
+              After
+            </button>
           </>
         )}
       </div>

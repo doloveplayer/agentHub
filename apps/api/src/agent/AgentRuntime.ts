@@ -15,8 +15,8 @@ import { IntentParser } from './IntentParser.js';
 import { InboxManager } from './InboxManager.js';
 import { agentCoordinator } from './AgentCoordinator.js';
 import { MilestoneBroadcaster } from './MilestoneBroadcaster.js';
-import { resolveAgentNameInCache } from './sessionAgentCache.js';
-import { broadcast, clearRunningAgent, quoteBackfillMap } from '../ws/state.js';
+import { broadcast, clearRunningAgent, quoteBackfillMap, sessionAgentNames } from '../ws/state.js';
+import { takeMessageBeforeVersion, broadcastDiffSummary } from '../ws/diffBroadcast.js';
 
 interface QueueItem {
   sessionId: string;
@@ -36,6 +36,7 @@ interface AgentEntry {
   provider: AbstractProvider;
   containerId: string;
   hostWorkDir: string;
+  hostSandboxDir: string;
   idleTimer: NodeJS.Timeout | null;
   currentSession: string | null;
   currentMessageId: string | null;
@@ -56,6 +57,7 @@ interface AgentEntry {
   compressionPhase: 'none' | 'summarizing'; // compression state
   compressionPendingPrompt: string | null;   // stores user prompt during compression
   intentScanOffset: number;            // position in accumulatedOutput already scanned for intents
+  notifiedKeys: Set<string>;           // per-agent dedup for AgentCoordinator routing
 }
 
 import {
@@ -103,9 +105,12 @@ function resolveAgentByNameSync(sessionId: string, agentType: string): string | 
       }
     }
   }
-  // Fallback to session agent cache (populated at sandbox init, shared with taskDispatcher)
-  const cached = resolveAgentNameInCache(sessionId, agentType);
-  if (cached) return cached;
+  // Fallback to session agent name cache (populated at sandbox init, shared with taskDispatcher)
+  const nameCache = sessionAgentNames.get(sessionId);
+  if (nameCache) {
+    const cached = nameCache.get(normalized);
+    if (cached) return cached;
+  }
   // Target agent not found — return null to skip inbox write
   return null;
 }
@@ -281,6 +286,7 @@ class AgentRuntime {
       provider,
       containerId,
       hostWorkDir,
+      hostSandboxDir,
       idleTimer: null,
       currentSession: null,
       currentMessageId: null,
@@ -298,6 +304,7 @@ class AgentRuntime {
       compressionPhase: 'none' as const,
       compressionPendingPrompt: null,
       intentScanOffset: 0,
+      notifiedKeys: new Set<string>(),
     };
 
     provider.onEvent((event: UnifiedAgentEvent) => {
@@ -328,7 +335,7 @@ class AgentRuntime {
             for (const intent of intents) {
               resolveAgentByName(sessionId, intent.targetAgentName).then(target => {
                 if (target) {
-                  InboxManager.write(entry.hostWorkDir, target.name, {
+                  InboxManager.write(entry.hostSandboxDir, target.name, {
                     type: 'help_request',
                     id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                     from: entry.currentAgentName || entry.currentAgentId || 'unknown',
@@ -367,8 +374,10 @@ class AgentRuntime {
             agentType: entry.currentAgentName || entry.currentAgentId || 'unknown',
             messageId: agentMessageId || '',
             hostWorkDir: entry.hostWorkDir,
+            hostSandboxDir: entry.hostSandboxDir,
             resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
             broadcast,
+            notifiedKeys: entry.notifiedKeys,
           }, {
             type: 'tool_use',
             toolName: event.toolName || '',
@@ -399,8 +408,10 @@ class AgentRuntime {
           agentType: entry.currentAgentName || entry.currentAgentId || 'unknown',
           messageId: agentMessageId || '',
           hostWorkDir: entry.hostWorkDir,
+          hostSandboxDir: entry.hostSandboxDir,
           resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
           broadcast,
+          notifiedKeys: entry.notifiedKeys,
         }, event.content || '');
         break;
       case 'done':
@@ -445,8 +456,10 @@ class AgentRuntime {
           agentType: entry.currentAgentName || entry.currentAgentId || 'unknown',
           messageId: agentMessageId || '',
           hostWorkDir: entry.hostWorkDir,
+          hostSandboxDir: entry.hostSandboxDir,
           resolveAgent: (type: string) => resolveAgentByNameSync(sessionId, type),
           broadcast,
+          notifiedKeys: entry.notifiedKeys,
         }, event.exitCode ?? 0, entry.accumulatedOutput?.slice(0, 3000) || '');
 
         // Route NEEDS HELP intents to target agent inboxes
@@ -455,7 +468,7 @@ class AgentRuntime {
           for (const intent of helpIntents) {
             const target = await resolveAgentByName(sessionId, intent.targetAgentName);
             if (target) {
-              InboxManager.write(entry.hostWorkDir, target.name, {
+              InboxManager.write(entry.hostSandboxDir, target.name, {
                 type: 'help_request',
                 id: `help-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
                 from: entry.currentAgentName || entry.currentAgentId || 'unknown',
@@ -475,6 +488,16 @@ class AgentRuntime {
         }
 
         if (agentMessageId) {
+          // Record after-version and broadcast diff summary
+          const beforeVer = takeMessageBeforeVersion(agentMessageId);
+          if (beforeVer) {
+            broadcastDiffSummary(
+              sessionId, agentMessageId, entry.hostWorkDir,
+              beforeVer, entry.currentAgentName || entry.currentAgentId || 'agent',
+              `After ${entry.currentAgentName || entry.currentAgentId} turn`,
+            );
+          }
+
           clearRunningAgent(sessionId, agentMessageId);
           void prisma.message.updateMany({
             where: { id: agentMessageId, status: 'streaming' },
@@ -732,6 +755,24 @@ class AgentRuntime {
 
     this.agents.delete(agentId);
     console.log(`[AgentRuntime] Agent ${agentId.slice(0, 8)} ${entry.sharedContainer ? 'detached from sandbox' : 'container stopped'} (idle timeout)`);
+  }
+
+  /** Restart agent provider without destroying the container. Used when provider config changes. */
+  async restartProvider(agentId: string): Promise<void> {
+    const entry = this.agents.get(agentId);
+    if (!entry) return;
+    this.clearIdleTimer(entry);
+    if (entry.currentSession && entry.currentMessageId) {
+      try {
+        await this.handleAgentEvent(agentId, entry, {
+          type: 'done', exitCode: 0, timestamp: Date.now(),
+        });
+      } catch { /* best effort */ }
+    }
+    entry.provider.stopChild?.();
+    try { entry.provider.stop(); } catch { /* best effort */ }
+    this.agents.delete(agentId);
+    console.log(`[AgentRuntime] Provider restarted for agent ${agentId.slice(0, 8)}`);
   }
 
   /** Get queue status for an agent */

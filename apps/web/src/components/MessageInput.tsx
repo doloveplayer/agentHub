@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, KeyboardEvent } from 'react';
+import { useEffect, useState, useRef, KeyboardEvent, useMemo } from 'react';
 import { Send, Paperclip } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { AgentMentionPopup } from './AgentMentionPopup';
@@ -24,15 +24,14 @@ interface PromptInsertDetail {
 }
 
 interface Props {
-  onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null) => void;
+  onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null, skillInvocation?: string | null) => void;
   disabled?: boolean;
   mentionableAgents?: AgentConfig[];
 }
 
 export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   const agents = useAppStore((s) => s.agents);
-  const trustMode = useAppStore((s) => s.trustMode);
-  const setTrustMode = useAppStore((s) => s.setTrustMode);
+  const sessions = useAppStore((s) => s.sessions);
   const orchestrationMode = useAppStore((s) => s.orchestrationMode);
   const setOrchestrationMode = useAppStore((s) => s.setOrchestrationMode);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -55,6 +54,31 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
 
   const matchSource = mentionableAgents ?? agents;
   const matchedAgents = recommendAgents(mentionQuery, matchSource, recentMessages);
+
+  const agentSkills = useMemo(() => {
+    if (!activeSessionId) return [];
+    const session = sessions.find(s => s.id === activeSessionId);
+    if (!session) return [];
+    const agentIds = new Set((session.agents || []).map(sa => sa.agentId));
+    const seen = new Set<string>();
+    const result: { name: string; description: string }[] = [];
+    for (const a of agents) {
+      if (!agentIds.has(a.id)) continue;
+      for (const s of (a.skills || [])) {
+        if (!seen.has(s.name)) {
+          seen.add(s.name);
+          result.push({ name: s.name, description: s.description });
+        }
+      }
+    }
+    return result;
+  }, [activeSessionId, sessions, agents]);
+
+  const BUILTIN_SLASH_COMMANDS = ['/plan','/review','/fix','/deploy','/init','/test','/audit','/compact'];
+  const allSlashCommands = useMemo(() => {
+    const skills = agentSkills.map(s => '/' + s.name);
+    return [...BUILTIN_SLASH_COMMANDS, ...skills];
+  }, [agentSkills]);
 
   useEffect(() => {
     const handler = (event: Event) => {
@@ -124,13 +148,14 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (showSlash) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => (i + 1) % 8); return; }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex(i => (i - 1 + 8) % 8); return; }
+      const cmdCount = allSlashCommands.length;
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashIndex(i => (i + 1) % cmdCount); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSlashIndex(i => (i - 1 + cmdCount) % cmdCount); return; }
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         const filtered = slashQuery
-          ? ['/plan','/review','/fix','/deploy','/init','/test','/audit','/compact'].filter(c => c.startsWith(slashQuery))
-          : ['/plan','/review','/fix','/deploy','/init','/test','/audit','/compact'];
+          ? allSlashCommands.filter(c => c.startsWith(slashQuery))
+          : allSlashCommands;
         if (filtered[slashIndex]) handleSelectCommand(filtered[slashIndex]);
         return;
       }
@@ -214,7 +239,19 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
       return;
     }
 
-    onSend(trimmed, tags, orchestrationMode, quoteReferenceId);
+    let skillInvocation: string | null = null;
+    let finalValue = trimmed;
+    const slashMatch = trimmed.match(/^\/(\S+)(?:\s+(.*))?$/);
+    if (slashMatch) {
+      const cmd = slashMatch[1].toLowerCase();
+      const rest = slashMatch[2] || '';
+      if (agentSkills.some(s => s.name === cmd)) {
+        skillInvocation = cmd;
+        finalValue = rest || `Run ${cmd}`;
+      }
+    }
+
+    onSend(finalValue, tags, orchestrationMode, quoteReferenceId, skillInvocation);
 
     // Touch session updatedAt locally for immediate sort feedback
     if (activeSessionId) {
@@ -281,28 +318,9 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
             onSelect={handleSelectCommand}
             onClose={() => setShowSlash(false)}
             position={{ top: 0, left: 8 }}
+            agentSkills={agentSkills}
           />
         )}
-
-        <select
-          value={orchestrationMode}
-          onChange={(e) => setOrchestrationMode(e.target.value as 'parallel' | 'sequential')}
-          className="text-footnote bg-hub-input text-hub-tertiary rounded-sm px-1.5 py-1 border border-hub focus:outline-none focus:ring-1 focus:ring-hub-accent cursor-pointer shrink-0"
-          title="Orchestration mode: parallel runs all @mentioned agents at once, sequential runs them one after another"
-        >
-          <option value="parallel">∥</option>
-          <option value="sequential">→</option>
-        </select>
-
-        <label className="flex items-center gap-1.5 text-footnote text-hub-tertiary cursor-pointer select-none shrink-0" title="When off, permission requests are sent to you for approval">
-          <input
-            type="checkbox"
-            checked={trustMode}
-            onChange={(e) => setTrustMode(e.target.checked)}
-            className="rounded-sm border-hub bg-hub-input text-hub-accent focus:ring-hub-accent"
-          />
-          Trust
-        </label>
 
         <input
           ref={fileRef}
@@ -324,6 +342,16 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
           title="Attach file"
         >
           <Paperclip className="w-4 h-4" />
+        </button>
+
+        <button
+          onClick={() => setOrchestrationMode(orchestrationMode === 'parallel' ? 'sequential' : 'parallel')}
+          className={`p-2.5 rounded-md hover:bg-hub-hover transition shrink-0 ${
+            orchestrationMode === 'parallel' ? 'text-hub-accent' : 'text-hub-warning'
+          }`}
+          title={orchestrationMode === 'parallel' ? '并行模式：@ 多个 agent 同时运行，点击切换串行' : '串行模式：@ 多个 agent 逐个运行，点击切换并行'}
+        >
+          <span className="text-sm font-bold">{orchestrationMode === 'parallel' ? '∥' : '→'}</span>
         </button>
 
         <button

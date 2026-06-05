@@ -2,13 +2,6 @@
 
 此文件为 Claude Code 在本仓库中工作时提供指导。
 
-## 快速了解项目结构
-
-项目配置了 **CodeGraph MCP**（`codegraph_*` 工具），基于 tree-sitter 解析的知识图谱。
-**优先使用 codegraph 而非 grep/read** 来理解代码结构：
-
-详细用法见 `.claude/CLAUDE.md` 中的 CodeGraph 章节。
-
 ## 项目概述
 
 AgentHub 是一个 IM 风格的 Web 聊天应用，作为多个 AI 编程 agent 的**智能协作中枢**。用户通过用户名/密码登录，创建会话（单独或群聊），通过 WebSocket 驱动的流式接口与多平台 agent 交互。每个会话拥有一个独立的 Docker 沙箱容器，并挂载绑定的工作目录。
@@ -96,80 +89,33 @@ git remote set-url origin git@github.com:doloveplayer/agentHub.git
 
 ## 代码编写规则
 
-**任何涉及编写代码的操作必须遵循 `/karpathy-guidelines`**：
-- Think before coding — 先分析再动手
-- Simplicity first — 最小代码解决问题，不过度抽象
-- Surgical changes — 只改需要改的，不顺手重构
-- Goal-driven — 定义可验证的成功标准
+任何涉及编写代码的操作必须遵循 `/karpathy-guidelines`。
 
 ## 可视化测试
 
-项目配置了可截图和图片理解的 MCP 服务，功能测试、debug 和 UI 审查时应主动使用：
+功能测试和 UI 审查应使用截图 + 图片分析 MCP（`analyze_image`、`ui_diff_check`）。
 
-**浏览器自动化**（`document-skills:webapp-testing`）：
-- 启动后端 `cd apps/api && npx tsx src/index.ts` + 前端 `cd apps/web && npx vite`
-- 编写 Python Playwright 脚本截图、检查 DOM、验证交互
-
-**图片分析 MCP**：
-| 工具 | 用途 |
-|------|------|
-| `mcp__zai-mcp-server__analyze_image` | 通用图片理解：UI 布局评估、元素识别、异常检测 |
-| `mcp__zai-mcp-server__ui_to_artifact` | UI 截图 → 代码/设计稿 |
-| `mcp__zai-mcp-server__ui_diff_check` | 两张截图对比，找出视觉差异 |
-
-**典型测试流程**：
-1. `python3 script.py` 截取 3 个视口（390/768/1440）截图
-2. `mcp__zai-mcp-server__analyze_image` 分析截图中的布局问题
-3. 对照 plan 文件验证功能完整性
-4. TypeScript 编译检查 `npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json`
-
-**中间结果保存**：
-产生的中间截图调试应该保存至 `screenTmp/AgentScreenshots/` 目录下，并调用图片分析 MCP 进行分析
+- 启动：`cd apps/api && npx tsx src/index.ts` + `cd apps/web && npx vite`
+- 浏览器自动化：`document-skills:webapp-testing`（Playwright）
+- 中间截图保存至 `screenTmp/AgentScreenshots/`
+- TypeScript 编译检查：`npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json`
 
 ## E2E 测试（绕过认证）
 
-AgentHub 使用用户名/密码认证。自动化 E2E 测试可通过 dev-token 绕过：
-
-### 启动
+自动化测试通过 dev-token 绕过密码认证：
 
 ```bash
-# 以开发模式启动后端（NODE_ENV != production）
+# 启动（NODE_ENV != production）
 cd apps/api && NODE_ENV=development npx tsx src/index.ts
-```
 
-### 获取测试令牌
-
-```bash
-curl http://localhost:3000/api/auth/dev-token | python3 -m json.tool
+# 获取 dev-token
+curl http://localhost:3000/api/auth/dev-token
 # → { "token": "eyJ...", "userId": "...", "login": "doloveplayer" }
-```
 
-### 在 Playwright 测试中使用
-
-```python
-import urllib.request, json
-
-# 1. 获取 dev token
-with urllib.request.urlopen("http://localhost:3000/api/auth/dev-token") as r:
-    TOKEN = json.loads(r.read())["token"]
-
-# 2. 注入到浏览器
-await page.evaluate(f"""() => {{
-    localStorage.setItem('agenthub_token', '{TOKEN}');
-}}""")
-
-# 3. 刷新页面 —— 已认证
-await page.goto("http://localhost:5175", wait_until="networkidle")
-```
-
-### API 调用
-
-```bash
+# API 调用
 TOKEN=$(curl -s http://localhost:3000/api/auth/dev-token | python3 -c "import json,sys; print(json.load(sys.stdin)['token'])")
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/agents
-curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/api/auth/me
 ```
 
-### 安全性
-
-dev-token 端点在**生产环境禁用**（`NODE_ENV=production` 返回 403）。该端点返回默认管理员用户的签名 JWT，无需密码验证。
+- Playwright 中注入：`localStorage.setItem('agenthub_token', token)` 后刷新页面
+- dev-token 仅在 `NODE_ENV=development` 下可用，生产环境返回 403

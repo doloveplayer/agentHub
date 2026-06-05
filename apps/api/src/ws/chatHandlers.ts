@@ -25,6 +25,7 @@ import {
   generateId, getOrCreateSandbox, broadcast,
   clearRunningAgent,
   realWorkspacePaths, workspaceModes,
+  populateSessionAgentNames,
 } from './state.js';
 
 import { startStaleTaskChecker } from './taskDispatcher.js';
@@ -103,9 +104,7 @@ export async function ensureSandboxReady(sessionId: string, sessionType?: string
       agentNames.push(sa.agent.name);
     }
     // Populate agent name cache for inbox resolution
-    import('../agent/sessionAgentCache.js').then(({ setSessionAgentNames }) => {
-      setSessionAgentNames(sessionId, agentNames);
-    }).catch(() => {});
+    populateSessionAgentNames(sessionId, sessionAgents.map(sa => ({ name: sa.agent.name })));
   } catch (err: any) {
     console.error('[ws] Inbox init failed:', err.message);
   }
@@ -205,9 +204,16 @@ function broadcastStructuredArtifact(sessionId: string, agentName: string, conte
 
 export async function handleChatMessage(
   sessionId: string,
-  data: { messageId?: string; content?: string; prompt?: string; agentId?: string; trustMode?: boolean; orchestrationMode?: 'parallel' | 'sequential' | 'auto'; mentions?: { agentId: string; subPrompt: string; messageId: string }[]; quoteReferenceId?: string | null },
+  data: { messageId?: string; content?: string; prompt?: string; agentId?: string; trustMode?: boolean; orchestrationMode?: 'parallel' | 'sequential' | 'auto'; skillInvocation?: string | null; mentions?: { agentId: string; subPrompt: string; messageId: string }[]; quoteReferenceId?: string | null },
 ): Promise<void> {
-  const prompt = data.content || data.prompt;
+  const {
+    messageId, content, prompt: rawPrompt, agentId,
+    orchestrationMode = 'parallel',
+    skillInvocation = null,
+    mentions: dataMentions,
+    quoteReferenceId,
+  } = data;
+  const prompt = content || rawPrompt;
   if (!prompt) { broadcast(sessionId, { type: 'stream_error', error: 'Missing content or prompt' }); return; }
 
   // Lazily initialize sandbox on first message (deferred from connection time
@@ -232,17 +238,15 @@ export async function handleChatMessage(
 
   const mentions: { agentId: string; subPrompt: string; messageId: string }[] = isSlashCommand
     ? [{
-        agentId: data.mentions?.[0]?.agentId || '',
+        agentId: dataMentions?.[0]?.agentId || '',
         subPrompt: prompt,
-        messageId: data.mentions?.[0]?.messageId || data.messageId || generateId(),
+        messageId: dataMentions?.[0]?.messageId || messageId || generateId(),
       }]
-    : (data.mentions && data.mentions.length > 0)
-      ? data.mentions
-      : [{ agentId: '', subPrompt: prompt, messageId: data.messageId || generateId() }];
+    : (dataMentions && dataMentions.length > 0)
+      ? dataMentions
+      : [{ agentId: '', subPrompt: prompt, messageId: messageId || generateId() }];
 
   const PER_SESSION_MAX = config.agent.perSessionMax;
-  const orchestrationMode = data.orchestrationMode || 'parallel';
-
   // Build context-aware mode prefix for prompt injection
   const sessionType = sessionTypes.get(sessionId) || 'solo';
   const modePrefix = sessionType === 'solo'
@@ -336,6 +340,16 @@ export async function handleChatMessage(
       }
       const inboxPrompt = sandbox ? await InboxWakeup.buildInboxPrompt(agent.name, sandbox.hostSandboxDir, sessionId) : '';
       agentPrompt = `${agent.systemPrompt}${InboxManager.inboxPrompt(agent.name)}${inboxPrompt}${sessionMemberBlock}${languageConsistencyPrompt(detectLanguage(mention.subPrompt))}\n\n${sessionContext ? sessionContext + '\n\n---\n' : ''}User request: ${mention.subPrompt}`;
+      if (skillInvocation) {
+        const agentHasSkill = (agent.skills as any[])?.some((s: any) => s.name === skillInvocation);
+        if (agentHasSkill) {
+          agentPrompt = `[Skill Invocation: ${skillInvocation}]
+Use the '${skillInvocation}' skill from your .claude/skills/${skillInvocation}/ directory.
+Read the SKILL.md in that directory and follow its instructions.
+
+${agentPrompt}`;
+        }
+      }
       if (sandbox) AgentDirectoryManager.initialize(sandbox.hostSandboxDir, agent.name, agent.systemPrompt, agent.providerConfig as Record<string, unknown> | null, sessionId, agent.skills as any[] | null, agent.id);
       agentNameToType.set(agent.name, agent.name);
     } else {
@@ -344,7 +358,6 @@ export async function handleChatMessage(
 
     // Detect quote context in user message and inject structured guidance
     let quoteContextBlock = '';
-    const quoteReferenceId = data.quoteReferenceId;
     if (quoteReferenceId && mention.subPrompt.includes('引用内容 —')) {
       const recentQuote = await prisma.quoteReference.findUnique({
         where: { id: quoteReferenceId },

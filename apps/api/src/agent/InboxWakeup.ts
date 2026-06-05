@@ -44,11 +44,11 @@ export class InboxWakeup {
   static check(
     sessionId: string,
     agentName: string,
-    hostWorkDir: string,
+    hostSandboxDir: string,
     isAgentRunning: (agentName: string) => boolean,
     broadcast: (sessionId: string, data: unknown) => void,
   ): boolean {
-    const count = InboxManager.unreadCount(hostWorkDir, agentName);
+    const count = InboxManager.unreadCount(hostSandboxDir, agentName);
     if (count === 0) return false;
 
     if (!isAgentRunning(agentName)) {
@@ -68,8 +68,8 @@ export class InboxWakeup {
    * Build the inbox injection prompt for an agent that's about to start.
    * Reads and clears the inbox, injecting messages directly into the prompt.
    */
-  static async buildInboxPrompt(agentName: string, hostWorkDir: string, sessionId?: string): Promise<string> {
-    const entries = InboxManager.read(hostWorkDir, agentName, sessionId);
+  static async buildInboxPrompt(agentName: string, hostSandboxDir: string, sessionId?: string): Promise<string> {
+    const entries = InboxManager.read(hostSandboxDir, agentName, sessionId);
     if (entries.length === 0) return '';
 
     const descriptions = sessionId

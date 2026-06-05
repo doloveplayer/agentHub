@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useMemo, useEffect, useRef } from 'react';
 
 const SLASH_COMMANDS = [
   { name: '/plan', description: 'Create a task plan (Planner Agent)', icon: '📋' },
@@ -11,20 +11,35 @@ const SLASH_COMMANDS = [
   { name: '/compact', description: 'Compact conversation context', icon: '📦' },
 ];
 
+interface SkillItem {
+  name: string;
+  description: string;
+}
+
 interface Props {
   query: string;
   focusedIndex: number;
   onSelect: (command: string) => void;
   onClose: () => void;
   position: { top: number; left: number };
+  agentSkills?: SkillItem[];
 }
 
-export function SlashCommandPopup({ query, focusedIndex, onSelect, onClose, position }: Props) {
+export function SlashCommandPopup({ query, focusedIndex, onSelect, onClose, position, agentSkills }: Props) {
   const ref = useRef<HTMLDivElement>(null);
 
+  const allCommands = useMemo(() => {
+    const skills: { name: string; description: string; icon: string }[] = (agentSkills || []).map(s => ({
+      name: '/' + s.name,
+      description: s.description,
+      icon: '🔧',
+    }));
+    return [...SLASH_COMMANDS, ...skills];
+  }, [agentSkills]);
+
   const filtered = query
-    ? SLASH_COMMANDS.filter((c) => c.name.startsWith(query) || c.name.includes(query.slice(1)))
-    : SLASH_COMMANDS;
+    ? allCommands.filter((c) => c.name.startsWith(query) || c.name.includes(query.slice(1)))
+    : allCommands;
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {

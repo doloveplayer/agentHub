@@ -1,5 +1,5 @@
-import { appendFileSync, readFileSync, existsSync, writeFileSync } from 'fs';
-import { resolve } from 'path';
+import { appendFileSync, readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { resolve, dirname } from 'path';
 
 function norm(name: string): string {
   return name.toLowerCase();
@@ -19,11 +19,24 @@ export interface InboxEntry {
 
 export class InboxManager {
   /**
-   * Create an empty inbox file if it doesn't exist.
-   * Inbox files live at {hostWorkDir}/_inbox_{agentName}.jsonl
+   * Resolve the inbox file path for an agent.
+   * Inbox files live at {hostSandboxDir}/_agent_{agentName}/_inbox.jsonl
+   * which maps to /sandbox/_agent_{agentName}/_inbox.jsonl inside the container.
    */
-  static init(hostWorkDir: string, agentName: string): void {
-    const inboxPath = resolve(hostWorkDir, `_inbox_${norm(agentName)}.jsonl`);
+  static resolveInboxPath(hostSandboxDir: string, agentName: string): string {
+    const agentDir = resolve(hostSandboxDir, `_agent_${norm(agentName)}`);
+    return resolve(agentDir, '_inbox.jsonl');
+  }
+
+  /**
+   * Create an empty inbox file if it doesn't exist.
+   */
+  static init(hostSandboxDir: string, agentName: string): void {
+    const inboxPath = InboxManager.resolveInboxPath(hostSandboxDir, agentName);
+    const dir = resolve(inboxPath, '..');
+    if (!existsSync(dir)) {
+      try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
+    }
     if (!existsSync(inboxPath)) {
       try {
         writeFileSync(inboxPath, '', 'utf-8');
@@ -35,13 +48,16 @@ export class InboxManager {
 
   /**
    * Write an entry to an agent's inbox file.
-   * Inbox files live at {hostWorkDir}/_inbox_{agentName}.jsonl
    */
-  static write(hostWorkDir: string, targetAgentName: string, entry: InboxEntry, sessionId?: string): void {
+  static write(hostSandboxDir: string, targetAgentName: string, entry: InboxEntry, sessionId?: string): void {
     if (entry.summary && entry.summary.length > 500) {
       console.warn(`[inbox] Large summary (${entry.summary.length} chars) from ${entry.from} to ${targetAgentName}`);
     }
-    const inboxPath = resolve(hostWorkDir, `_inbox_${norm(targetAgentName)}.jsonl`);
+    const inboxPath = InboxManager.resolveInboxPath(hostSandboxDir, targetAgentName);
+    const dir = resolve(inboxPath, '..');
+    if (!existsSync(dir)) {
+      try { mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
+    }
     const line = JSON.stringify(entry) + '\n';
     try {
       appendFileSync(inboxPath, line, 'utf-8');
@@ -67,12 +83,17 @@ export class InboxManager {
    * Read all unprocessed entries from an agent's inbox.
    * Returns entries and clears the file.
    */
-  static read(hostWorkDir: string, agentName: string, sessionId?: string): InboxEntry[] {
-    const inboxPath = resolve(hostWorkDir, `_inbox_${norm(agentName)}.jsonl`);
+  static read(hostSandboxDir: string, agentName: string, sessionId?: string): InboxEntry[] {
+    const inboxPath = InboxManager.resolveInboxPath(hostSandboxDir, agentName);
     if (!existsSync(inboxPath)) return [];
 
     try {
       const raw = readFileSync(inboxPath, 'utf-8');
+      // Archive before clearing (messages persist for audit trail)
+      if (raw.trim()) {
+        const archivePath = resolve(dirname(inboxPath), '_inbox.read.jsonl');
+        try { appendFileSync(archivePath, raw, 'utf-8'); } catch { /* non-critical */ }
+      }
       // Clear after reading to prevent re-processing
       writeFileSync(inboxPath, '', 'utf-8');
       const entries = raw
@@ -106,7 +127,7 @@ export class InboxManager {
    * into agent prompts so they know how to check their inbox.
    */
   static inboxPrompt(agentName: string): string {
-    const myInbox = `/sandbox/_inbox_${norm(agentName)}.jsonl`;
+    const myInbox = `/sandbox/_agent_${norm(agentName)}/_inbox.jsonl`;
     return `\n## Multi-Agent Collaboration
 
 You are part of a multi-agent session. Other agents may observe your work and contact you.
@@ -119,7 +140,7 @@ When the user asks about inbox contents (e.g. "check your inbox", "收件箱里�
 3. If your inbox is empty, say "My inbox is empty" — do NOT describe other agents' inboxes.
 
 CRITICAL RULES:
-- NEVER read inbox files belonging to other agents (e.g. _inbox_code-agent, _inbox_planner).
+- NEVER read inbox files belonging to other agents (e.g. _agent_code-agent, _agent_planner).
 - NEVER volunteer to check what other agents received.
 - Only access **${myInbox}**.
 
@@ -146,6 +167,11 @@ You are part of a multi-agent session coordinated by AgentHub.
 OTHER AGENTS: The hub will route important messages from other agents to you automatically.
 When you receive a message from another agent, consider it carefully and respond if relevant.
 
+INBOX RULES:
+- When you receive and act on an inbox message, reply to the sender with a brief confirmation of what you did
+- Report to the group what actions you took based on inbox feedback
+- If you fixed something based on review feedback, say so explicitly — the sender needs to know
+
 PERMISSIONS: You have defined capabilities. If you attempt an operation outside your scope,
 the hub will notify you and suggest delegating to the right agent.
 
@@ -158,8 +184,8 @@ a clear message like "NEEDS HELP from @CodeAgent: <description>" and the hub wil
    * Returns the number of non-empty lines. Returns 0 if the file doesn't exist.
    * Does NOT clear the file (unlike read()).
    */
-  static unreadCount(hostWorkDir: string, agentName: string): number {
-    const inboxPath = resolve(hostWorkDir, `_inbox_${norm(agentName)}.jsonl`);
+  static unreadCount(hostSandboxDir: string, agentName: string): number {
+    const inboxPath = InboxManager.resolveInboxPath(hostSandboxDir, agentName);
     if (!existsSync(inboxPath)) return 0;
     try {
       const raw = readFileSync(inboxPath, 'utf-8');

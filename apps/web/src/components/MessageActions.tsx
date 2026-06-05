@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { MoreHorizontal, Copy, Quote, RefreshCw, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Copy, Quote, RefreshCw, Trash2, Pin } from 'lucide-react';
 import type { Message } from '@agenthub/shared';
 
 interface Props {
@@ -7,11 +7,12 @@ interface Props {
   agentDisplayName?: string;
   onCopy: () => void;
   onQuote: () => void;
+  onPin: () => void;
   onRegenerate: () => void;
   onDelete: () => void;
 }
 
-export function MessageActions({ message, agentDisplayName, onCopy, onQuote, onRegenerate, onDelete }: Props) {
+export function MessageActions({ message, agentDisplayName, onCopy, onQuote, onPin, onRegenerate, onDelete }: Props) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -41,6 +42,11 @@ export function MessageActions({ message, agentDisplayName, onCopy, onQuote, onR
 
   const handleQuote = () => {
     onQuote();
+    closeMenu();
+  };
+
+  const handlePin = () => {
+    onPin();
     closeMenu();
   };
 
@@ -79,6 +85,12 @@ export function MessageActions({ message, agentDisplayName, onCopy, onQuote, onR
             >
               <Copy className="w-3.5 h-3.5" />
               Copy
+            </button>
+          )}
+          {isAgent && (
+            <button onClick={handlePin}
+              className="w-full flex items-center gap-2 px-3 py-2 text-xs text-hub-secondary hover:bg-hub-hover transition">
+              <Pin className="w-3.5 h-3.5" /> Pin Message
             </button>
           )}
           {isAgent && (

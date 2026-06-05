@@ -28,6 +28,8 @@ import {
 
 import {
   handleConfirmPlan,
+  handlePlanConfirm,
+  handlePlanCancel,
   handleModifyTask,
   handleRetryTask,
   handleReplanRequest,
@@ -208,6 +210,8 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'permission_mode_change': handlePermissionModeChange(sessionId, data); break;
     case 'stop_agent': handleStopAgent(sessionId, data); break;
     case 'confirm_plan': handleConfirmPlan(sessionId, data); break;
+    case 'plan_confirm': handlePlanConfirm(sessionId, data); break;
+    case 'plan_cancel': handlePlanCancel(sessionId, data); break;
     case 'deploy_to_platform': handleDeployToPlatform(sessionId, data); break;
     case 'modify_task': handleModifyTask(sessionId, data); break;
     case 'retry_task': handleRetryTask(sessionId, data); break;

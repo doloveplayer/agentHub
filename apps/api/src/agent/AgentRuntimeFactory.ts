@@ -67,30 +67,6 @@ class ClaudeRuntime implements AgentRuntime {
 }
 
 /**
- * Stub for Codex runtime — not yet implemented.
- */
-class CodexRuntime implements AgentRuntime {
-  readonly source: AgentRuntimeSource = "codex";
-
-  async startTask(
-    input: AgentTaskInput,
-    _onEvent: (event: ParsedEvent) => void,
-  ): Promise<AgentTaskResult> {
-    return {
-      taskId: `codex-${input.nodeRunId}`,
-      runId: `codex-${input.nodeRunId}`,
-      sessionKey: `codex-session-${input.nodeRunId}`,
-      source: "codex",
-      status: "failed",
-      error: "Codex runtime not yet implemented",
-      updatedAt: new Date().toISOString(),
-    };
-  }
-
-  async cancelTask(_taskId: string): Promise<void> {}
-}
-
-/**
  * Stub for OpenClaw runtime — not yet implemented.
  */
 class OpenClawRuntime implements AgentRuntime {
@@ -123,7 +99,6 @@ export function getAgentRuntime(source: AgentRuntimeSource): AgentRuntime {
   let runtime: AgentRuntime;
   switch (source) {
     case "claude": runtime = new ClaudeRuntime(); break;
-    case "codex": runtime = new CodexRuntime(); break;
     case "openclaw": runtime = new OpenClawRuntime(); break;
     default: throw new Error(`Unknown agent source: ${source}`);
   }

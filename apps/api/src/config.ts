@@ -42,19 +42,21 @@ export class RuntimeAgentConfig {
   private _timeoutMs: number;
   private _queueTimeoutMs: number;
   private _perSessionMax: number;
+  private _contextTokenBudget: number;
 
   constructor() {
-    this._maxConcurrent = optionalInt('MAX_CONCURRENT_AGENTS', 2);
+    this._maxConcurrent = optionalInt('MAX_CONCURRENT_AGENTS', 5);
     this._timeoutMs = optionalInt('AGENT_TIMEOUT_MS', 300_000);
     this._queueTimeoutMs = optionalInt('AGENT_QUEUE_TIMEOUT_MS', 120_000);
     this._perSessionMax = optionalInt('AGENT_PER_SESSION_MAX', 8);
+    this._contextTokenBudget = optionalInt('CONTEXT_TOKEN_BUDGET', 10_000);
   }
 
   /** Load persisted values from DB, falling back to env vars */
   async loadPersisted(prisma: any) {
     try {
       const rows = await prisma.globalConfig.findMany({
-        where: { key: { in: ['maxConcurrent', 'timeoutMs', 'queueTimeoutMs', 'perSessionMax'] } },
+        where: { key: { in: ['maxConcurrent', 'timeoutMs', 'queueTimeoutMs', 'perSessionMax', 'contextTokenBudget'] } },
       });
       for (const row of rows) {
         const val = Number(row.value);
@@ -88,6 +90,9 @@ export class RuntimeAgentConfig {
   async setPerSessionMax(prisma: any, v: number) {
     if (v > 0 && v <= 50) { this._perSessionMax = v; await this.persist(prisma, 'perSessionMax', v); }
   }
+  async setContextTokenBudget(prisma: any, v: number) {
+    if (v >= 2000 && v <= 50000) { this._contextTokenBudget = v; await this.persist(prisma, 'contextTokenBudget', v); }
+  }
 
   // Sync getters/setters (for test compatibility and backward compat)
   get maxConcurrent(): number { return this._maxConcurrent; }
@@ -110,12 +115,18 @@ export class RuntimeAgentConfig {
     if (v > 0 && v <= 50) this._perSessionMax = v;
   }
 
+  get contextTokenBudget(): number { return this._contextTokenBudget; }
+  set contextTokenBudget(v: number) {
+    if (v >= 2000 && v <= 50000) this._contextTokenBudget = v;
+  }
+
   toJSON() {
     return {
       maxConcurrent: this._maxConcurrent,
       timeoutMs: this._timeoutMs,
       queueTimeoutMs: this._queueTimeoutMs,
       perSessionMax: this._perSessionMax,
+      contextTokenBudget: this._contextTokenBudget,
     };
   }
 }
@@ -174,6 +185,7 @@ export const config = {
     get timeoutMs() { return runtimeConfig.agent.timeoutMs; },
     get queueTimeoutMs() { return runtimeConfig.agent.queueTimeoutMs; },
     get perSessionMax() { return runtimeConfig.agent.perSessionMax; },
+    get contextTokenBudget() { return runtimeConfig.agent.contextTokenBudget; },
     provider: optional('AGENTHUB_AGENT_PROVIDER', optional('AGENT_PROVIDER', 'claude-code')),
     contextWindowTokens: optionalInt('AGENT_CONTEXT_WINDOW_TOKENS', 200_000), // Claude Sonnet 4 default
   },

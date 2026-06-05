@@ -7,7 +7,7 @@ export interface User {
 
 export type PermissionMode = 'read_only' | 'ask' | 'smart' | 'trust';
 
-export type AgentProvider = 'claude-code' | 'codex';
+export type AgentProvider = 'claude-code' | 'opencode';
 
 export interface AgentProviderConfig {
   model?: string;
@@ -54,7 +54,7 @@ export interface SessionAgentInfo {
 export interface Message {
   id: string;
   sessionId: string;
-  senderType: 'human' | 'agent';
+  senderType: 'human' | 'agent' | 'system';
   agentId?: string;
   content: string;
   status: 'sending' | 'queued' | 'streaming' | 'done' | 'error';
@@ -64,6 +64,20 @@ export interface Message {
   outputTokens?: number;
   cacheReadTokens?: number;
   cacheCreateTokens?: number;
+}
+
+export interface PinnedMessage {
+  id: string;
+  sessionId: string;
+  sourceType: 'message' | 'file' | 'text';
+  sourceMessageId: string | null;
+  filePath: string | null;
+  content: string;
+  title: string | null;
+  injectToAgent: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SessionAgentStats {
@@ -239,7 +253,19 @@ export type ContextEntryType =
   | 'convention'
   | 'dependency-map';
 
-export type ContextEntryStatus = 'active' | 'resolved' | 'superseded';
+export type ContextEntryStatus = 'active' | 'resolved' | 'superseded' | 'stale';
+
+/**
+ * Estimate token count for mixed CJK/English text.
+ * CJK chars ~1.5 tokens, English words ~1.3 tokens, other chars ~0.5 tokens.
+ */
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  const cjk = (text.match(/[一-鿿]/g) || []).length;
+  const words = (text.match(/[a-zA-Z]+/g) || []).length;
+  const other = text.length - cjk - (text.match(/[a-zA-Z]/g) || []).length;
+  return Math.ceil(cjk * 1.5 + words * 1.3 + other * 0.5);
+}
 
 export interface ContextEntry {
   key: string;
@@ -253,6 +279,8 @@ export interface ContextEntry {
   status: ContextEntryStatus;
   createdAt: number;
   updatedAt: number;
+  /** In-memory reference count for weight calculation. Not persisted. */
+  _refCount?: number;
 }
 
 // ---- Archive ----
