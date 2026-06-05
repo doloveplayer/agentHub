@@ -146,7 +146,7 @@ async function doServeStatic(
     );
     let occupied = false;
     for (let p = STATIC_SERVER_BASE_PORT; p < STATIC_SERVER_PORT_MAX; p++) {
-      if (tcp.includes(`:${p.toString(16).padStart(4, "0")}`)) {
+      if (tcp.toUpperCase().includes(`:${p.toString(16).toUpperCase().padStart(4, "0")}`)) {
         occupied = true;
         break;
       }
@@ -235,10 +235,11 @@ ENDOFSCRIPT`,
     );
 
     // Wait for the server to bind the port (single shell-level retry to avoid N docker exec calls)
-    const portHex = port.toString(16);
+    // /proc/net/tcp uses uppercase hex, so convert to uppercase to match
+    const portHex = port.toString(16).toUpperCase();
     const ready = await SandboxManager.execCapture(
       containerId,
-      `for i in $(seq 1 10); do grep -q ":${portHex}" /proc/net/tcp /proc/net/tcp6 2>/dev/null && echo ready && break; sleep 0.3; done`,
+      `for i in $(seq 1 10); do grep -qi ":${portHex}" /proc/net/tcp /proc/net/tcp6 2>/dev/null && echo ready && break; sleep 0.3; done`,
     );
     if (!ready.includes("ready")) {
       const log = await SandboxManager.execCapture(
