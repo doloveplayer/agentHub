@@ -407,10 +407,12 @@ agents.delete('/:id', async (c) => {
     broadcast(sa.sessionId, { type: 'agent_removed', agentId: id, sessionId: sa.sessionId });
   }
 
-  // Remove from all groups + soft-delete in a single transaction
+  // Remove from all groups + hard-delete in a single transaction.
+  // Hard delete (not soft) because all resources are already cleaned up above
+  // and the unique constraint on `name` would block re-creation with the same name.
   await prisma.$transaction([
     prisma.sessionAgent.deleteMany({ where: { agentId: id } }),
-    prisma.agent.update({ where: { id }, data: { isActive: false } }),
+    prisma.agent.delete({ where: { id } }),
   ]);
 
   return c.body(null, 204);
