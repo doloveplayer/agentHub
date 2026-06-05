@@ -1,5 +1,6 @@
 import { resolve } from 'path';
 import { existsSync, cpSync, mkdirSync, writeFileSync } from 'fs';
+import { resolveSkillSourceDir } from '../agent/AgentDirectoryManager.js';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
@@ -308,9 +309,10 @@ agents.post('/:id/skills', async (c) => {
     const preset = presetMap.get(name);
     if (!preset) continue;
     const targetDir = resolve(skillsDir, name);
-    if (preset.sourceDir && existsSync(preset.sourceDir)) {
+    const srcDir = resolveSkillSourceDir(preset);
+    if (srcDir) {
       try {
-        cpSync(preset.sourceDir, targetDir, { recursive: true });
+        cpSync(srcDir, targetDir, { recursive: true });
       } catch (err: any) {
         console.warn(`[agents] Failed to copy skill dir for ${name}: ${err.message}`);
         mkdirSync(targetDir, { recursive: true });
