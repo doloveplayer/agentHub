@@ -1,12 +1,13 @@
-import { WorkspaceManager, type AgentFileDiff, type WorkspaceVersion, type MergeResult } from '../agent/WorkspaceManager.js';
+import { WorkspaceManager, type WorkspaceVersion, type MergeResult } from '../agent/WorkspaceManager.js';
 import { broadcast } from './state.js';
 
 
 const beforeVersions = new Map<string, WorkspaceVersion | null>();
-const sessionAgentDiffs = new Map<string, AgentFileDiff[]>();
 const sessionAgentRefs = new Map<string, Map<string, string>>();   // sessionId -> (agentName -> afterVersion ref)
 const sessionBaseRef = new Map<string, string>();                   // sessionId -> common base ref (first agent's beforeVersion)
 const sessionAgentTaskContext = new Map<string, Map<string, { planId: string; taskId: string }>>(); // sessionId -> (agentName -> task context)
+/** sessionId -> (agentName -> set of changed file paths) — for file-set overlap detection */
+const sessionAgentChangedFiles = new Map<string, Map<string, Set<string>>>();
 
 export function recordWorkspaceVersionSafe(
   workspacePath: string,
@@ -41,16 +42,16 @@ export function takeMessageBeforeVersion(messageId: string): WorkspaceVersion | 
 }
 
 export function clearDiffTracking(sessionId: string): void {
-  sessionAgentDiffs.delete(sessionId);
   sessionAgentRefs.delete(sessionId);
   sessionBaseRef.delete(sessionId);
   sessionAgentTaskContext.delete(sessionId);
+  sessionAgentChangedFiles.delete(sessionId);
 }
 
 function tryAutoMergeConflicts(
   sessionId: string,
   workspacePath: string,
-  conflicts: { filePath: string; agents: string[]; ranges: { start: number; end: number }[] }[],
+  conflicts: { filePath: string; agents: string[] }[],
 ): void {
   const agentRefs = sessionAgentRefs.get(sessionId);
   const baseRef = sessionBaseRef.get(sessionId);
@@ -62,7 +63,7 @@ function tryAutoMergeConflicts(
   const conflictsInput = conflicts.map((c) => ({
     filePath: c.filePath,
     agents: c.agents,
-    ranges: c.ranges,
+    ranges: [], // ranges no longer used — 3-way merge handles line-level resolution
   }));
 
   const results = WorkspaceManager.tryAutoMerge(workspacePath, conflictsInput, baseRef, refMap);
@@ -139,18 +140,44 @@ export function broadcastDiffSummary(
     .filter((file) => file.diff.trim().length > 0);
   if (files.length === 0) return;
 
-  const priorDiffs = sessionAgentDiffs.get(sessionId) ?? [];
-  const currentDiffs: AgentFileDiff[] = files.map((file) => ({
-    agentName,
-    filePath: file.path,
-    diff: file.diff,
-  }));
-  const allDiffs = [...priorDiffs, ...currentDiffs].slice(-200);
-  sessionAgentDiffs.set(sessionId, allDiffs);
+  // Skip planner diffs in conflict detection — planner creates files that
+  // other agents later modify. These are sequential dependencies, not conflicts.
+  const isPlanner = agentName === 'planner' || agentName.startsWith('planner-');
+  if (isPlanner) return;
 
-  // Auto-merge detected conflicts silently (no chat broadcast)
-  const conflicts = WorkspaceManager.detectConflicts(allDiffs);
-  if (conflicts.length > 0) {
-    tryAutoMergeConflicts(sessionId, workspacePath, conflicts);
+  // Track changed files per agent for file-set overlap detection
+  const changedPaths = new Set(files.map((f) => f.path));
+  if (!sessionAgentChangedFiles.has(sessionId)) sessionAgentChangedFiles.set(sessionId, new Map());
+  sessionAgentChangedFiles.get(sessionId)!.set(agentName, changedPaths);
+
+  // Detect conflicts by file-set overlap (not diff range comparison).
+  // Diff ranges are relative to different base versions and not comparable.
+  // 3-way merge (git merge-file) handles line-level resolution internally.
+  const agentRefs = sessionAgentRefs.get(sessionId);
+  const baseRef = sessionBaseRef.get(sessionId);
+  if (!agentRefs || agentRefs.size < 2 || !baseRef) return;
+
+  const overlapConflicts: { filePath: string; agents: string[] }[] = [];
+  const allAgents = sessionAgentChangedFiles.get(sessionId)!;
+  for (const [otherAgent, otherFiles] of allAgents) {
+    if (otherAgent === agentName) continue;
+    for (const filePath of changedPaths) {
+      if (otherFiles.has(filePath)) {
+        overlapConflicts.push({ filePath, agents: [agentName, otherAgent] });
+      }
+    }
+  }
+
+  // Deduplicate (A,B and B,A for same file)
+  const seen = new Set<string>();
+  const deduped = overlapConflicts.filter((c) => {
+    const key = `${c.filePath}::${[...c.agents].sort().join(',')}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  if (deduped.length > 0) {
+    tryAutoMergeConflicts(sessionId, workspacePath, deduped);
   }
 }
