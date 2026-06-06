@@ -388,9 +388,20 @@ function handleProviderTaskEvent(
     case 'permission_request': {
       const requestId = event.requestId;
       const permId = event.permissionId;
+      const isTrustMode = resolveTrustMode(sessionId);
 
       // CONTROL_REQUEST path (SDK native)
       if (requestId && taskMessageId) {
+        if (isTrustMode) {
+          // Auto-approve immediately, skip frontend popup
+          const stateMap = agentStates.get(sessionId);
+          const st = stateMap?.get(taskMessageId);
+          if (st?.process?.respondControlRequest) {
+            st.process.respondControlRequest(requestId, true);
+          }
+          break;
+        }
+
         const timeoutMs = config.agent.permissionTimeoutMs;
         const routedId = `${taskMessageId}|::|${requestId}`;
         broadcast(sessionId, {
@@ -418,6 +429,16 @@ function handleProviderTaskEvent(
 
       // Legacy custom_permission_request path
       if (permId && taskMessageId) {
+        if (isTrustMode) {
+          // Auto-approve immediately, skip frontend popup
+          const stateMap = agentStates.get(sessionId);
+          const st = stateMap?.get(taskMessageId);
+          if (st?.process?.respondToPermission) {
+            st.process.respondToPermission(permId, true);
+          }
+          break;
+        }
+
         const timeoutMs = config.agent.permissionTimeoutMs;
         const routedPermId = `${taskMessageId}|::|${permId}`;
         broadcast(sessionId, {

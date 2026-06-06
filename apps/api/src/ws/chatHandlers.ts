@@ -567,6 +567,8 @@ export function handlePermissionResponse(sessionId: string, data: { permissionId
   const timeout = permissionTimeouts.get(data.permissionId);
   if (timeout) { clearTimeout(timeout); permissionTimeouts.delete(data.permissionId); }
   pendingPermissions.delete(data.permissionId);
+  // Notify frontend so resolvedPermissionIds persists across re-renders/refresh
+  broadcast(sessionId, { type: 'permission_resolved', permissionId: data.permissionId, allowed: data.allowed });
   const stateMap = agentStates.get(sessionId);
   if (!stateMap) return;
   const st = stateMap.get(agentMessageId);

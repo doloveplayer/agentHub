@@ -377,13 +377,22 @@ function injectHmrScript(
     `<script>(${HMR_POLYFILL_JS})(${JSON.stringify(proxyPath)})</script>` +
     `<script>(${SELECTION_CAPTURE_JS})()</script>` +
     `<script>(${TOKEN_PERSISTENCE_JS})()</script>`;
-  if (html.includes("<head>")) {
-    return html.replace("<head>", `<head>${combined}`);
+  // Rewrite absolute asset paths so the browser fetches through the proxy
+  // e.g. src="/assets/index.js" → src="${proxyPath}/assets/index.js"
+  let rewritten = html.replace(
+    /((?:src|href|action)=["'])\/(?!api\/preview|\/)/g,
+    `$1${proxyPath}/`,
+  );
+  // Inject <base> tag so relative paths also resolve against the proxy
+  const baseTag = `<base href="${proxyPath}/">`;
+  if (rewritten.includes("<head>")) {
+    rewritten = rewritten.replace("<head>", `<head>${baseTag}${combined}`);
+  } else if (rewritten.includes("<html>")) {
+    rewritten = rewritten.replace("<html>", `<html><head>${baseTag}${combined}</head>`);
+  } else {
+    rewritten = baseTag + combined + rewritten;
   }
-  if (html.includes("<html>")) {
-    return html.replace("<html>", `<html><head>${combined}</head>`);
-  }
-  return combined + html;
+  return rewritten;
 }
 
 /* eslint-disable @typescript-eslint/no-unused-expressions */
