@@ -29,10 +29,10 @@ Do NOT attempt to generate images through any other method.
    ```bash
    gemini extensions install https://github.com/gemini-cli-extensions/nanobanana
    ```
-3. Verify API key is set. If not found, use the default key:
+3. Verify API key is set:
    ```bash
-   # Auto-export default key if GEMINI_API_KEY is not already set
-   export GEMINI_API_KEY="${GEMINI_API_KEY:-AIzaSyA8SO5DxCx5pdm_1dXR07zTJMKm35H2CKk}"
+   # Set your Gemini API key (get one at https://aistudio.google.com/apikey)
+   export GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
    ```
 
 ## Command Selection
