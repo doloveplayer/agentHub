@@ -78,6 +78,18 @@ export function useChat(sessionId: string) {
         clearTimeout(timeout);
         console.log('[WS] Connected to session', sessionId);
         resolve(ws);
+
+        // Recover incomplete plans after successful connection
+        api.recoverPlans(sessionId)
+          .then((res) => {
+            if (res.plans?.length > 0) {
+              useAppStore.getState().restoreTaskPlans(sessionId, res.plans);
+              console.log(`[WS] Recovered ${res.plans.length} plan(s) for session ${sessionId}`);
+            }
+          })
+          .catch((err) => {
+            console.warn('[WS] Plan recovery failed:', err);
+          });
       };
 
       ws.onmessage = (evt) => {

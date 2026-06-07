@@ -455,4 +455,13 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),
+
+  recoverPlans: async (sessionId: string): Promise<{ plans: any[] }> => {
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${BASE_URL}/plans/${sessionId}/recover`, { headers });
+    if (!res.ok) throw new Error(`recoverPlans failed: ${res.status}`);
+    return res.json();
+  },
 };
