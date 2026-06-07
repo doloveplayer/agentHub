@@ -1,102 +1,120 @@
 # AgentHub
 
-IM-style multi-agent chat application managing Claude Code instances inside Docker sandboxes.
+智能多 Agent 协作中枢 — IM 风格的 Web 聊天应用，作为多个 AI 编程 Agent 的统一管理和调度平台。
 
-## Architecture
+## 项目简介
 
-```
-Browser (React) → REST API (Hono) → WebSocket → Claude Code inside Docker container
-                                                └── stream-json → Browser
-```
+AgentHub 让你在类似聊天软件的界面中，同时驱动多个 AI Agent 协作完成开发任务。每个会话拥有独立的 Docker 沙箱环境，支持 Solo（单 Agent）和 Group（多 Agent 协作）两种模式。
 
-| Layer | Stack | Responsibility |
-|-------|-------|----------------|
-| `apps/web` | React 18 + Vite + Tailwind + Zustand | Chat UI, session list, streaming, @mentions, agent panel |
-| `apps/api` | Hono + Prisma + ws | REST, JWT auth, WebSocket, sandbox lifecycle |
-| `docker/` | Dockerode + sandbox image | Per-session isolation, Claude Code exec |
+**核心能力：**
+- 多 Agent 协作 — Planner 自动拆解任务、分配给 CodeAgent / ReviewAgent / TestAgent 等执行
+- Docker 沙箱隔离 — 每个会话独立容器，安全互不干扰
+- 流式对话 — 实时查看 Agent 的工具调用、文件修改、输出过程
+- 产物预览 — 内置静态服务器，直接在浏览器中预览 Agent 生成的网页
+- 任务编排 — DAG 依赖调度、并行/串行执行、失败重试
 
-## Features
+## 快速开始
 
-- **GitHub OAuth** login with whitelist control
-- **Streaming chat** via WebSocket with real-time tool event visibility
-- **Multi-agent** group sessions — `@CodeAgent` / `@ReviewAgent` / `@DevOpsAgent`
-- **Docker sandbox** per session with bind-mounted workspace
-- **Conversation history** injected across sessions
+### 环境要求
 
-## Quick Start
+- Node.js 20+
+- Docker
+- PostgreSQL 16+
+
+### 安装
 
 ```bash
-# 1. Build sandbox image
+# 克隆仓库
+git clone https://github.com/doloveplayer/agentHub.git
+cd agentHub
+
+# 安装依赖
+npm install
+
+# 构建沙箱镜像
 docker build -t agenthub-sandbox:latest -f docker/sandbox.Dockerfile .
+```
 
-# 2. Start databases
-docker compose up -d postgres
+### 配置
 
-# 3. Migrate + seed
-export $(grep -v '^#' .env | grep -v '^$' | xargs) && cd apps/api && npx prisma migrate dev --name init
+```bash
+# 复制环境变量模板
+cp .env.example .env
 
-# 4. Backend (port 3000)
+# 编辑 .env，填入你的配置
+```
+
+`.env` 中必须配置：
+
+```bash
+# 数据库
+POSTGRES_USER=agenthub
+POSTGRES_PASSWORD=your_secure_password
+DATABASE_URL=postgresql://agenthub:your_secure_password@localhost:5432/agenthub
+
+# JWT（用于会话认证）
+JWT_SECRET=your_random_secret_string
+
+# 管理员账号
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=your_secure_password
+
+# AI Provider（至少配置一个）
+ANTHROPIC_AUTH_TOKEN=your_anthropic_api_key
+```
+
+### 启动
+
+```bash
+# 一键启动（PostgreSQL + 数据库迁移 + 后端 + 前端）
+bash scripts/startup.sh
+```
+
+打开 `http://localhost:5175`，使用管理员账号登录。
+
+### 手动启动
+
+```bash
+# 启动数据库
+docker compose up -d postgres redis
+
+# 数据库迁移
+cd apps/api && npx prisma migrate dev --name init
+
+# 后端（端口 3000）
 cd apps/api && npx tsx src/index.ts
 
-# 5. Frontend (port 5173)
+# 前端（端口 5175）
 cd apps/web && npx vite
 ```
 
-Open `http://localhost:5173`.
+## 使用方式
 
-## Environment
+1. **创建 Agent** — 点击侧边栏 "+" 按钮，选择模板创建 Agent（CodeAgent、ReviewAgent 等）
+2. **Solo 会话** — 点击 Agent 名称，进入一对一对话
+3. **Group 会话** — 创建群聊，添加多个 Agent，用 `@AgentName` 指定任务对象
+4. **任务规划** — 在群聊中描述需求，Planner 会自动拆解为 DAG 任务并分配执行
+5. **产物预览** — Agent 生成的网页文件可直接在内置浏览器中预览
 
-Required in `.env` at project root:
+## 技术栈
 
-```
-DATABASE_URL=postgresql://...
-JWT_SECRET=...
-GITHUB_CLIENT_ID=...
-GITHUB_CLIENT_SECRET=...
-GITHUB_CALLBACK_URL=http://localhost:3000/api/auth/github/callback
-GITHUB_ALLOWED_USERS=your-github-username
-ANTHROPIC_AUTH_TOKEN=...
-ANTHROPIC_BASE_URL=...
-```
+| 层级 | 技术 | 职责 |
+|------|------|------|
+| 前端 | React 18 + Vite + Tailwind + Zustand | 聊天 UI、流式渲染、状态管理 |
+| 后端 | Hono + Prisma + WebSocket | REST API、实时通信、沙箱管理 |
+| 沙箱 | Docker + Dockerode | 容器隔离、文件挂载、进程管理 |
+| 共享 | TypeScript | 前后端共享类型定义 |
 
-## Project Structure
+## 开源协议
 
-```
-apps/
-├── api/                  # Hono backend
-│   ├── src/
-│   │   ├── agent/        # ClaudeCodeProcess, SandboxManager, EventParser
-│   │   ├── routes/       # auth, sessions, chat, agents
-│   │   ├── ws/           # WebSocket handler
-│   │   ├── middleware/    # JWT auth, whitelist
-│   │   └── db/           # Prisma client
-│   └── prisma/           # Schema, migrations, seed
-├── web/                  # React frontend
-│   └── src/
-│       ├── components/   # ChatView, SessionList, MessageBubble, AgentStatusPanel, etc.
-│       ├── hooks/        # useChat, useAuth
-│       ├── store/        # Zustand state
-│       └── lib/          # API client, mention parser
-packages/
-└── shared/               # Shared TypeScript types
-docker/                   # Dockerfiles, compose
-docs/                     # Specs and plans
-```
+本项目基于 [MIT License](LICENSE) 开源。
 
-## Commands
+## 贡献
 
-```bash
-# TypeScript check
-npx tsc --noEmit -p apps/api/tsconfig.json
-npx tsc --noEmit -p apps/web/tsconfig.json
+欢迎提交 Issue 和 Pull Request！
 
-# Prisma studio
-cd apps/api && npx prisma studio
+- **Bug 报告** — 请通过 [Issues](https://github.com/doloveplayer/agentHub/issues) 提交，附上复现步骤和日志
+- **功能建议** — 在 Issues 中描述你的想法和使用场景
+- **代码改进** — Fork 本仓库，创建分支，提交 PR
 
-# Force stop
-fuser -k 3000/tcp  # backend
-fuser -k 5173/tcp  # frontend
-
-# Cleanup sandboxes
-docker rm -f $(docker ps -aq --filter name=agenthub-sandbox)
-```
+我们乐意接受任何形式的反馈和改进意见。
