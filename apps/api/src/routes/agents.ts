@@ -37,7 +37,7 @@ const updateSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
   description: z.string().min(1).max(500).optional(),
   systemPrompt: z.string().min(1).optional(),
-  provider: z.enum(['claude-code', 'codex']).optional(),
+  provider: z.enum(['claude-code', 'opencode']).optional(),
   providerConfig: z.record(z.unknown()).optional(),
   capabilities: z.record(z.unknown()).optional(),
   isActive: z.boolean().optional(),
@@ -49,6 +49,7 @@ const createSchema = z.object({
   displayName: z.string().min(1).max(64),
   description: z.string().min(1).max(500),
   systemPrompt: z.string().min(1).max(8000),
+  provider: z.enum(['claude-code', 'opencode']).optional(),
   skills: z.array(skillDefSchema).optional(),
 });
 
@@ -170,7 +171,7 @@ agents.post('/from-md', async (c) => {
 
 function getDefaultProviderConfig(provider: string): Record<string, unknown> {
   if (provider === 'claude-code') return { model: 'claude-sonnet-4-6' };
-  if (provider === 'codex') return { model: 'gpt-5' };
+  if (provider === 'opencode') return { model: 'deepseek-chat' };
   return {};
 }
 
