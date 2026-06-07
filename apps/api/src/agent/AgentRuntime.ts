@@ -286,7 +286,7 @@ class AgentRuntime {
     );
 
     const isPlanner = agent.name === 'planner' || agent.name.startsWith('planner-');
-    const model = (agent.providerConfig as any)?.model || process.env.ANTHROPIC_MODEL || 'deepseek-v4-pro';
+    const model = (agent.providerConfig as any)?.model || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
     const entry: AgentEntry = {
       provider,
       containerId,

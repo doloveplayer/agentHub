@@ -63,7 +63,7 @@ export function spawnOpenCodeInDocker(
 
   // Read API key from environment (same pattern as Claude Code's ANTHROPIC_API_KEY).
   // Falls back to opts.apiKey for per-agent overrides.
-  const apiKey = process.env.DEEPSEEK_API_KEY || opts.apiKey || '';
+  const apiKey = process.env.OPENCODE_API_KEY || opts.apiKey || '';
 
   const model = opts.model || 'deepseek-chat';
 
