@@ -84,7 +84,7 @@ import {
 import {
   broadcast, sessionPermissionModes, agentProcesses, agentStates, agentTaskQueues,
   agentCurrentTask, agentCurrentMessage, sandboxes, sessionAgentNames,
-  incRunningAgentCount, clearRunningAgent, populateSessionAgentNames,
+  incRunningAgentCount, clearRunningAgent, populateSessionAgentNames, permissionTimeouts, pendingPermissions,
   type AgentTaskQueue, type TaskDispatchNode,
 } from './state.js';
 import {
@@ -102,7 +102,7 @@ import type { AbstractProvider, UnifiedAgentEvent } from '../agent/providers/bas
 
 export { type AgentTaskQueue, type TaskDispatchNode };
 
-const planExecutions = new Map<string, DagExecutionState>();
+export const planExecutions = new Map<string, DagExecutionState>();
 const MAX_PLAN_EXECUTIONS = 500;
 
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
@@ -158,7 +158,7 @@ export function resolveAgentNameInSession(sessionId: string, agentType: string):
   return null;
 }
 
-function planKey(sessionId: string, planId: string): string {
+export function planKey(sessionId: string, planId: string): string {
   return `${sessionId}:${planId}`;
 }
 
@@ -385,6 +385,85 @@ function handleProviderTaskEvent(
       });
       break;
     }
+    case 'permission_request': {
+      const requestId = event.requestId;
+      const permId = event.permissionId;
+      const isTrustMode = resolveTrustMode(sessionId);
+
+      // CONTROL_REQUEST path (SDK native)
+      if (requestId && taskMessageId) {
+        if (isTrustMode) {
+          // Auto-approve immediately, skip frontend popup
+          const stateMap = agentStates.get(sessionId);
+          const st = stateMap?.get(taskMessageId);
+          if (st?.process?.respondControlRequest) {
+            st.process.respondControlRequest(requestId, true);
+          }
+          break;
+        }
+
+        const timeoutMs = config.agent.permissionTimeoutMs;
+        const routedId = `${taskMessageId}|::|${requestId}`;
+        broadcast(sessionId, {
+          type: 'permission_request',
+          agentMessageId: taskMessageId,
+          permissionId: routedId,
+          tool: event.tool,
+          path: event.path,
+          toolInput: event.toolInput,
+          timestamp: event.timestamp,
+        });
+        pendingPermissions.set(routedId, { sessionId, agentMessageId: taskMessageId });
+        const timeout = setTimeout(() => {
+          const stateMap = agentStates.get(sessionId);
+          const st = stateMap?.get(taskMessageId);
+          if (st?.process?.respondControlRequest) {
+            st.process.respondControlRequest(requestId, true);
+          }
+          permissionTimeouts.delete(routedId);
+          pendingPermissions.delete(routedId);
+        }, timeoutMs);
+        permissionTimeouts.set(routedId, timeout);
+        break;
+      }
+
+      // Legacy custom_permission_request path
+      if (permId && taskMessageId) {
+        if (isTrustMode) {
+          // Auto-approve immediately, skip frontend popup
+          const stateMap = agentStates.get(sessionId);
+          const st = stateMap?.get(taskMessageId);
+          if (st?.process?.respondToPermission) {
+            st.process.respondToPermission(permId, true);
+          }
+          break;
+        }
+
+        const timeoutMs = config.agent.permissionTimeoutMs;
+        const routedPermId = `${taskMessageId}|::|${permId}`;
+        broadcast(sessionId, {
+          type: 'permission_request',
+          agentMessageId: taskMessageId,
+          permissionId: routedPermId,
+          tool: event.tool,
+          path: event.path,
+          toolInput: event.toolInput,
+          timestamp: event.timestamp,
+        });
+        pendingPermissions.set(routedPermId, { sessionId, agentMessageId: taskMessageId });
+        const timeout = setTimeout(() => {
+          const stateMap = agentStates.get(sessionId);
+          const st = stateMap?.get(taskMessageId);
+          if (st?.process?.respondToPermission) {
+            st.process.respondToPermission(permId, true);
+          }
+          permissionTimeouts.delete(routedPermId);
+          pendingPermissions.delete(routedPermId);
+        }, timeoutMs);
+        permissionTimeouts.set(routedPermId, timeout);
+      }
+      break;
+    }
     case 'done': {
       const exitCode = event.exitCode ?? 0;
       const succeeded = exitCode === 0;
@@ -426,6 +505,7 @@ function handleProviderTaskEvent(
         broadcastDiffSummary(
           sessionId, taskMessageId, queue.sandbox.hostWorkDir,
           beforeVer, agentName, `After ${agentName} task ${task.id}`,
+          { planId: queue.planId, taskId: task.id },
         );
       }
 
@@ -738,7 +818,7 @@ async function startReplForTask(
     AgentDirectoryManager.ensureAgentHome(agent.id, agent.name, agent.systemPrompt, agent.skills as any[] | null);
     console.log(`[ws] Task REPL started: agent=${agentName} task=${task.id}`);
     await provider.start(sessionId, fullPrompt, sandbox.containerId, sandbox.workDir, {
-      agentName, hostWorkDir: sandbox.hostWorkDir, hostSandboxDir: sandbox.hostSandboxDir, agentHomeDir, trustMode: true,
+      agentName, hostWorkDir: sandbox.hostWorkDir, hostSandboxDir: sandbox.hostSandboxDir, agentHomeDir, trustMode: resolveTrustMode(sessionId), sessionPermissionMode: sessionPermissionModes.get(sessionId) || 'ask',
     });
   } catch (err: any) {
     console.error(`[ws] Task REPL start failed: ${err.message}`);
@@ -1470,7 +1550,7 @@ async function dispatchPlanSummaryToPlanner(
     summaryPrompt,
   ].join('\n');
 
-  await agentRuntime.sendPrompt(plannerSA.agent.id, sessionId, fullPrompt, messageId, sandbox);
+  await agentRuntime.sendPrompt(plannerSA.agent.id, sessionId, fullPrompt, messageId, sandbox, resolveTrustMode(sessionId));
 }
 
 /**
@@ -1522,7 +1602,7 @@ async function dispatchEscalationToPlanner(
     escalationPrompt,
   ].join('\n');
 
-  await agentRuntime.sendPrompt(plannerSA.agent.id, sessionId, fullPrompt, messageId, sandbox);
+  await agentRuntime.sendPrompt(plannerSA.agent.id, sessionId, fullPrompt, messageId, sandbox, resolveTrustMode(sessionId));
 }
 
 async function persistState(sessionId: string, planId: string, state: DagExecutionState): Promise<void> {

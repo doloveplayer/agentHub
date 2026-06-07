@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, KeyboardEvent, useMemo } from 'react';
-import { Send, Paperclip } from 'lucide-react';
+import { Send, Paperclip, Square } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { AgentMentionPopup } from './AgentMentionPopup';
 import { SlashCommandPopup } from './SlashCommandPopup';
@@ -27,9 +27,11 @@ interface Props {
   onSend: (content: string, mentionedAgents: MentionTag[], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null, skillInvocation?: string | null) => void;
   disabled?: boolean;
   mentionableAgents?: AgentConfig[];
+  streamingMessageIds?: string[];
+  onStopAgent?: (agentMessageId: string) => void;
 }
 
-export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
+export function MessageInput({ onSend, disabled, mentionableAgents, streamingMessageIds, onStopAgent }: Props) {
   const agents = useAppStore((s) => s.agents);
   const sessions = useAppStore((s) => s.sessions);
   const orchestrationMode = useAppStore((s) => s.orchestrationMode);
@@ -37,9 +39,13 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const activeSessionType = useAppStore((s) => s.sessions.find((session: any) => session.id === s.activeSessionId)?.type);
   const addMessage = useAppStore((s) => s.addMessage);
+  const addToast = useAppStore((s) => s.addToast);
   const messages = useAppStore((s) => s.messages);
   const recentMessages = (messages[activeSessionId ?? ''] ?? []).slice(-20).map(m => m.content).filter(Boolean);
+  const myHistory = (messages[activeSessionId ?? ''] ?? []).filter((m: any) => m.senderType === 'human').map((m: any) => m.content);
   const [value, setValue] = useState('');
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const savedInput = useRef('');
   const [showPopup, setShowPopup] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [focusedIndex, setFocusedIndex] = useState(0);
@@ -50,10 +56,13 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   const [slashQuery, setSlashQuery] = useState('');
   const [showSlash, setShowSlash] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  const [pendingSkillAgents, setPendingSkillAgents] = useState<AgentConfig[]>([]);
+  const [skillAgentIndex, setSkillAgentIndex] = useState(0);
   const pendingQuoteRef = useRef<PromptInsertDetail['quoteRef'] | null>(null);
 
   const matchSource = mentionableAgents ?? agents;
   const matchedAgents = recommendAgents(mentionQuery, matchSource, recentMessages);
+  const isStreaming = (streamingMessageIds?.length ?? 0) > 0;
 
   const agentSkills = useMemo(() => {
     if (!activeSessionId) return [];
@@ -61,13 +70,14 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
     if (!session) return [];
     const agentIds = new Set((session.agents || []).map(sa => sa.agentId));
     const seen = new Set<string>();
-    const result: { name: string; description: string }[] = [];
+    const result: { name: string; description: string; agentId: string; agentDisplayName: string }[] = [];
     for (const a of agents) {
       if (!agentIds.has(a.id)) continue;
       for (const s of (a.skills || [])) {
-        if (!seen.has(s.name)) {
-          seen.add(s.name);
-          result.push({ name: s.name, description: s.description });
+        const key = `${s.name}::${a.id}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push({ name: s.name, description: s.description, agentId: a.id, agentDisplayName: a.displayName });
         }
       }
     }
@@ -97,6 +107,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     const pos = e.target.selectionStart ?? 0;
+    if (historyIdx >= 0) { setHistoryIdx(-1); savedInput.current = ''; }
     setValue(newValue);
     setCursorPos(pos);
 
@@ -140,9 +151,44 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   };
 
   const handleSelectCommand = (command: string) => {
-    setValue(command + ' ');
+    const skillName = command.slice(1);
+    const owners = agentSkills.filter(s => s.name === skillName);
+
+    // Solo sessions don't support mentions — skip auto-tag
+    if (activeSessionType === 'group' && owners.length === 1) {
+      const owner = owners[0];
+      setTags((prev) => {
+        if (prev.some(t => t.agentId === owner.agentId)) return prev;
+        return [...prev, { agentId: owner.agentId, agentName: owner.name, displayName: owner.agentDisplayName }];
+      });
+      setValue(command + ' ');
+    } else if (activeSessionType === 'group' && owners.length > 1) {
+      const agentConfigs: AgentConfig[] = owners.map(o => {
+        const full = agents.find(a => a.id === o.agentId);
+        return full || { id: o.agentId, name: '', displayName: o.agentDisplayName, description: '', systemPrompt: '', provider: 'claude-code', type: 'user', skills: [] } as AgentConfig;
+      });
+      setPendingSkillAgents(agentConfigs);
+      setSkillAgentIndex(0);
+      setValue(command + ' ');
+      setShowSlash(false);
+      setSlashQuery('');
+      return;
+    } else {
+      setValue(command + ' ');
+    }
+
     setShowSlash(false);
     setSlashQuery('');
+    ref.current?.focus();
+  };
+
+  const handleSkillAgentSelect = (agent: AgentConfig) => {
+    setTags((prev) => {
+      if (prev.some(t => t.agentId === agent.id)) return prev;
+      return [...prev, { agentId: agent.id, agentName: agent.name, displayName: agent.displayName }];
+    });
+    setPendingSkillAgents([]);
+    setSkillAgentIndex(0);
     ref.current?.focus();
   };
 
@@ -182,6 +228,45 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
         setShowPopup(false);
         return;
       }
+    }
+
+    if (pendingSkillAgents.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSkillAgentIndex(i => (i + 1) % pendingSkillAgents.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSkillAgentIndex(i => (i - 1 + pendingSkillAgents.length) % pendingSkillAgents.length); return; }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (pendingSkillAgents[skillAgentIndex]) handleSkillAgentSelect(pendingSkillAgents[skillAgentIndex]);
+        return;
+      }
+      if (e.key === 'Escape') { setPendingSkillAgents([]); return; }
+    }
+
+    // Up arrow → cycle backward through sent message history
+    if (e.key === 'ArrowUp' && !showPopup && !showSlash) {
+      e.preventDefault();
+      if (myHistory.length === 0) return;
+      if (historyIdx === -1) {
+        savedInput.current = value;
+        setHistoryIdx(myHistory.length - 1);
+        setValue(myHistory[myHistory.length - 1]);
+      } else if (historyIdx > 0) {
+        setHistoryIdx(historyIdx - 1);
+        setValue(myHistory[historyIdx - 1]);
+      }
+      return;
+    }
+    // Down arrow → cycle forward through history
+    if (e.key === 'ArrowDown' && historyIdx >= 0 && !showPopup && !showSlash) {
+      e.preventDefault();
+      if (historyIdx < myHistory.length - 1) {
+        setHistoryIdx(historyIdx + 1);
+        setValue(myHistory[historyIdx + 1]);
+      } else {
+        setHistoryIdx(-1);
+        setValue(savedInput.current);
+        savedInput.current = '';
+      }
+      return;
     }
 
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -235,6 +320,8 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
         }
       }
       setValue('');
+      setHistoryIdx(-1);
+      savedInput.current = '';
       ref.current?.focus();
       return;
     }
@@ -251,7 +338,31 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
       }
     }
 
-    onSend(finalValue, tags, orchestrationMode, quoteReferenceId, skillInvocation);
+    // Fallback: if skillInvocation is set but no tags, auto-find owner (group only)
+    let sendTags = tags;
+    if (skillInvocation && tags.length === 0 && activeSessionType === 'group') {
+      const owners = agentSkills.filter(s => s.name === skillInvocation);
+      if (owners.length === 1) {
+        const owner = owners[0];
+        const ownerAgent = agents.find(a => a.id === owner.agentId);
+        sendTags = [{ agentId: owner.agentId, agentName: ownerAgent?.name || '', displayName: owner.agentDisplayName }];
+      } else if (owners.length > 1) {
+        addToast(`多个 Agent 拥有 ${skillInvocation}，请 @指定 Agent`, 'info');
+        return;
+      }
+    }
+
+    // Warn if target agent doesn't have the skill
+    if (skillInvocation && sendTags.length > 0) {
+      for (const t of sendTags) {
+        const targetAgent = agents.find(a => a.id === t.agentId);
+        if (targetAgent && !(targetAgent.skills || []).some((s: any) => s.name === skillInvocation)) {
+          addToast(`${targetAgent.displayName} 没有 ${skillInvocation}，skill 将被忽略`, 'info');
+        }
+      }
+    }
+
+    onSend(finalValue, sendTags, orchestrationMode, quoteReferenceId, skillInvocation);
 
     // Touch session updatedAt locally for immediate sort feedback
     if (activeSessionId) {
@@ -274,7 +385,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
   };
 
   return (
-    <div className="border-t border-hub p-4">
+    <div className="border-t border-hub p-4 bg-hub-root">
       {tags.length > 0 && (
         <div className="flex gap-1.5 mb-2 flex-wrap">
           {tags.map((tag) => (
@@ -296,7 +407,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
           onKeyDown={handleKeyDown}
           placeholder="Type a message... @ to mention an agent"
           rows={1}
-          className="flex-1 bg-hub-input text-hub-primary rounded-hub-lg px-4 py-3 resize-none focus:outline-none focus:ring-1 focus:ring-hub-accent text-body placeholder:text-hub-muted"
+          className="flex-1 bg-hub-surface border border-hub-border text-hub-primary rounded-2xl px-4 py-3 resize-none focus:outline-none focus:ring-1 focus:ring-hub-accent text-body placeholder:text-hub-muted"
           disabled={disabled}
         />
 
@@ -319,6 +430,17 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
             onClose={() => setShowSlash(false)}
             position={{ top: 0, left: 8 }}
             agentSkills={agentSkills}
+          />
+        )}
+
+        {pendingSkillAgents.length > 0 && (
+          <AgentMentionPopup
+            agents={pendingSkillAgents}
+            query=""
+            focusedIndex={skillAgentIndex}
+            onSelect={handleSkillAgentSelect}
+            onClose={() => { setPendingSkillAgents([]); setSkillAgentIndex(0); }}
+            position={{ top: 0, left: 8 }}
           />
         )}
 
@@ -354,13 +476,26 @@ export function MessageInput({ onSend, disabled, mentionableAgents }: Props) {
           <span className="text-sm font-bold">{orchestrationMode === 'parallel' ? '∥' : '→'}</span>
         </button>
 
-        <button
-          onClick={handleSend}
-          disabled={disabled || !value.trim()}
-          className="p-3 bg-hub-accent text-white rounded-md hover:bg-hub-accent-hover active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed transition"
-        >
-          <Send className="w-4 h-4" />
-        </button>
+        {isStreaming && onStopAgent ? (
+          <button
+            onClick={() => {
+              const ids = streamingMessageIds ?? [];
+              ids.forEach((id) => onStopAgent(id));
+            }}
+            className="p-3 bg-[oklch(0.88_0.003_95)] text-hub-primary rounded-md hover:bg-[oklch(0.83_0.003_95)] active:scale-[0.97] transition flex items-center gap-1.5"
+            title="Stop generation"
+          >
+            <Square className="w-4 h-4 text-hub-accent" fill="currentColor" />
+          </button>
+        ) : (
+          <button
+            onClick={handleSend}
+            disabled={disabled || !value.trim()}
+            className="p-3 bg-hub-accent text-white rounded-md hover:bg-hub-accent-hover active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed transition"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        )}
       </div>
     </div>
   );

@@ -16,7 +16,7 @@ export function mapAllowedTools(profile: AgentPermissionProfile): string[] {
   switch (profile) {
     case "read_only": return ["Read", "Grep", "Glob", "Bash"];
     case "accept_edits": return ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "NotebookEdit"];
-    case "default": return [];
+    case "default": return []; // empty: all tools fall through to control_request in "default" mode
     case "bypass": return [];
   }
 }

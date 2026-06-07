@@ -64,7 +64,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
     return { agent, status, events };
   });
 
-  // Sort: running → queued → done → idle
+  // Sort by status; same status keeps original order (Planner first)
   const sortedAgents = [...agentStates].sort((a, b) => {
     const order = { running: 0, queued: 1, done: 2, idle: 3 };
     return (order[a.status] ?? 3) - (order[b.status] ?? 3);
@@ -136,7 +136,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
   };
 
   return (
-    <div className="w-full border-l border-hub flex flex-col h-full">
+    <div className="w-full border-l border-hub flex flex-col h-full bg-hub-root">
       <div className="flex border-b border-hub">
         {tabs.map((tab) => (
           <div

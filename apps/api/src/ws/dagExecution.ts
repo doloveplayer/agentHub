@@ -161,6 +161,38 @@ export function markTaskRetryQueued(state: DagExecutionState, taskId: string): D
   return toAssignment(item);
 }
 
+/**
+ * Reset a completed (done) task back to queued for conflict retry.
+ * Unlike markTaskRetryQueued (which only handles 'failed' status),
+ * this supports resetting successfully completed tasks when their
+ * output conflicts with another task. Also works on 'failed' tasks.
+ */
+export function resetDoneTaskToRetry(state: DagExecutionState, taskId: string): DagTaskAssignment | null {
+  const item = state.tasks.get(taskId);
+  if (!item) return null;
+  if (item.status !== 'done' && item.status !== 'failed') return null;
+
+  item.status = 'queued';
+  item.retryCount += 1;
+  item.lastError = `File conflict — retrying (attempt ${item.retryCount})`;
+  state.summaryBroadcasted = false;
+
+  // Unblock any dependent tasks that only depended on this one
+  for (const childId of item.dependents) {
+    const child = state.tasks.get(childId);
+    if (!child || child.status !== 'blocked') continue;
+    const allDepsDone = child.task.dependsOn.every((depId) => {
+      if (depId === taskId) return true; // This one is being retried
+      return state.tasks.get(depId)?.status === 'done';
+    });
+    if (allDepsDone) {
+      child.status = 'waiting';
+    }
+  }
+
+  return toAssignment(item);
+}
+
 function toAssignment(item: DagExecutionItem): DagTaskAssignment {
   return { task: item.task, agentName: item.agentName, agentId: item.agentId };
 }

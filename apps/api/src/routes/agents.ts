@@ -1,11 +1,11 @@
 import { resolve } from 'path';
 import { existsSync, cpSync, mkdirSync, writeFileSync } from 'fs';
+import { resolveSkillSourceDir } from '../agent/AgentDirectoryManager.js';
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { encryptApiKey, decryptApiKey, maskApiKey } from '../lib/crypto.js';
-import { agentRuntime } from '../agent/AgentRuntime.js';
 import { presetSkills } from '../presetSkills.js';
 import { config } from '../config.js';
 import type { SkillDef } from '@agenthub/shared';
@@ -37,7 +37,7 @@ const updateSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
   description: z.string().min(1).max(500).optional(),
   systemPrompt: z.string().min(1).optional(),
-  provider: z.enum(['claude-code', 'opencode']).optional(),
+  provider: z.enum(['claude-code', 'codex']).optional(),
   providerConfig: z.record(z.unknown()).optional(),
   capabilities: z.record(z.unknown()).optional(),
   isActive: z.boolean().optional(),
@@ -49,7 +49,6 @@ const createSchema = z.object({
   displayName: z.string().min(1).max(64),
   description: z.string().min(1).max(500),
   systemPrompt: z.string().min(1).max(8000),
-  provider: z.enum(["claude-code", "opencode"]).optional(),
   skills: z.array(skillDefSchema).optional(),
 });
 
@@ -136,16 +135,19 @@ agents.post('/from-md', async (c) => {
   }
 
   const name = meta.name || `custom-${Date.now()}`;
-  const provider = meta.provider || 'claude-code';
+  const provider = (meta.provider as 'claude-code' | 'codex') || 'claude-code';
 
   if (!/^[a-z0-9-]+$/.test(name)) {
     return c.json({ error: 'name must be kebab-case' }, 400);
   }
 
-  // Runtime validation: reject unsupported providers
-  const VALID_PROVIDERS = ['claude-code', 'opencode'];
-  if (!VALID_PROVIDERS.includes(provider)) {
-    return c.json({ error: `Unknown provider: ${provider}. Supported: ${VALID_PROVIDERS.join(', ')}` }, 400);
+  // Codex requires API key — check User.encryptedApiKeys
+  if (provider === 'codex') {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { encryptedApiKeys: true } });
+    const keys = user?.encryptedApiKeys ? JSON.parse(user.encryptedApiKeys) : {};
+    if (!keys.codex) {
+      return c.json({ error: 'Codex provider requires an API key. Configure it in Provider Settings first.' }, 400);
+    }
   }
 
   // providerConfig: user-provided or platform defaults
@@ -168,7 +170,7 @@ agents.post('/from-md', async (c) => {
 
 function getDefaultProviderConfig(provider: string): Record<string, unknown> {
   if (provider === 'claude-code') return { model: 'claude-sonnet-4-6' };
-  if (provider === 'opencode') return { model: 'deepseek-chat' };
+  if (provider === 'codex') return { model: 'gpt-5' };
   return {};
 }
 
@@ -259,7 +261,6 @@ agents.post('/', async (c) => {
     const agent = await prisma.agent.create({
       data: {
         ...parsed.data,
-        providerConfig: getDefaultProviderConfig(parsed.data.provider || 'claude-code') as any,
         skills: skills as any,
         isActive: true,
         type: 'user',
@@ -308,9 +309,10 @@ agents.post('/:id/skills', async (c) => {
     const preset = presetMap.get(name);
     if (!preset) continue;
     const targetDir = resolve(skillsDir, name);
-    if (preset.sourceDir && existsSync(preset.sourceDir)) {
+    const srcDir = resolveSkillSourceDir(preset);
+    if (srcDir) {
       try {
-        cpSync(preset.sourceDir, targetDir, { recursive: true });
+        cpSync(srcDir, targetDir, { recursive: true });
       } catch (err: any) {
         console.warn(`[agents] Failed to copy skill dir for ${name}: ${err.message}`);
         mkdirSync(targetDir, { recursive: true });
@@ -349,22 +351,11 @@ agents.put('/:id', async (c) => {
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
 
   try {
-    // When provider is changed, reset providerConfig to the new provider's defaults
-    // and restart the in-memory agent so it picks up the new provider
-    let mergedConfig = (parsed.data.providerConfig as any) || undefined;
-    if (parsed.data.provider) {
-      const existing = await prisma.agent.findUnique({ where: { id }, select: { provider: true, providerConfig: true } });
-      if (existing && parsed.data.provider !== existing.provider) {
-        mergedConfig = getDefaultProviderConfig(parsed.data.provider);
-        await agentRuntime.restartProvider(id);
-      }
-    }
-
     const agent = await prisma.agent.update({
       where: { id },
       data: {
         ...parsed.data,
-        providerConfig: mergedConfig,
+        providerConfig: parsed.data.providerConfig as any,
         capabilities: parsed.data.capabilities as any,
         skills: parsed.data.skills as any,
       },
@@ -418,10 +409,12 @@ agents.delete('/:id', async (c) => {
     broadcast(sa.sessionId, { type: 'agent_removed', agentId: id, sessionId: sa.sessionId });
   }
 
-  // Remove from all groups + soft-delete in a single transaction
+  // Remove from all groups + hard-delete in a single transaction.
+  // Hard delete (not soft) because all resources are already cleaned up above
+  // and the unique constraint on `name` would block re-creation with the same name.
   await prisma.$transaction([
     prisma.sessionAgent.deleteMany({ where: { agentId: id } }),
-    prisma.agent.update({ where: { id }, data: { isActive: false } }),
+    prisma.agent.delete({ where: { id } }),
   ]);
 
   return c.body(null, 204);

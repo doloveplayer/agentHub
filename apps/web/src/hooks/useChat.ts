@@ -41,7 +41,7 @@ export function useChat(sessionId: string) {
     const memberIds = new Set(((session as any)?.agents || []).map((sa: any) => sa.agentId));
     return agents.filter((a) => memberIds.has(a.id));
   }, [agents, sessions, sessionId]);
-  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, removeTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addReviewReport, addToast } = useAppStore();
+  const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, removeTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addReviewReport, addToast, addResolvedPermission } = useAppStore();
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {
     if (!token || !sessionId) return Promise.reject(new Error('No token or sessionId'));
@@ -165,8 +165,13 @@ export function useChat(sessionId: string) {
                   id: data.permissionId || 'perm-' + Date.now(),
                   type: 'permission_request',
                   timestamp: data.timestamp || Date.now(),
-                  details: { tool: data.tool, path: data.path, permissionId: data.permissionId },
+                  details: { tool: data.tool, path: data.path, permissionId: data.permissionId, toolInput: data.toolInput, oldContent: data.oldContent },
                 });
+              }
+              break;
+            case 'permission_resolved':
+              if (data.permissionId) {
+                addResolvedPermission(data.permissionId);
               }
               break;
             case 'agent_status': {
@@ -178,11 +183,13 @@ export function useChat(sessionId: string) {
               // Transition queued → streaming when agent starts processing
               if (data.status === 'running' && data.agentMessageId) {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
+                const store = useAppStore.getState();
+                const msg = store.messages[targetSessionId]?.find(m => m.id === data.agentMessageId);
+                // Guard: don't flip terminal-status messages back to streaming
+                if (msg && (msg.status === 'done' || msg.status === 'error')) break;
                 // Touch session updatedAt for sort order on activity
                 useAppStore.getState().updateSessionInList(targetSessionId, { updatedAt: new Date().toISOString() });
                 // Replace queued placeholder with empty content so stream_chunk appends cleanly
-                const store = useAppStore.getState();
-                const msg = store.messages[targetSessionId]?.find(m => m.id === data.agentMessageId);
                 if (msg?.status === 'queued') {
                   useAppStore.getState().replaceMessageContent(targetSessionId, data.agentMessageId, '');
                 }
@@ -276,8 +283,9 @@ export function useChat(sessionId: string) {
                       status: 'streaming',
                       createdAt: new Date().toISOString(),
                     } as Message);
-                    store.addStreamingMessage(sessionId, data.taskMessageId);
                   }
+                  // Always register for streaming block (idempotent — no-op if already added)
+                  store.addStreamingMessage(sessionId, data.taskMessageId);
                 }
               }
               break;
@@ -307,13 +315,13 @@ export function useChat(sessionId: string) {
             case 'conflict_resolved': {
               const crStore = useAppStore.getState();
               const mergedFiles = (data.files || []).map((f: any) =>
-                f.filePath
-              ).join(', ');
+                `  - ${f.filePath} (auto-merged from ${f.agents.join(', ')})`
+              ).join('\n');
               const crMsg: Message = {
                 id: 'cr-' + Date.now(),
                 sessionId,
-                senderType: 'system',
-                content: `Auto-merged: ${mergedFiles}`,
+                senderType: 'agent',
+                content: `## Auto-Merge Succeeded\n\nNon-overlapping changes automatically merged:\n${mergedFiles}`,
                 status: 'done',
                 createdAt: new Date().toISOString(),
               };
@@ -323,16 +331,32 @@ export function useChat(sessionId: string) {
             case 'conflict_unresolved': {
               const cuStore = useAppStore.getState();
               const conflictingFiles = (data.files || []).map((f: any) =>
-                f.filePath
-              ).join(', ');
+                `  - ${f.filePath} (conflict between ${f.agents.join(', ')})`
+              ).join('\n');
+
+              // Extract planId and taskIds from taskContext
+              const taskContext = data.taskContext || [];
+              const planId = taskContext[0]?.agentTasks?.find((a: any) => a.planId)?.planId;
+              const taskIds = taskContext.flatMap((tc: any) =>
+                (tc.agentTasks || []).map((at: any) => at.taskId).filter(Boolean)
+              );
+              const dedupedTaskIds = [...new Set<string>(taskIds)];
+
+              const actionsBlock = planId && dedupedTaskIds.length > 0
+                ? `\n\n**Plan**: ${planId}\n**Conflicting tasks**: ${dedupedTaskIds.join(', ')}\n\nClick below to retry conflicting tasks sequentially.`
+                : '\n\nPlease check the affected files and resolve conflicts manually.';
+
               const cuMsg: Message = {
                 id: 'cu-' + Date.now(),
                 sessionId,
-                senderType: 'system',
-                content: `Merge conflict: ${conflictingFiles} — resolve manually`,
+                senderType: 'agent',
+                content: `## File Conflict — Auto-Merge Failed\n\nChanges overlap and could not be auto-merged:\n${conflictingFiles}${actionsBlock}`,
                 status: 'done',
                 createdAt: new Date().toISOString(),
-              };
+                metadata: planId && dedupedTaskIds.length > 0
+                  ? { conflictActions: { planId, taskIds: dedupedTaskIds } }
+                  : undefined,
+              } as any;
               cuStore.addMessage(sessionId, cuMsg);
               break;
             }

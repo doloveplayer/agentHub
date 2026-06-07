@@ -1,31 +1,29 @@
 import type { AgentEvent } from '../store/appStore';
 import type { SkillDef } from '@agenthub/shared';
 import { formatTokens } from '../lib/text';
+import { AgentAvatar } from './AgentAvatar';
 
 // ---- Face 1: Business Card ----
 export function FaceBusinessCard({
   displayName,
   description,
   capabilityTags,
-  avatarBg,
-  avatarLetter,
+  agentName,
+  status,
   providerCaps,
 }: {
   displayName: string;
   description: string;
   capabilityTags: string[];
-  avatarBg: string;
-  avatarLetter: string;
+  agentName?: string;
+  status?: 'running' | 'queued' | 'done' | 'idle';
+  avatarBg?: string;
+  avatarLetter?: string;
   providerCaps?: string;
 }) {
   return (
     <div className="flex flex-col items-center py-4 px-3 space-y-3">
-      <div
-        className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold text-white"
-        style={{ backgroundColor: avatarBg }}
-      >
-        {avatarLetter}
-      </div>
+      <AgentAvatar agentName={agentName || displayName} displayName={displayName} status={status || 'idle'} size={100} />
       <div className="text-center">
         <h3 className="text-body font-semibold text-hub-primary">{displayName}</h3>
         <p className="text-caption text-hub-tertiary mt-0.5">{description}</p>

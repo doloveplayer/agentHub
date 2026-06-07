@@ -76,7 +76,7 @@ export function PinnedPanel({ sessionId, wsPinnedEvents }: Props) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-[#1e1e1e]">
+    <div className="flex flex-col h-full bg-hub-root">
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {items.length === 0 ? (
           <div className="text-center text-hub-muted text-xs py-8">

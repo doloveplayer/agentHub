@@ -50,7 +50,7 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
     : '';
 
   return (
-    <div className={`flex gap-3 px-4 py-2.5 group ${isHuman ? 'flex-row-reverse' : ''}`}>
+    <div className={`flex gap-3 px-4 py-2.5 group animate-fade-in-up ${isHuman ? 'flex-row-reverse' : ''}`}>
       <div
         className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-xs font-semibold shadow-sm"
         style={{ backgroundColor: isHuman ? 'var(--accent-primary)' : (color ?? 'var(--bg-raised)'), color: '#fff' }}
@@ -98,8 +98,8 @@ export function MessageBubble({ message, isStreaming, agentDisplayName, agentNam
         </div>
         <div className={`rounded-hub-2xl px-4 py-2.5 text-sm leading-relaxed w-fit max-w-full ${
           isHuman
-            ? message.status === 'error' ? 'bg-hub-accent border border-hub-danger/40 text-white rounded-tr-hub-md' : 'bg-hub-accent text-white rounded-tr-hub-md'
-            : message.status === 'error' ? 'bg-hub-raised border border-hub-danger/40 text-hub-primary rounded-tl-hub-md' : 'bg-hub-raised border border-hub text-hub-primary rounded-tl-hub-md'
+            ? message.status === 'error' ? 'bg-hub-sidebar border-2 border-hub-danger/40 text-hub-primary rounded-tr-hub-md' : 'bg-hub-sidebar border border-hub text-hub-primary rounded-tr-hub-md'
+            : message.status === 'error' ? 'bg-hub-sidebar border-2 border-hub-danger/40 text-hub-primary rounded-tl-hub-md' : 'bg-hub-sidebar border border-hub text-hub-primary rounded-tl-hub-md'
         }`}>
           {message.content ? (
             <div className="markdown-content">

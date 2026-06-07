@@ -3,6 +3,7 @@ import { Square, Settings, UserPlus } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import type { AgentEvent } from '../store/appStore';
 import { FaceBusinessCard, FaceTerminalLog, FaceDashboard, FaceSkillCapabilities } from './AgentCardFaces';
+import { AgentAvatar } from './AgentAvatar';
 import type { AgentProvider } from '@agenthub/shared';
 import { calcContextPct } from '@agenthub/shared/constants';
 
@@ -83,7 +84,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   // providerConfig may be a JSON string (Prisma Json type) or an object
   const rawConfig = (agentConfig as any)?.providerConfig;
   const pConfig = typeof rawConfig === 'string' ? (() => { try { return JSON.parse(rawConfig); } catch { return {}; } })() : (rawConfig || {});
-  const model = pConfig.model || 'deepseek-v4-pro';
+  const model = pConfig.model || 'claude-sonnet-4-20250514';
   const thinkingLevel = pConfig.thinking ? 'high' : 'off';
 
   // Dashboard data - prioritize real-time events, fallback to persisted data
@@ -131,10 +132,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
         onClick={() => setExpanded(true)}
         className="bg-hub-surface border-hub rounded-hub-lg mb-2 px-3 py-2 flex items-center gap-2 cursor-pointer hover:bg-hub-hover transition"
       >
-        <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ backgroundColor: avatarBg }}>
-          {avatarLetter}
-        </div>
-        <span className="text-caption font-medium text-hub-secondary truncate">{displayName}</span>
+        <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white flex-shrink-0" style={{ backgroundColor: avatarBg }}>{avatarLetter}</div>
         <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${badge.cls}`}>{badge.label}</span>
       </div>
     );
@@ -144,13 +142,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
     <div className="bg-hub-surface border-hub rounded-hub-lg mb-2.5 overflow-hidden">
       {/* ---- Fixed Header ---- */}
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-hub">
-        <div
-          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-          style={{ backgroundColor: avatarBg }}
-        >
-          {avatarLetter}
-        </div>
-        <span className="text-body font-semibold text-hub-primary truncate">{displayName}</span>
+        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0" style={{ backgroundColor: avatarBg }}>{avatarLetter}</div>
         <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${providerInfo.color}`}>
           {providerInfo.label}
         </span>
@@ -222,8 +214,8 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
             displayName={displayName}
             description={(agentConfig as any)?.description || ''}
             capabilityTags={capabilityTags}
-            avatarBg={avatarBg}
-            avatarLetter={avatarLetter}
+            agentName={agentName}
+            status={status}
             providerCaps={providerInfo.caps}
           />
         )}

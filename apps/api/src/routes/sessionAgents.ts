@@ -22,11 +22,23 @@ sessionAgents.post('/:sessionId/agents', async (c) => {
   const parsed = addSchema.safeParse(await c.req.json().catch(() => ({})));
   if (!parsed.success) return c.json({ error: 'Invalid input', details: parsed.error.flatten() }, 400);
 
+  // Pre-load existing session agents for duplicate displayName check
+  const existingAgents = await prisma.sessionAgent.findMany({
+    where: { sessionId },
+    include: { agent: { select: { displayName: true } } },
+  });
+  const existingDisplayNames = new Set(existingAgents.map(sa => sa.agent.displayName.toLowerCase()));
+
   const added: string[] = [];
   for (const agentId of parsed.data.agentIds) {
     const agent = await prisma.agent.findUnique({ where: { id: agentId } });
     if (!agent || !agent.isActive) continue;
     if (agent.type !== 'user' || agent.createdBy !== userId) continue;
+
+    // Prevent duplicate displayNames in the same session
+    if (existingDisplayNames.has(agent.displayName.toLowerCase())) {
+      return c.json({ error: `Agent "${agent.displayName}" already exists in this session` }, 409);
+    }
 
     await prisma.sessionAgent.upsert({
       where: { sessionId_agentId: { sessionId, agentId } },
@@ -34,6 +46,7 @@ sessionAgents.post('/:sessionId/agents', async (c) => {
       update: {},
     });
     added.push(agentId);
+    existingDisplayNames.add(agent.displayName.toLowerCase());
   }
 
   // Broadcast to all session clients

@@ -27,7 +27,13 @@ export const workspaceModes = new Map<string, WorkspaceMode>();
 
 /** sessionId → active agent info (process + timer) */
 export interface AgentProcess {
-  process: { write(input: string): void; kill?(): void; stop?(): void };
+  process: {
+    write(input: string): void;
+    kill?(): void;
+    stop?(): void;
+    respondToPermission?(permissionId: string, allowed: boolean): void;
+    respondControlRequest?(requestId: string, allowed: boolean): void;
+  };
   timer: NodeJS.Timeout | null;
   agentId: string;
   agentName?: string;
@@ -134,6 +140,14 @@ export function populateSessionAgentNames(sessionId: string, agents: { name: str
 
 /** Permission timeouts */
 export const permissionTimeouts = new Map<string, NodeJS.Timeout>();
+
+/**
+ * Pending permission requests per session, keyed by routed permissionId.
+ * Used to auto-approve all pending requests when switching to trust mode.
+ * Entries are added in taskDispatcher on permission_request and removed on
+ * response or timeout.
+ */
+export const pendingPermissions = new Map<string, { sessionId: string; agentMessageId: string }>();
 function optionalPositiveInt(key: string): number | null {
   const raw = process.env[key];
   if (!raw) return null;

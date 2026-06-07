@@ -117,7 +117,6 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
   const [displayName, setDisplayName] = useState('');
   const [description, setDescription] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
-  const [provider, setProvider] = useState('claude-code');
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -163,7 +162,6 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
     setSearchQuery('');
     setError(null);
     setCreating(false);
-    setProvider('claude-code');
 
     // Pre-fill systemPrompt from the store (match by name, any type)
     const storeAgents = useAppStore.getState().agents;
@@ -266,7 +264,6 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
         displayName,
         description,
         systemPrompt,
-        provider,
         skills,
       });
 
@@ -338,7 +335,7 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-hub-surface rounded-hub-xl shadow-xl max-w-2xl w-full max-h-[85vh] flex flex-col">
+      <div className="glass-surface-heavy border border-hub rounded-hub-xl shadow-2xl max-w-2xl w-full max-h-[85vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-hub flex-shrink-0">
           <h2 className="text-body font-semibold text-hub-primary">Create Agent</h2>
@@ -434,25 +431,6 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
               placeholder="You are a helpful AI assistant..."
               className="w-full bg-hub-raised border border-hub rounded-hub-lg px-3 py-2 text-sm text-hub-primary placeholder:text-hub-muted font-mono resize-none focus:outline-none focus:border-hub-accent transition-colors"
             />
-          </div>
-
-          {/* ---------- Platform ---------- */}
-          <div>
-            <label
-              htmlFor="agent-platform"
-              className="text-[11px] font-semibold text-hub-tertiary uppercase tracking-wider mb-1.5 block"
-            >
-              Platform
-            </label>
-            <select
-              id="agent-platform"
-              value={provider}
-              onChange={(e) => setProvider(e.target.value)}
-              className="w-full bg-hub-raised border border-hub rounded-hub-lg px-3 py-2 text-sm text-hub-primary focus:outline-none focus:border-hub-accent transition-colors appearance-none cursor-pointer"
-            >
-              <option value="claude-code">Claude Code</option>
-              <option value="opencode">OpenCode (DeepSeek)</option>
-            </select>
           </div>
 
           {/* ---------- Skills ---------- */}

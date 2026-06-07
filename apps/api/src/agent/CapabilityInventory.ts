@@ -116,6 +116,7 @@ description: Current session agent capability inventory — available agents, th
   for (const sa of sessionAgents) {
     const caps = sa.agent.capabilities as Record<string, unknown> | null;
     md += `### ${sa.agent.displayName} (\`${sa.agent.name}\`)\n`;
+    md += `- **在对话中称呼为**: ${sa.agent.displayName}\n`;
     md += `- **ID**: ${sa.agentId}\n`;
     md += `- **Role**: ${sa.agent.description || 'No description'}\n`;
     if (caps?.allowedTools) {
@@ -126,7 +127,13 @@ description: Current session agent capability inventory — available agents, th
 
   md += `---
 
-## Schema Reference
+## 命名规则
+
+- **群聊对话中**：使用 displayName（如 "${sessionAgents[0]?.agent.displayName || 'Agent'}"）称呼 agent。用 @displayName 提及。
+- **plan.json 中**：agentType 字段必须使用 name（如 "${sessionAgents[0]?.agent.name || 'agent-name'}"），这是系统内部标识符。
+- 绝对不要在对话中使用 name 称呼 agent — 用户看到的是 displayName，不是 name。
+
+## Schema Reference (仅用于 plan.json 的 agentType 字段)
 
 When creating tasks, agentType MUST be one of:
 ${agentTypes.map((t: string) => `- \`${t}\``).join('\n')}

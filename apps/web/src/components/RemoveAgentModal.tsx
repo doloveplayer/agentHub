@@ -41,9 +41,9 @@ export function RemoveAgentModal({ sessionId, open, onClose }: Props) {
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/50 z-50" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50" onClick={onClose} />
       <div className="fixed inset-0 flex items-center justify-center z-50">
-        <div className="bg-hub-raised border border-hub rounded-hub-xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col m-4">
+        <div className="glass-surface-heavy border border-hub rounded-hub-xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col m-4">
           <div className="flex items-center justify-between px-5 py-4 border-b border-hub">
             <h2 className="text-base font-semibold text-hub-primary">Remove Agent from Group</h2>
             <button onClick={onClose} className="p-1 rounded hover:bg-hub-hover text-hub-tertiary">

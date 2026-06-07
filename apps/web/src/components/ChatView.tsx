@@ -35,6 +35,7 @@ const EMPTY_PLANS: Record<string, any[]> = {};
 const EMPTY_DIFF_CARDS: any[] = [];
 const EMPTY_DEPLOYMENT_CARDS: any[] = [];
 const EMPTY_TEST_REPORTS: any[] = [];
+const EMPTY_STR_ARR: string[] = [];
 const EMPTY_REVIEW_REPORTS: any[] = [];
 
 /** Renders ConfirmationPanel below a Planner agent's message (DAG lives in sidebar Tasks tab) */
@@ -116,7 +117,7 @@ const SessionHeader = React.memo(function SessionHeader({
   const currentPerm = permLabels[permissionMode] ?? permLabels.ask;
 
   return (
-    <div className="px-4 py-2 border-b border-hub flex items-center gap-2 bg-hub-surface relative z-10">
+    <div className="mx-2 mt-3 mb-4 px-4 py-2.5 flex items-center gap-2 flex-wrap min-h-[44px] bg-[oklch(0.88_0.003_95)] rounded-xl border border-hub shadow-sm relative z-10">
       {activeSession?.type === 'group' && (
         <>
           <button onClick={onAddAgents}
@@ -142,7 +143,7 @@ const SessionHeader = React.memo(function SessionHeader({
           <span className="text-[11px] px-2 py-0.5 rounded-full bg-hub-accent/10 border border-hub-accent/30 text-hub-accent font-medium">You</span>
           {sessionAgents.map((a) => (
             <span key={a.id}
-              className="text-xs px-2 py-0.5 rounded-full border text-hub-secondary"
+              className="text-[11px] px-2 py-0.5 rounded-full border text-hub-secondary max-w-[120px] truncate shrink-0"
               style={{ borderColor: agentColor(a.name), backgroundColor: agentColor(a.name) + '20' }}
             >
               {a.displayName}
@@ -161,7 +162,7 @@ const SessionHeader = React.memo(function SessionHeader({
           <ChevronDown className="w-3 h-3" />
         </button>
         {showPermDropdown && (
-          <div className="absolute top-full right-0 mt-1 bg-hub-raised border border-hub rounded-hub-lg shadow-xl z-50 w-36 overflow-hidden">
+          <div className="absolute top-full right-0 mt-1 glass-surface-heavy border border-hub rounded-hub-lg shadow-xl z-50 w-36 overflow-hidden">
             {Object.entries(permLabels).map(([key, { label, icon, color }]) => (
               <button
                 key={key}
@@ -193,6 +194,23 @@ const SessionHeader = React.memo(function SessionHeader({
   );
 });
 
+/** Inline conflict retry button shown below conflict_unresolved messages. */
+function ConflictRetryCard({ planId, taskIds, onRetry }: { planId: string; taskIds: string[]; onRetry: (planId: string, taskIds: string[]) => void }) {
+  const [clicked, setClicked] = useState(false);
+  return (
+    <div className="mx-4 my-1 bg-hub-danger/10 border border-hub-danger/30 rounded-hub-lg px-4 py-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-hub-secondary">Conflict tasks need retry</span>
+        <button
+          onClick={() => { setClicked(true); onRetry(planId, taskIds); }}
+          disabled={clicked}
+          className="ml-auto px-3 py-1 bg-hub-primary hover:bg-hub-primary/80 disabled:opacity-50 text-white text-xs rounded-md font-medium transition"
+        >{clicked ? 'Retrying...' : `Retry ${taskIds.length} Task(s) Sequentially`}</button>
+      </div>
+    </div>
+  );
+}
+
 /** Single message row with bubble, actions, agent info, and inline diff cards. Subscribes only to its own agentEvents. */
 const MessageItem = React.memo(function MessageItem({
   msg, agentDisplayName, agentName, onCopy, onQuote, onPin, onRegenerate, onDelete, respondToPermission,
@@ -205,6 +223,7 @@ const MessageItem = React.memo(function MessageItem({
   const events = useAppStore((s) => s.agentEvents[msg.id]);
   const allDiffCards = useAppStore((s) => s.diffCards[msg.sessionId]);
   const diffCards = useMemo(() => allDiffCards?.filter((c) => c.agentMessageId === msg.id) ?? EMPTY_DIFF_CARDS, [allDiffCards, msg.id]);
+  const storeResolvedIds = useAppStore((s) => s.resolvedPermissionIds);
   const [resolvedPermissions, setResolvedPermissions] = useState<Set<string>>(() => new Set());
 
   // Extract token usage
@@ -213,17 +232,6 @@ const MessageItem = React.memo(function MessageItem({
   const inputTokens = lastToken?.input ?? 0;
   const outputTokens = lastToken?.output ?? 0;
   const permissionReqs = events?.filter((ev) => ev.type === 'permission_request') ?? [];
-
-  // System notifications: compact centered banner
-  if (msg.senderType === 'system') {
-    return (
-      <div className="flex justify-center py-1.5 px-4">
-        <span className="text-[11px] text-hub-tertiary bg-hub-surface/50 rounded-full px-3 py-0.5">
-          {msg.content}
-        </span>
-      </div>
-    );
-  }
 
   return (
     <>
@@ -251,18 +259,47 @@ const MessageItem = React.memo(function MessageItem({
           )}
           {permissionReqs.map((ev) => {
             const pid = ev.details.permissionId ?? ev.id;
-            const resolved = resolvedPermissions.has(pid);
+            const resolved = resolvedPermissions.has(pid) || storeResolvedIds.has(pid);
+            // Hide the card entirely once resolved
+            if (resolved) return null;
+            const toolInput = (ev.details as any).toolInput as Record<string, unknown> | undefined;
+            const isWrite = ev.details.tool === 'Write' || ev.details.tool === 'Edit' || ev.details.tool === 'MultiEdit';
+            const filePath: string | undefined = ev.details.path || (typeof toolInput?.file_path === 'string' ? toolInput.file_path : undefined);
+            const newContent: string | undefined = typeof toolInput?.content === 'string' ? toolInput.content : undefined;
+            const oldContent: string | undefined = typeof toolInput?.oldContent === 'string' ? toolInput.oldContent : undefined;
             return (
               <div key={ev.id} className="bg-hub-warning/10 border border-hub-warning/30 rounded-hub-lg px-4 py-3 my-2 animate-pulse">
                 <div className="flex items-center gap-2 mb-2">
                   <Shield className="w-4 h-4 text-hub-warning" />
                   <span className="text-sm font-medium text-hub-warning">Permission Request</span>
+                  <span className="text-[10px] text-hub-muted ml-auto">{ev.details.tool}</span>
                 </div>
-                <div className="text-xs text-hub-tertiary space-y-1 mb-3">
-                  <div>Tool: <span className="text-hub-secondary font-mono">{ev.details.tool ?? 'unknown'}</span></div>
-                  {ev.details.path && <div>Path: <span className="text-hub-secondary font-mono">{ev.details.path}</span></div>}
-                </div>
-                {!resolved && msg.status === 'streaming' ? (
+                {filePath && <div className="text-xs text-hub-tertiary mb-2">Path: <span className="text-hub-secondary font-mono">{filePath}</span></div>}
+                {isWrite && (oldContent !== undefined || !!newContent) ? (
+                  <div className="mb-3 space-y-1">
+                    {oldContent !== undefined && (
+                      <details className="text-xs">
+                        <summary className="text-hub-tertiary cursor-pointer hover:text-hub-secondary">View diff (before → after)</summary>
+                        <div className="grid grid-cols-2 gap-1 mt-1 max-h-48 overflow-auto">
+                          <pre className="bg-hub-danger/10 text-hub-danger text-[10px] p-2 rounded whitespace-pre-wrap font-mono">{String(oldContent || '').slice(0, 3000) || '(new file)'}</pre>
+                          <pre className="bg-hub-success/10 text-hub-success text-[10px] p-2 rounded whitespace-pre-wrap font-mono">{String(newContent || '').slice(0, 3000) || '(no content)'}</pre>
+                        </div>
+                      </details>
+                    )}
+                    {oldContent === undefined && newContent && (
+                      <div className="text-xs text-hub-tertiary">
+                        New file <span className="font-mono text-hub-secondary">{filePath}</span> ({newContent.length} chars)
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  ev.details.tool === 'Bash' && typeof toolInput?.command === 'string' && (
+                    <div className="mb-3">
+                      <pre className="bg-hub-raised text-hub-secondary text-[10px] p-2 rounded whitespace-pre-wrap font-mono max-h-32 overflow-auto">{String(toolInput.command).slice(0, 2000)}</pre>
+                    </div>
+                  )
+                )}
+                {msg.status === 'streaming' ? (
                   <div className="flex gap-2">
                     <button onClick={() => { setResolvedPermissions(prev => new Set(prev).add(pid)); respondToPermission(pid, true); }}
                       className="px-4 py-1.5 bg-hub-success hover:bg-hub-success/80 text-white text-xs rounded-md font-medium transition">Allow</button>
@@ -270,7 +307,7 @@ const MessageItem = React.memo(function MessageItem({
                       className="px-4 py-1.5 bg-hub-danger hover:bg-hub-danger/80 text-white text-xs rounded-md font-medium transition">Deny</button>
                   </div>
                 ) : (
-                  <span className="text-xs text-hub-muted italic">{resolved ? 'Response sent' : 'Agent terminated — request expired'}</span>
+                  <span className="text-xs text-hub-muted italic">Agent terminated — request expired</span>
                 )}
               </div>
             );
@@ -313,6 +350,14 @@ export function ChatView() {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
   const agents = useAppStore((s) => s.agents);
+  const setAgents = useAppStore((s) => s.setAgents);
+
+  // Ensure agents are loaded when entering a session (handles race with loadSessions)
+  useEffect(() => {
+    if (agents.length === 0 && activeSessionId) {
+      api.getAgents().then(setAgents).catch(() => {});
+    }
+  }, [activeSessionId, agents.length, setAgents]);
 
   // useShallow: batch selectors to avoid re-render on reference change when content is same
   const [messages, taskPlans] = useAppStore(useShallow((s) => [
@@ -321,6 +366,7 @@ export function ChatView() {
   ]));
 
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
+  const streamingMessageIds = useAppStore((s) => s.streamingMessages[activeSessionId ?? ''] ?? EMPTY_STR_ARR);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [isNearBottom, setIsNearBottom] = useState(true);
@@ -471,15 +517,18 @@ export function ChatView() {
     const el = scrollContainerRef.current;
     if (!el) return;
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const near = dist < 80;
+    const near = dist < 120;
     setIsNearBottom(near);
-    if (near) setShowScrollButton(false);
+    setShowScrollButton(!near);
   }, []);
 
   // New messages arrived
   useEffect(() => {
     if (isNearBottom) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const prevLen = prevMessageLenRef.current;
+      // Instant scroll on initial load (many messages at once), smooth for new messages
+      const behavior: ScrollBehavior = prevLen === 0 ? 'instant' : 'smooth';
+      bottomRef.current?.scrollIntoView({ behavior });
     } else if (messages.length > prevMessageLenRef.current) {
       setShowScrollButton(true);
     }
@@ -620,7 +669,7 @@ export function ChatView() {
           hasMessages={messages.length > 0}
         />
         {/* Tab bar */}
-        <div className="flex border-b border-hub bg-hub-raised/50 text-xs">
+        <div className="flex border-b border-hub glass-surface-light text-xs">
           <button
             className={`px-4 py-1.5 font-medium transition-colors ${activeTab === 'chat' ? 'text-hub-accent border-b-2 border-hub-accent' : 'text-hub-muted hover:text-hub-secondary'}`}
             onClick={() => setActiveTab('chat')}
@@ -642,7 +691,7 @@ export function ChatView() {
         </div>
         {activeTab === 'pinned' ? (
           <div className="flex flex-col h-full">
-            <div className="flex items-center justify-between px-3 py-2 bg-[#252526] border-b border-white/10">
+            <div className="flex items-center justify-between px-3 py-2 glass-surface-light border-b border-hub">
               <span className="text-xs text-hub-secondary font-medium">Pinned Messages</span>
               <PinnedPinMenu
                 sessionId={activeSessionId!}
@@ -660,14 +709,6 @@ export function ChatView() {
         ) : (
         <div className="flex-1 overflow-y-auto chat-scroll" ref={scrollContainerRef} onScroll={handleChatScroll}>
           <RecoveryBanner sessionId={activeSessionId!} />
-          {showScrollButton && (
-            <div className="sticky top-2 z-10 flex justify-center">
-              <button onClick={scrollToBottom}
-                className="px-4 py-1.5 bg-hub-accent/90 hover:bg-hub-accent text-white text-xs rounded-full shadow-lg transition-all animate-bounce">
-                ↓ 新消息
-              </button>
-            </div>
-          )}
           {messages.map((msg: Message) => (
             <React.Fragment key={msg.id}>
               <MessageItem
@@ -681,6 +722,17 @@ export function ChatView() {
                 onDelete={() => handleDeleteMessage(msg)}
                 respondToPermission={respondToPermission}
               />
+              {/* Conflict retry button */}
+              {msg.senderType === 'agent' && (msg as any).metadata?.conflictActions && msg.status === 'done' && (
+                <ConflictRetryCard
+                  planId={(msg as any).metadata.conflictActions.planId}
+                  taskIds={(msg as any).metadata.conflictActions.taskIds}
+                  onRetry={async (planId, taskIds) => {
+                    const ws = await ensureConnection();
+                    ws.send(JSON.stringify({ type: 'conflict_retry', planId, taskIds }));
+                  }}
+                />
+              )}
               {msg.senderType === 'agent' && msg.agentId
                 && (agentMap.get(msg.agentId)?.name === 'planner' || agentMap.get(msg.agentId)?.name?.startsWith('planner-'))
                 && msg.status === 'done' && (
@@ -715,7 +767,17 @@ export function ChatView() {
         )}
         {activeTab === 'chat' && (
           <>
-            <MessageInput onSend={send} disabled={hasRunningAgent} mentionableAgents={mentionableAgents} />
+            {showScrollButton && (
+              <div className="flex justify-center -mb-1">
+                <button onClick={scrollToBottom}
+                  className="w-8 h-8 flex items-center justify-center bg-hub-surface border border-hub rounded-full shadow-md hover:bg-hub-hover transition-all"
+                  title="回到最新消息"
+                >
+                  <ChevronDown className="w-5 h-5 text-hub-accent" />
+                </button>
+              </div>
+            )}
+            <MessageInput onSend={send} disabled={hasRunningAgent} mentionableAgents={mentionableAgents} streamingMessageIds={streamingMessageIds} onStopAgent={stopAgent} />
             <QuoteToolbar selection={previewSelection} onDismiss={() => setPreviewSelection(null)} />
           </>
         )}
@@ -739,9 +801,9 @@ export function ChatView() {
 
       {/* Trust mode risk warning dialog */}
       {showTrustWarning && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowTrustWarning(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setShowTrustWarning(false)}>
           <div
-            className="bg-hub-raised border border-hub rounded-hub-xl shadow-2xl w-96 p-5"
+            className="glass-surface-heavy border border-hub rounded-hub-xl shadow-2xl w-96 p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2 mb-3">

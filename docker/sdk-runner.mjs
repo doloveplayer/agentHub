@@ -2,26 +2,20 @@
 /**
  * SDK runner — executes inside the sandbox Docker container via `docker exec`.
  *
- * Reads a prompt from a file, calls @anthropic-ai/claude-agent-sdk's query(),
- * and streams each SDK message as a JSON line to stdout.
+ * Permission flow:
+ *   canUseTool callback auto-approves all non-Write tools. For Write/Edit/
+ *   MultiEdit, it writes a custom_permission_request to stdout and waits
+ *   for the host (backend) to respond via stdin with JSON-Lines protocol.
  *
- * Env vars (set by host via docker exec -e):
- *   AGENTHUB_PROMPT_FILE       path to prompt file (required)
- *   AGENTHUB_PERMISSION_MODE   SDK permission mode (default: "default")
- *   AGENTHUB_ALLOWED_TOOLS     JSON array of allowed tool names (default: [])
- *   AGENTHUB_MODEL             model override (optional)
- *   AGENTHUB_RESUME_SESSION    session ID for --resume (optional)
- *   AGENTHUB_MAX_TURNS         max turns (optional)
- *   AGENTHUB_EFFORT            SDK effort level (optional)
- *   AGENTHUB_THINKING_EFFORT   thinking effort level (default: "high")
- *   AGENTHUB_THINKING_BUDGET   thinking budget_tokens (default: 16000, 0 = disabled)
+ *   The host writes {"permissionId":"perm-xxx","allowed":true} to stdin,
+ *   which is picked up by this runner's stdin handler and routed to the
+ *   correct canUseTool Promise via permissionResolvers.
  */
 
 import { createRequire } from 'module';
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
+import { resolve } from 'path';
 
-// ESM can't resolve globally-installed packages by name. Use createRequire to
-// locate the package, then import the resolved absolute path.
 const globalRequire = createRequire('/usr/local/lib/node_modules/');
 const sdkPath = globalRequire.resolve('@anthropic-ai/claude-agent-sdk');
 const { query } = await import(sdkPath);
@@ -46,7 +40,6 @@ const resumeSession = process.env.AGENTHUB_RESUME_SESSION || undefined;
 const maxTurns = process.env.AGENTHUB_MAX_TURNS ? parseInt(process.env.AGENTHUB_MAX_TURNS, 10) : undefined;
 const effort = process.env.AGENTHUB_EFFORT || process.env.AGENTHUB_THINKING_EFFORT || undefined;
 
-// Thinking config: enabled by default with 16000 budget_tokens
 const thinkingBudget = process.env.AGENTHUB_THINKING_BUDGET
   ? parseInt(process.env.AGENTHUB_THINKING_BUDGET, 10)
   : 16000;
@@ -56,9 +49,90 @@ let allowedTools = [];
 if (process.env.AGENTHUB_ALLOWED_TOOLS) {
   try {
     allowedTools = JSON.parse(process.env.AGENTHUB_ALLOWED_TOOLS);
-  } catch {
-    process.stderr.write('WARNING: AGENTHUB_ALLOWED_TOOLS is not valid JSON, ignoring\n');
+  } catch { /* ignore */ }
+}
+
+// Permission response queue: maps permissionId → resolver
+const permissionResolvers = new Map();
+
+// Read stdin for permission responses from the host
+let stdinBuffer = '';
+process.stdin.setEncoding('utf-8');
+process.stdin.on('data', (chunk) => {
+  stdinBuffer += chunk;
+  const lines = stdinBuffer.split('\n');
+  stdinBuffer = lines.pop() ?? '';
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const resp = JSON.parse(line);
+      if (resp.permissionId) {
+        const resolver = permissionResolvers.get(resp.permissionId);
+        if (resolver) {
+          permissionResolvers.delete(resp.permissionId);
+          resolver(resp);
+        }
+      }
+    } catch { /* ignore */ }
   }
+});
+process.stdin.resume();
+
+async function canUseTool(toolName, toolInput, options) {
+  const signal = options?.signal;
+  const WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
+
+  if (!WRITE_TOOLS.has(toolName)) {
+    return { behavior: 'allow', updatedInput: toolInput };
+  }
+
+  const permissionId = `perm-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const filePath = toolInput?.file_path || toolInput?.path || undefined;
+
+  // Read old content for diff (best-effort)
+  let oldContent = undefined;
+  if (filePath) {
+    const absPath = resolve('/workspace', filePath.startsWith('/') ? filePath.slice(1) : filePath);
+    if (absPath.startsWith('/workspace/') || absPath === '/workspace') {
+      try {
+        if (existsSync(absPath)) {
+          oldContent = readFileSync(absPath, 'utf-8').slice(0, 50000);
+        }
+      } catch { /* file may not exist yet */ }
+    }
+  }
+
+  // Write request to stdout
+  process.stdout.write(JSON.stringify({
+    type: 'custom_permission_request',
+    permissionId,
+    tool: toolName,
+    filePath,
+    input: toolInput,
+    oldContent,
+  }) + '\n');
+
+  // Wait for response, respecting the abort signal
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve({ behavior: 'deny', message: 'Permission check aborted by SDK' });
+      return;
+    }
+    const onAbort = () => {
+      permissionResolvers.delete(permissionId);
+      resolve({ behavior: 'deny', message: 'Permission check aborted by SDK' });
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    permissionResolvers.set(permissionId, (response) => {
+      signal?.removeEventListener('abort', onAbort);
+      if (response.allowed) {
+        resolve({ behavior: 'allow', updatedInput: toolInput });
+      } else {
+        resolve({ behavior: 'deny', message: 'Permission denied by user' });
+      }
+    });
+  });
 }
 
 const options = {
@@ -70,8 +144,8 @@ const options = {
   maxTurns,
   effort,
   thinking,
-  settingSources: ['project'],
   env: process.env,
+  canUseTool,
 };
 
 if (permissionMode === 'bypassPermissions') {

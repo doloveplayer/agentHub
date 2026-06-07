@@ -439,6 +439,7 @@ function ensureGitRepo(absPath: string): void {
     '_repl_prompt_*',
     '_env*',
     '_inbox_*',
+    '_comm_*',
     '.agenthub/',
     '.claude/',
     '',
@@ -489,7 +490,7 @@ function listWorkspaceChanges(absPath: string): string[] {
 const INTERNAL_DIRS = new Set(['.agenthub', '.git', 'node_modules', '.claude', '_agent_', '.sandboxes']);
 
 /** File prefixes that indicate agent-internal files (prompts, env, inter-agent comms) */
-const INTERNAL_PREFIXES = ['_prompt_', '_repl_prompt_', '_env', '_inbox_'];
+const INTERNAL_PREFIXES = ['_prompt_', '_repl_prompt_', '_env', '_inbox_', '_comm_'];
 
 function isUserWorkspacePath(filePath: string): boolean {
   if (!filePath) return false;

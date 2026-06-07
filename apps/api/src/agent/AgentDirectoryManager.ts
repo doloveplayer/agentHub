@@ -8,6 +8,17 @@ import { presetSkills, type PresetSkillDef } from '../presetSkills.js';
 
 const AGENTS_ROOT = config.agentContainer.hostRoot;
 
+/** Bundled skill source directories — shipped with the project, no host dependency */
+const SKILL_BUNDLE_DIR = resolve(import.meta.dirname, '..', 'skill-bundle');
+
+/** Resolve skill source directory: original sourceDir → bundled fallback → null */
+export function resolveSkillSourceDir(preset: PresetSkillDef): string | null {
+  if (preset.sourceDir && existsSync(preset.sourceDir)) return preset.sourceDir;
+  const bundled = resolve(SKILL_BUNDLE_DIR, preset.name);
+  if (existsSync(bundled)) return bundled;
+  return null;
+}
+
 /** Parse YAML frontmatter from a skill .md file to extract name and description. */
 function parseSkillFrontmatter(content: string): SkillDef {
   const match = content.match(/^---\n([\s\S]*?)\n---/);
@@ -53,10 +64,11 @@ ${systemPrompt}
       const presetMap = new Map(presetSkills.map(s => [s.name, s]));
       for (const skill of skills) {
         const preset = presetMap.get(skill.name) as PresetSkillDef | undefined;
-        if (preset?.sourceDir && existsSync(preset.sourceDir)) {
+        const srcDir = preset ? resolveSkillSourceDir(preset) : null;
+        if (srcDir) {
           const targetDir = resolve(skillsDir, skill.name);
           try {
-            cpSync(preset.sourceDir, targetDir, { recursive: true, force: true });
+            cpSync(srcDir, targetDir, { recursive: true, force: true });
           } catch (err: any) {
             console.warn(`[AgentDirectory] Failed to copy skill dir for ${skill.name}: ${err.message}`);
           }
@@ -262,9 +274,10 @@ ${plannerSkillsBlock}
       const presetMap = new Map(presetSkills.map(s => [s.name, s]));
       for (const skill of skills) {
         const preset = presetMap.get(skill.name) as PresetSkillDef | undefined;
-        if (preset?.sourceDir && existsSync(preset.sourceDir)) {
+        const srcDir = preset ? resolveSkillSourceDir(preset) : null;
+        if (srcDir) {
           try {
-            cpSync(preset.sourceDir, resolve(skillsDir, skill.name), { recursive: true, force: true });
+            cpSync(srcDir, resolve(skillsDir, skill.name), { recursive: true, force: true });
           } catch (err: any) {
             console.warn(`[AgentDirectory] Failed to copy skill dir for ${skill.name}: ${err.message}`);
           }

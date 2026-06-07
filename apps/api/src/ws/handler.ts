@@ -35,6 +35,7 @@ import {
   handleReplanRequest,
   handleForceCompleteTaskMsg,
   handleForceFailTaskMsg,
+  handleConflictRetry,
 } from './planHandlers.js';
 
 import {
@@ -160,7 +161,7 @@ async function handleConnection(ws: WebSocket, request: any) {
           planId: plan.planId,
           title: t.title,
           agentType: t.agentType,
-          status: t.status === 'done' ? 'done' : t.status === 'failed' ? 'failed' : t.status === 'blocked' ? 'blocked' : 'waiting',
+          status: ['done', 'failed', 'blocked', 'running', 'queued'].includes(t.status) ? t.status : 'waiting',
           dependsOn: t.dependsOn,
           expectedOutput: t.expectedOutput,
           priority: t.priority,
@@ -169,6 +170,27 @@ async function handleConnection(ws: WebSocket, request: any) {
           description: t.description,
         })),
       });
+    }
+    // Re-notify frontend about running tasks so streamingMessages gets repopulated
+    for (const plan of plans) {
+      for (const t of plan.tasks) {
+        if (t.status !== 'running') continue;
+        const taskMessageId = `task-${plan.planId}-${t.id}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+        broadcast(sessionId, {
+          type: 'task_assigned',
+          planId: plan.planId,
+          taskId: t.id,
+          agentName: t.agentName,
+          agentId: t.agentId,
+          taskMessageId,
+        });
+        broadcast(sessionId, {
+          type: 'agent_status',
+          status: 'running',
+          agentMessageId: taskMessageId,
+          timestamp: Date.now(),
+        });
+      }
     }
     if (plans.length > 0) {
       console.log(`[ws] Recovered ${plans.length} plan(s) for session=${sessionId.slice(0, 8)}`);
@@ -221,6 +243,7 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'approval_approve': handleApprovalApprove(sessionId, ws, data); break;
     case 'approval_reject': handleApprovalReject(sessionId, ws, data); break;
     case 'approval_reply': handleApprovalReply(sessionId, ws, data); break;
+    case 'conflict_retry': handleConflictRetry(sessionId, data); break;
     case 'recover_plan': handleRecoverPlan(sessionId, data, ws); break;
     case 'discard_plan': handleDiscardPlan(sessionId, data, ws); break;
     default: sendTo(ws, { type: 'error', message: `Unknown message type: ${data.type}` });

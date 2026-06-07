@@ -1,8 +1,11 @@
 import { useState, useRef } from 'react';
 import { useSettings } from '../hooks/useSettings';
+import { useAppStore } from '../store/appStore';
 
 export function AvatarUpload() {
-  const { user, uploadAvatar } = useSettings();
+  const { uploadAvatar } = useSettings();
+  const user = useAppStore((s) => s.user);
+  const setUser = useAppStore((s) => s.setUser);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
@@ -16,7 +19,12 @@ export function AvatarUpload() {
     setError('');
     const url = await uploadAvatar(file);
     setUploading(false);
-    if (!url) setError('Upload failed');
+    if (url) {
+      // Sync avatar URL to appStore so SessionList sidebar updates immediately
+      if (user) setUser({ ...user, avatarUrl: url });
+    } else {
+      setError('Upload failed');
+    }
   };
 
   return (
@@ -26,7 +34,7 @@ export function AvatarUpload() {
         style={{ borderColor: 'var(--border-subtle)' }}
         onClick={() => inputRef.current?.click()}
       >
-        {user.avatarUrl ? (
+        {user?.avatarUrl ? (
           <img src={user.avatarUrl} alt="avatar" className="w-full h-full object-cover" />
         ) : (
           <div

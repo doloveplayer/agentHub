@@ -18,6 +18,8 @@ build/
 # Claude Code local state
 .claude/
 .codex/
+.codegraph/
+.understand-anything/
 
 # IDE
 .vscode/
@@ -40,6 +42,10 @@ tmp/
 temp/
 *.tmp
 
+# Test files
+*.test.ts
+*.test.tsx
+
 # Dev utility scripts (contain dev secrets)
 apps/api/scripts/gen_token.ts
 docs/superpowers/plans/.archived
@@ -52,6 +58,10 @@ memory.md
 
 # Backup files
 PRD.backup.*.md
+PRD.md
+TESTCASES.md
 
 .superpowers/*
 testAgent/
+
+apps/api/uploads/*
