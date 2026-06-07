@@ -136,19 +136,10 @@ agents.post('/from-md', async (c) => {
   }
 
   const name = meta.name || `custom-${Date.now()}`;
-  const provider = (meta.provider as 'claude-code' | 'codex') || 'claude-code';
+  const provider = (meta.provider as 'claude-code' | 'opencode') || 'claude-code';
 
   if (!/^[a-z0-9-]+$/.test(name)) {
     return c.json({ error: 'name must be kebab-case' }, 400);
-  }
-
-  // Codex requires API key — check User.encryptedApiKeys
-  if (provider === 'codex') {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { encryptedApiKeys: true } });
-    const keys = user?.encryptedApiKeys ? JSON.parse(user.encryptedApiKeys) : {};
-    if (!keys.codex) {
-      return c.json({ error: 'Codex provider requires an API key. Configure it in Provider Settings first.' }, 400);
-    }
   }
 
   // providerConfig: user-provided or platform defaults
