@@ -18,6 +18,8 @@ build/
 # Claude Code local state
 .claude/
 .codex/
+.codegraph/
+.understand-anything/
 
 # IDE
 .vscode/
