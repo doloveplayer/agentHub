@@ -58,6 +58,8 @@ memory.md
 
 # Backup files
 PRD.backup.*.md
+PRD.md
+TESTCASES.md
 
 .superpowers/*
 testAgent/
