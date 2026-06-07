@@ -466,4 +466,24 @@ export const api = {
     if (!res.ok) throw new Error(`recoverPlans failed: ${res.status}`);
     return res.json();
   },
+
+  archivePlan: async (sessionId: string, planId: string): Promise<{ success: boolean }> => {
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${BASE_URL}/plans/${sessionId}/${planId}/archive`, {
+      method: 'POST', headers,
+    });
+    if (!res.ok) throw new Error(`archivePlan failed: ${res.status}`);
+    return res.json();
+  },
+
+  getPlanHistory: async (sessionId: string): Promise<{ plans: any[] }> => {
+    const token = getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${BASE_URL}/plans/${sessionId}/history`, { headers });
+    if (!res.ok) throw new Error(`getPlanHistory failed: ${res.status}`);
+    return res.json();
+  },
 };
