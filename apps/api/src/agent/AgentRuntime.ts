@@ -502,6 +502,7 @@ class AgentRuntime {
             { hostWorkDir: entry.hostWorkDir, trustMode: entry.trustMode, sessionPermissionMode: entry.sessionPermissionMode, agentName: entry.currentAgentName || undefined },
           );
 
+          entry.provider.removeAllListeners();
           entry.provider.onEvent((e: UnifiedAgentEvent) => {
             this.handleAgentEvent(agentId, entry, e);
           });

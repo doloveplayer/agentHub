@@ -1,6 +1,7 @@
 import type { PinnedMessage, SendResponse } from "@agenthub/shared";
 
 const BASE_URL = "/api";
+let isRedirectingToLogin = false;
 
 function getToken(): string | null {
   return localStorage.getItem("agenthub_token");
@@ -26,10 +27,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`${BASE_URL}${path}`, { ...options, headers });
   if (!res.ok) {
-    // On 401, clear stale token and redirect to login
+    // On 401, clear stale token and redirect to login (only once)
     if (res.status === 401) {
-      localStorage.removeItem("agenthub_token");
-      window.location.href = "/login";
+      if (!isRedirectingToLogin) {
+        isRedirectingToLogin = true;
+        localStorage.removeItem("agenthub_token");
+        window.location.href = "/login";
+      }
       throw new Error("Session expired — redirecting to login");
     }
     const err = await res.json().catch(() => ({ error: res.statusText }));

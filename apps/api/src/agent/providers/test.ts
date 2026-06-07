@@ -20,6 +20,7 @@ export class TestAgentProvider implements AbstractProvider {
   onEvent(handler: EventHandler): void {
     this.handlers.push(handler);
   }
+  removeAllListeners(): void { this.handlers = []; }
 
   async start(
     sessionId: string,

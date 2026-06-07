@@ -45,6 +45,7 @@ export class ClaudeCodeProvider implements AbstractProvider {
   private onSessionIdChange?: (sessionId: string) => void;
 
   onEvent(handler: EventHandler): void { this.handlers.push(handler); }
+  removeAllListeners(): void { this.handlers = []; }
 
   private emit(event: UnifiedAgentEvent): void {
     for (const h of this.handlers) {

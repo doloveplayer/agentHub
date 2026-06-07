@@ -336,7 +336,16 @@ agents.post('/:id/skills', async (c) => {
 
 // PUT /:id — update agent (MUST be AFTER fixed-path routes)
 agents.put('/:id', async (c) => {
+  const { userId } = c.get('user');
   const id = c.req.param('id');
+
+  // Ownership check
+  const existing = await prisma.agent.findUnique({ where: { id }, select: { createdBy: true, type: true } });
+  if (!existing) return c.json({ error: 'Agent not found' }, 404);
+  if (existing.type === 'user' && existing.createdBy !== userId) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
   const parsed = updateSchema.safeParse(body);

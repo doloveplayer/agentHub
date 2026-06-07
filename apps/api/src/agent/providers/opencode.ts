@@ -30,6 +30,7 @@ export class OpenCodeProvider implements AbstractProvider {
   onEvent(handler: EventHandler): void {
     this.handlers.push(handler);
   }
+  removeAllListeners(): void { this.handlers = []; }
 
   private emit(event: UnifiedAgentEvent): void {
     for (const h of this.handlers) {

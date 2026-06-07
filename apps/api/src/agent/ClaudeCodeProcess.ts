@@ -18,7 +18,6 @@ const SAFE_ENV_PREFIXES = [
   'DEBIAN_FRONTEND',             // System
 ];
 
-const ENV_BLOCKLIST_SUFFIXES = ['_TOKEN', '_SECRET', '_KEY', '_PASSWORD'];
 // Only pass Anthropic API credentials to the sandbox.
 // Proxy vars are intentionally excluded — the container uses --network host
 // and reaches external APIs directly via the host's internet connection.
@@ -56,9 +55,7 @@ function buildSafeEnv(): Record<string, string> {
     const upperKey = key.toUpperCase();
     if (upperKey === 'CLAUDE_CODE_SESSION_ID' || upperKey === 'CLAUDE_CODE_SSE_PORT') continue;
     const isWhitelisted = SAFE_ENV_PREFIXES.some((prefix) => upperKey.startsWith(prefix));
-    if (isWhitelisted) { safe[key] = value; continue; }
-    const blocked = ENV_BLOCKLIST_SUFFIXES.some((suffix) => upperKey.endsWith(suffix));
-    if (blocked) continue;
+    if (!isWhitelisted) continue;
     safe[key] = value;
   }
   const apiKey = Object.keys(safe).find(k => k.toUpperCase() === 'ANTHROPIC_API_KEY');
@@ -83,7 +80,7 @@ export function buildDockerEnvArgs(env: Record<string, string>): string[] {
     if (DOCKER_ENV_NAMES.has(key)) {
       args.push('-e', key);
       if (key === 'ANTHROPIC_BASE_URL') {
-        console.log(`[agent:env] Docker -e ${key}=${env[key]}`);
+        console.log(`[agent:env] Docker -e ${key}=<set>`);
       }
     }
   }

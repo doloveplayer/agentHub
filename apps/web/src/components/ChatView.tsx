@@ -322,7 +322,7 @@ const MessageItem = React.memo(function MessageItem({
   );
 }, (prev, next) => {
   // Custom comparator: only re-render if message content, status, or agent info changed
-  return prev.msg === next.msg
+  return prev.msg.id === next.msg.id
     && prev.msg.status === next.msg.status
     && prev.msg.content === next.msg.content
     && prev.agentDisplayName === next.agentDisplayName
@@ -390,7 +390,10 @@ export function ChatView() {
   useEffect(() => {
     const handler = (e: Event) => {
       const entry = (e as CustomEvent).detail;
-      if (entry) setCommLogEntries(prev => [...prev, entry]);
+      if (entry) setCommLogEntries(prev => {
+        const next = [...prev, entry];
+        return next.length > 500 ? next.slice(-500) : next;
+      });
     };
     window.addEventListener('comm_log', handler);
     return () => window.removeEventListener('comm_log', handler);
@@ -432,6 +435,8 @@ export function ChatView() {
       return stored ? new Set(JSON.parse(stored)) : new Set();
     } catch { return new Set(); }
   });
+  const dismissedPathsRef = useRef(dismissedPaths);
+  dismissedPathsRef.current = dismissedPaths;
 
   // Persist dismissedPaths to localStorage
   useEffect(() => {
@@ -469,7 +474,7 @@ export function ChatView() {
       }
 
       // Subsequent calls: find new files not in snapshot and not dismissed
-      const newFiles = allFiles.filter(f => !initialFilesRef.current.has(f.path) && !dismissedPaths.has(f.path));
+      const newFiles = allFiles.filter(f => !initialFilesRef.current.has(f.path) && !dismissedPathsRef.current.has(f.path));
       const previewable = newFiles.filter(f => /\.pptx$/i.test(f.name) || /\.html?$/i.test(f.name));
       previewable.sort((a, b) => b.modifiedAt - a.modifiedAt);
       const newest = previewable[0] ?? null;
@@ -481,7 +486,7 @@ export function ChatView() {
         setLatestArtifact(null);
       }
     } catch { /* sandbox not ready */ }
-  }, [activeSessionId, dismissedPaths]);
+  }, [activeSessionId]);
 
   const dismissArtifact = useCallback(() => {
     if (latestArtifact) {

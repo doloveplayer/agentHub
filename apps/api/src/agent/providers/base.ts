@@ -63,6 +63,7 @@ export interface AbstractProvider {
   write(input: string): void;
   stop(): void;
   onEvent(handler: EventHandler): void;
+  removeAllListeners(): void;
   isAlive(): boolean;
   getAgentHome(): string;
   updateTrustMode(mode: boolean): void;

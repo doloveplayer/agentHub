@@ -352,9 +352,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addAgentEvent: (messageId, event) =>
     set((state) => {
+      const prev = state.agentEvents[messageId] ?? [];
+      const next = [...prev, event];
+      // Cap at 200 events per message to prevent memory bloat
+      const capped = next.length > 200 ? next.slice(-200) : next;
       const nextAgentEvents = {
         ...state.agentEvents,
-        [messageId]: [...(state.agentEvents[messageId] ?? []), event],
+        [messageId]: capped,
       };
 
       if (event.type === 'skill_use') {

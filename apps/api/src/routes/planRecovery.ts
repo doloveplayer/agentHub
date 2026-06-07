@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
 import { prisma } from '../db/prisma.js';
 import { DagPersistence } from '../agent/DagPersistence.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 const planRecovery = new Hono();
+planRecovery.use('*', authMiddleware);
 
 // GET /api/plans/:sessionId/recover
 // Returns all non-terminal plans (executing, pending_confirmation) for a session.

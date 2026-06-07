@@ -8,7 +8,6 @@
   },
   "dependencies": {
     "@agenthub/shared": "*",
-    "@lottiefiles/react-lottie-player": "^3.6.0",
     "@monaco-editor/react": "^4.7.0",
     "@xyflow/react": "^12.10.2",
     "clsx": "^2.1.0",
