@@ -114,6 +114,7 @@ export const api = {
     displayName: string;
     description: string;
     systemPrompt: string;
+    provider?: string;
     skills?: import("@agenthub/shared").SkillDef[];
   }) =>
     request<any>("/agents", {
@@ -127,6 +128,7 @@ export const api = {
       displayName?: string;
       description?: string;
       systemPrompt?: string;
+      provider?: string;
       skills?: import("@agenthub/shared").SkillDef[] | null;
     },
   ) =>
