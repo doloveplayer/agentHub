@@ -451,7 +451,7 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
               className="w-full bg-hub-raised border border-hub rounded-hub-lg px-3 py-2 text-sm text-hub-primary focus:outline-none focus:border-hub-accent transition-colors appearance-none cursor-pointer"
             >
               <option value="claude-code">Claude Code</option>
-              <option value="opencode">OpenCode (DeepSeek)</option>
+              <option value="opencode">OpenCode</option>
             </select>
           </div>
 

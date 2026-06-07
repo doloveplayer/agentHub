@@ -253,7 +253,7 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
                          appearance-none cursor-pointer"
             >
               <option value="claude-code">Claude Code</option>
-              <option value="opencode">OpenCode (DeepSeek)</option>
+              <option value="opencode">OpenCode</option>
             </select>
             <p className="text-xs text-hub-tertiary mt-1">
               Select which AI platform this agent uses. Changing the platform takes effect immediately after saving.
