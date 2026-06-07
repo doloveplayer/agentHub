@@ -371,37 +371,109 @@ function ActivePlanView({ onReplanTask, onForceComplete, onForceFail }: {
   const taskPlans = useAppStore((s) => activeSessionId ? (s.taskPlans[activeSessionId] ?? EMPTY_TASK_PLANS) : EMPTY_TASK_PLANS);
   const planSummaries = useAppStore((s) => activeSessionId ? (s.planSummaries[activeSessionId] ?? EMPTY_PLAN_SUMMARIES) : EMPTY_PLAN_SUMMARIES);
   const removeTaskPlan = useAppStore((s) => s.removeTaskPlan);
+  const [showHistory, setShowHistory] = useState(false);
+  const [historyPlans, setHistoryPlans] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const handleArchive = async (planId: string) => {
+    if (!activeSessionId) return;
+    removeTaskPlan(activeSessionId, planId);
+    try { await api.archivePlan(activeSessionId, planId); } catch (e) { console.warn('[archive] failed:', e); }
+  };
+
+  const loadHistory = async () => {
+    if (!activeSessionId) return;
+    setHistoryLoading(true);
+    try {
+      const res = await api.getPlanHistory(activeSessionId);
+      setHistoryPlans(res.plans ?? []);
+    } catch (e) { console.warn('[history] failed:', e); }
+    finally { setHistoryLoading(false); }
+  };
+
+  const toggleHistory = () => {
+    const next = !showHistory;
+    setShowHistory(next);
+    if (next && historyPlans.length === 0) loadHistory();
+  };
+
   const plans = Object.entries(taskPlans);
-  if (plans.length === 0 && Object.keys(planSummaries).length === 0) {
-    return <p className="text-footnote text-white/25 text-center py-4">No active task plans</p>;
+  const hasContent = plans.length > 0 || Object.keys(planSummaries).length > 0;
+
+  if (!hasContent && !showHistory) {
+    return (
+      <div className="text-center py-4 space-y-2">
+        <p className="text-footnote text-white/25">No active task plans</p>
+        <button onClick={toggleHistory}
+          className="text-xs text-hub-accent hover:text-hub-accent/80 underline underline-offset-2">
+          查看历史任务
+        </button>
+      </div>
+    );
   }
+
   return (
     <div className="space-y-2">
-      {plans.map(([planId, tasks]) => (
-        <div key={planId}>
-          <TaskCard planId={planId}
-            planTitle="Active Plan" summary={`${tasks.length} tasks`} tasks={tasks}
-            onReplan={onReplanTask ? (taskId: string) => onReplanTask(planId, taskId) : undefined}
-            onForceComplete={onForceComplete ? (taskId: string) => onForceComplete(planId, taskId) : undefined}
-            onForceFail={onForceFail ? (taskId: string) => onForceFail(planId, taskId) : undefined}
-            onDismiss={activeSessionId ? (pid: string) => removeTaskPlan(activeSessionId, pid) : undefined} />
-          {planSummaries[planId] && (
-            <div className="mt-1 px-3 py-2 rounded-md bg-hub-surface text-caption">
-              <div className="text-hub-secondary font-medium mb-1">Plan Summary</div>
-              <div className="flex gap-3 text-hub-tertiary">
-                <span className="text-hub-success">{planSummaries[planId].completed} done</span>
-                {planSummaries[planId].failed > 0 && <span className="text-hub-danger">{planSummaries[planId].failed} failed</span>}
-                <span>{planSummaries[planId].total - planSummaries[planId].completed - planSummaries[planId].failed} remaining</span>
+      {/* Toggle button */}
+      <div className="flex justify-end px-2">
+        <button onClick={toggleHistory}
+          className={`text-xs px-2 py-1 rounded transition ${showHistory ? 'bg-hub-accent/20 text-hub-accent' : 'text-hub-muted hover:text-hub-accent hover:bg-hub-accent/10'}`}>
+          {showHistory ? '当前任务' : '全部历史'}
+        </button>
+      </div>
+
+      {showHistory ? (
+        /* History view */
+        <div className="space-y-2">
+          {historyLoading ? (
+            <p className="text-footnote text-white/25 text-center py-4">加载中...</p>
+          ) : historyPlans.length === 0 ? (
+            <p className="text-footnote text-white/25 text-center py-4">暂无历史任务</p>
+          ) : (
+            historyPlans.map((plan: any) => (
+              <div key={plan.planId}>
+                <TaskCard planId={plan.planId}
+                  planTitle={plan.planTitle || 'Plan'}
+                  summary={`${plan.tasks?.length ?? 0} tasks · ${plan.status}`}
+                  tasks={(plan.tasks ?? []).map((t: any) => ({ ...t, taskId: t.id }))}
+                  onArchive={(pid: string) => {
+                    handleArchive(pid);
+                    setHistoryPlans(prev => prev.filter(p => p.planId !== pid));
+                  }} />
               </div>
-              {planSummaries[planId].fileChanges.length > 0 && (
-                <div className="mt-1 text-hub-muted truncate">
-                  Files: {planSummaries[planId].fileChanges.join(', ')}
+            ))
+          )}
+        </div>
+      ) : (
+        /* Active plans view */
+        <>
+          {plans.map(([planId, tasks]) => (
+            <div key={planId}>
+              <TaskCard planId={planId}
+                planTitle="Active Plan" summary={`${tasks.length} tasks`} tasks={tasks}
+                onReplan={onReplanTask ? (taskId: string) => onReplanTask(planId, taskId) : undefined}
+                onForceComplete={onForceComplete ? (taskId: string) => onForceComplete(planId, taskId) : undefined}
+                onForceFail={onForceFail ? (taskId: string) => onForceFail(planId, taskId) : undefined}
+                onArchive={handleArchive} />
+              {planSummaries[planId] && (
+                <div className="mt-1 px-3 py-2 rounded-md bg-hub-surface text-caption">
+                  <div className="text-hub-secondary font-medium mb-1">Plan Summary</div>
+                  <div className="flex gap-3 text-hub-tertiary">
+                    <span className="text-hub-success">{planSummaries[planId].completed} done</span>
+                    {planSummaries[planId].failed > 0 && <span className="text-hub-danger">{planSummaries[planId].failed} failed</span>}
+                    <span>{planSummaries[planId].total - planSummaries[planId].completed - planSummaries[planId].failed} remaining</span>
+                  </div>
+                  {planSummaries[planId].fileChanges.length > 0 && (
+                    <div className="mt-1 text-hub-muted truncate">
+                      Files: {planSummaries[planId].fileChanges.join(', ')}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          )}
-        </div>
-      ))}
+          ))}
+        </>
+      )}
     </div>
   );
 }
