@@ -165,7 +165,7 @@ export const config = {
 
   defaultAdmin: {
     username: optional('ADMIN_USERNAME', 'admin'),
-    password: optional('ADMIN_PASSWORD', '123456'),
+    password: required('ADMIN_PASSWORD'),
   },
 
   redis: {
