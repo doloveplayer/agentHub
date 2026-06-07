@@ -422,17 +422,27 @@ export function ChatView() {
   }, [activeSessionId]);
 
   // New artifact detection — snapshot-based: only show files created AFTER session starts
+  const DISMISSED_KEY = 'agenthub_dismissed_artifacts';
   const initialFilesRef = useRef<Set<string>>(new Set());
   const snapshotReadyRef = useRef(false);
   const [latestArtifact, setLatestArtifact] = useState<{ path: string; name: string; type: 'pptx' | 'html' } | null>(null);
-  const [dismissedPaths, setDismissedPaths] = useState<Set<string>>(new Set());
+  const [dismissedPaths, setDismissedPaths] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(DISMISSED_KEY);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
 
-  // Reset snapshot when session changes
+  // Persist dismissedPaths to localStorage
+  useEffect(() => {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissedPaths]));
+  }, [dismissedPaths]);
+
+  // Reset snapshot when session changes (keep dismissedPaths — persisted via localStorage)
   useEffect(() => {
     initialFilesRef.current = new Set();
     snapshotReadyRef.current = false;
     setLatestArtifact(null);
-    setDismissedPaths(new Set());
   }, [activeSessionId]);
 
   const scanNewArtifacts = useCallback(async () => {
