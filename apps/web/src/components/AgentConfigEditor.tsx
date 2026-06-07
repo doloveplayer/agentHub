@@ -29,6 +29,7 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
   const [description, setDescription] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [skills, setSkills] = useState<EditableSkill[]>([]);
+  const [provider, setProvider] = useState('claude-code');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -49,6 +50,7 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
       setDescription(a.description || '');
       setSystemPrompt(a.systemPrompt);
       setSkills((a.skills || []) as EditableSkill[]);
+      setProvider(a.provider || 'claude-code');
       setLoading(false);
       initializedFor.current = agentId;
     }
@@ -67,6 +69,7 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
         displayName,
         description,
         systemPrompt,
+        provider,
         skills: cleanSkills.length > 0 ? cleanSkills : null,
       });
       // Update agents store
@@ -235,6 +238,26 @@ export function AgentConfigEditor({ agentId, onClose, onSaved }: Props) {
               className="w-full h-36 px-3 py-2 rounded-lg bg-hub-raised border border-hub
                          text-hub-primary text-sm font-mono resize-none focus:border-hub-accent focus:outline-none"
             />
+          </div>
+
+          {/* Provider Selector */}
+          <div>
+            <label className="text-sm font-medium text-hub-primary mb-2 block">
+              Platform
+            </label>
+            <select
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-hub-raised border border-hub
+                         text-hub-primary text-sm focus:border-hub-accent focus:outline-none
+                         appearance-none cursor-pointer"
+            >
+              <option value="claude-code">Claude Code</option>
+              <option value="opencode">OpenCode (DeepSeek)</option>
+            </select>
+            <p className="text-xs text-hub-tertiary mt-1">
+              Select which AI platform this agent uses. Changing the platform takes effect immediately after saving.
+            </p>
           </div>
 
           {/* Skills */}

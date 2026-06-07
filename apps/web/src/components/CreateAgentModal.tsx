@@ -119,6 +119,7 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
   const [systemPrompt, setSystemPrompt] = useState('');
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
+  const [provider, setProvider] = useState('claude-code');
 
   // ---- UI state ----
   const [creating, setCreating] = useState(false);
@@ -160,6 +161,7 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
     setSystemPrompt('');
     setSelectedSkills(new Set(['karpathy-guidelines']));
     setSearchQuery('');
+    setProvider('claude-code');
     setError(null);
     setCreating(false);
 
@@ -264,6 +266,7 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
         displayName,
         description,
         systemPrompt,
+        provider,
         skills,
       });
 
@@ -431,6 +434,25 @@ export function CreateAgentModal({ open, onClose, groupSessionId, onCreated }: P
               placeholder="You are a helpful AI assistant..."
               className="w-full bg-hub-raised border border-hub rounded-hub-lg px-3 py-2 text-sm text-hub-primary placeholder:text-hub-muted font-mono resize-none focus:outline-none focus:border-hub-accent transition-colors"
             />
+          </div>
+
+          {/* ---------- Platform ---------- */}
+          <div>
+            <label
+              htmlFor="agent-platform"
+              className="text-[11px] font-semibold text-hub-tertiary uppercase tracking-wider mb-1.5 block"
+            >
+              Platform
+            </label>
+            <select
+              id="agent-platform"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="w-full bg-hub-raised border border-hub rounded-hub-lg px-3 py-2 text-sm text-hub-primary focus:outline-none focus:border-hub-accent transition-colors appearance-none cursor-pointer"
+            >
+              <option value="claude-code">Claude Code</option>
+              <option value="opencode">OpenCode (DeepSeek)</option>
+            </select>
           </div>
 
           {/* ---------- Skills ---------- */}
