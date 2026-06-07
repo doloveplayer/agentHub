@@ -47,20 +47,33 @@ cp .env.example .env
 `.env` 中必须配置：
 
 ```bash
-# 数据库
-POSTGRES_USER=agenthub
-POSTGRES_PASSWORD=your_secure_password
+# 数据库连接（应用层必配）
 DATABASE_URL=postgresql://agenthub:your_secure_password@localhost:5432/agenthub
 
-# JWT（用于会话认证）
+# JWT 密钥（用于会话认证，务必使用随机字符串）
 JWT_SECRET=your_random_secret_string
 
-# 管理员账号
-ADMIN_USERNAME=admin
+# 管理员密码（必配，无默认值）
 ADMIN_PASSWORD=your_secure_password
+```
 
-# AI Provider（至少配置一个）
+可选配置（有合理默认值）：
+
+```bash
+# 数据库凭据（docker-compose 使用，本地开发可保持默认）
+POSTGRES_USER=agenthub
+POSTGRES_PASSWORD=your_secure_password
+
+# 管理员用户名（默认 admin）
+ADMIN_USERNAME=admin
+
+# AI Provider（至少配置一个 token）
 ANTHROPIC_AUTH_TOKEN=your_anthropic_api_key
+
+# 其他可选
+PORT=3000
+REDIS_URL=redis://localhost:6379
+HTTPS_PROXY=
 ```
 
 ### 启动
