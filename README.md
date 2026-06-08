@@ -1,56 +1,71 @@
-<div align="center">
+<h1 align="center">AgentHub</h1>
+<p align="center">
+  <strong>智能多 Agent 协作中枢 — IM 风格的 Web 聊天应用，作为多个 AI 编程 Agent 的统一管理和调度平台</strong>
+  <br />
+  <em>支持 Claude Code、OpenCode 等多种 Agent Provider，DAG 任务编排，Docker 沙箱隔离。</em>
+</p>
 
-<img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white">
-<img src="https://img.shields.io/badge/Hono-4.6-ff6b35?style=flat">
-<img src="https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react&logoColor=black">
-<img src="https://img.shields.io/badge/Prisma-5.22-2D3748?style=flat&logo=prisma&logoColor=white">
-<img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white">
-<img src="https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white">
-<img src="https://img.shields.io/badge/WebSocket-ws-000?style=flat">
-<img src="https://img.shields.io/badge/Zustand-5.0-8B5CF6?style=flat">
-<img src="https://img.shields.io/badge/TailwindCSS-3.4-06B6D4?style=flat&logo=tailwindcss&logoColor=white">
+<p align="center">
+  <a href="https://github.com/doloveplayer/agentHub/blob/master/index.html"><img src="https://img.shields.io/badge/项目介绍页-HTML-oklch(0.50_0.12_185)?style=flat-square" alt="Project Page" /></a>
+  <a href="https://github.com/doloveplayer/agentHub/blob/master/LICENSE"><img src="https://img.shields.io/badge/许可证-MIT-yellow?style=flat-square" alt="License: MIT" /></a>
+  <a href="https://github.com/doloveplayer/agentHub"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
+  <a href="https://github.com/doloveplayer/agentHub"><img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" /></a>
+  <a href="https://github.com/doloveplayer/agentHub"><img src="https://img.shields.io/badge/Hono-4.6-ff6b35?style=flat-square" alt="Hono" /></a>
+  <a href="https://github.com/doloveplayer/agentHub"><img src="https://img.shields.io/badge/Prisma-5.22-2D3748?style=flat-square&logo=prisma&logoColor=white" alt="Prisma" /></a>
+  <a href="https://github.com/doloveplayer/agentHub"><img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL" /></a>
+  <a href="https://github.com/doloveplayer/agentHub"><img src="https://img.shields.io/badge/Docker-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" /></a>
+  <a href="https://github.com/doloveplayer/agentHub"><img src="https://img.shields.io/badge/WebSocket-ws-000?style=flat-square" alt="WebSocket" /></a>
+</p>
 
-<br><br>
+<br />
 
-# AgentHub
-
-<h3>智能多 Agent 协作中枢</h3>
-
-<img src="https://img.shields.io/badge/status-active-success?style=flat-square">
-<img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
-<img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square">
-
-<br>
-
-> **AgentHub 不是又一个 Chat UI。** 它是 **Smart Hub** — 主动协调、编排、管理多个 AI Agent 的协作平台。  
-> 就像 Git 让开发者协作写代码，AgentHub 让 AI Agent 协作完成任务。
-
-<br>
-
-<h3>
-<a href="https://github.com/doloveplayer/agentHub/blob/master/index.html">📄 查看完整项目介绍页面（交互式 HTML）</a>
-</h3>
-
-<br>
+> **AgentHub 不是又一个 Chat UI。** 它是 **Smart Hub** — 主动协调、编排、管理多个 AI Agent 的协作平台。就像 Git 让开发者协作写代码，AgentHub 让 AI Agent 协作完成任务。
 
 ---
-
-</div>
-
-智能多 Agent 协作中枢 — IM 风格的 Web 聊天应用，作为多个 AI 编程 Agent 的统一管理和调度平台。
 
 ## 项目简介
 
 AgentHub 让你在类似聊天软件的界面中，同时驱动多个 AI Agent 协作完成开发任务。每个会话拥有独立的 Docker 沙箱环境，支持 Solo（单 Agent）和 Group（多 Agent 协作）两种模式。
 
-**核心能力：**
-- 多 Agent 协作 — Planner 自动拆解任务、分配给 CodeAgent / ReviewAgent / TestAgent 等执行
-- Docker 沙箱隔离 — 每个会话独立容器，安全互不干扰
-- 流式对话 — 实时查看 Agent 的工具调用、文件修改、输出过程
-- 产物预览 — 内置静态服务器，直接在浏览器中预览 Agent 生成的网页
-- 任务编排 — DAG 依赖调度、并行/串行执行、失败重试
+> [!NOTE]
+> **想了解完整架构？** 查看 [📄 项目介绍页（交互式 HTML）](/index.html) — 深色/浅色主题切换，架构/功能/技术栈全览。
 
-📄 [查看完整项目介绍页](/index.html) — 交互式 HTML，深色/浅色主题，架构/功能/技术栈全览
+**核心能力：**
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>🤝 多 Agent 协作</h3>
+      <p>Planner 自动拆解任务、分配给 CodeAgent / ReviewAgent / TestAgent 等执行。每个 Agent 拥有独立的持久化身份、技能和记忆。</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🐳 Docker 沙箱隔离</h3>
+      <p>每个会话独立容器，三层挂载体系（运行时 / 工作区 / Agent 持久化身份），安全互不干扰。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>⚡ 流式对话</h3>
+      <p>实时查看 Agent 的工具调用、文件修改、输出过程。15 种 WebSocket 事件类型，毫秒级延迟推送。</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🎨 产物预览</h3>
+      <p>内置静态服务器，直接在浏览器中预览 Agent 生成的网页、PPT、代码 Diff。支持引用编辑和版本历史。</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <h3>📊 任务编排</h3>
+      <p>DAG 依赖调度、并行/串行执行、三级失败恢复（自动重试 → ManagerLoop 审查 → Planner 升级）。</p>
+    </td>
+    <td width="50%" valign="top">
+      <h3>🧠 ContextBus 共享记忆</h3>
+      <p>结构化键值存储，优先级衰减算法，上下文预算裁剪，Pinned 消息强制注入。跨 Agent 共享项目发现和架构决策。</p>
+    </td>
+  </tr>
+</table>
+
+---
 
 ## 快速开始
 
@@ -140,6 +155,8 @@ cd apps/api && npx tsx src/index.ts
 cd apps/web && npx vite
 ```
 
+---
+
 ## 使用方式
 
 1. **创建 Agent** — 点击侧边栏 "+" 按钮，选择模板创建 Agent（CodeAgent、ReviewAgent 等）
@@ -147,6 +164,8 @@ cd apps/web && npx vite
 3. **Group 会话** — 创建群聊，添加多个 Agent，用 `@AgentName` 指定任务对象
 4. **任务规划** — 在群聊中描述需求，Planner 会自动拆解为 DAG 任务并分配执行
 5. **产物预览** — Agent 生成的网页文件可直接在内置浏览器中预览
+
+---
 
 ## 技术栈
 
@@ -157,9 +176,13 @@ cd apps/web && npx vite
 | 沙箱 | Docker + Dockerode | 容器隔离、文件挂载、进程管理 |
 | 共享 | TypeScript | 前后端共享类型定义 |
 
+---
+
 ## 开源协议
 
 本项目基于 [MIT License](LICENSE) 开源。
+
+---
 
 ## 贡献
 
