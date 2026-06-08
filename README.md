@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/doloveplayer/agentHub/blob/master/index.html"><img src="https://img.shields.io/badge/项目介绍页-HTML-oklch(0.50_0.12_185)?style=flat-square" alt="Project Page" /></a>
+  <a href="https://htmlpreview.github.io/?https://github.com/doloveplayer/agentHub/blob/feature/agent-output-editor/index.html"><img src="https://img.shields.io/badge/项目介绍页-HTML-0ea5a5?style=flat-square" alt="Project Page" /></a>
   <a href="https://github.com/doloveplayer/agentHub/blob/master/LICENSE"><img src="https://img.shields.io/badge/许可证-MIT-yellow?style=flat-square" alt="License: MIT" /></a>
   <a href="https://github.com/doloveplayer/agentHub"><img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" /></a>
   <a href="https://github.com/doloveplayer/agentHub"><img src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React" /></a>
@@ -28,7 +28,7 @@
 AgentHub 让你在类似聊天软件的界面中，同时驱动多个 AI Agent 协作完成开发任务。每个会话拥有独立的 Docker 沙箱环境，支持 Solo（单 Agent）和 Group（多 Agent 协作）两种模式。
 
 > [!NOTE]
-> **想了解完整架构？** 查看 [📄 项目介绍页（交互式 HTML）](/index.html) — 深色/浅色主题切换，架构/功能/技术栈全览。
+> **想了解完整架构？** 查看 [📄 项目介绍页（交互式 HTML）](https://htmlpreview.github.io/?https://github.com/doloveplayer/agentHub/blob/feature/agent-output-editor/index.html) — 深色/浅色主题切换，架构/功能/技术栈全览。
 
 **核心能力：**
 
