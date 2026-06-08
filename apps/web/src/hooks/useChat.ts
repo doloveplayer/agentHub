@@ -137,6 +137,10 @@ export function useChat(sessionId: string) {
               const errMsg = safeContent(data.error) || safeContent(data.message) || 'Unknown agent error';
               console.error('[WS] Agent error:', errMsg);
               addToast(errMsg, 'error');
+              // Notify ConflictRetryCard if this is a conflict retry failure
+              if (errMsg.includes('Plan') && errMsg.includes('not found') || errMsg.includes('No tasks could be reset')) {
+                window.dispatchEvent(new CustomEvent('conflict_retry_result', { detail: { success: false, error: errMsg } }));
+              }
               if (data.agentMessageId) {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
                 appendToMessage(targetSessionId, data.agentMessageId, `\n\n---\n**Error:** ${errMsg}`);
@@ -381,6 +385,11 @@ export function useChat(sessionId: string) {
                   : undefined,
               } as any;
               cuStore.addMessage(sessionId, cuMsg);
+              break;
+            }
+            case 'conflict_retrying': {
+              addToast(`Retrying ${data.taskIds?.length ?? 0} conflicting task(s) sequentially`, 'info');
+              window.dispatchEvent(new CustomEvent('conflict_retry_result', { detail: { success: true } }));
               break;
             }
             case 'inbox_update':

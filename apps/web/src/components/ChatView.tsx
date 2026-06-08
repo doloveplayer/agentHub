@@ -195,17 +195,47 @@ const SessionHeader = React.memo(function SessionHeader({
 });
 
 /** Inline conflict retry button shown below conflict_unresolved messages. */
-function ConflictRetryCard({ planId, taskIds, onRetry }: { planId: string; taskIds: string[]; onRetry: (planId: string, taskIds: string[]) => void }) {
-  const [clicked, setClicked] = useState(false);
+function ConflictRetryCard({ planId, taskIds, onRetry }: { planId: string; taskIds: string[]; onRetry: (planId: string, taskIds: string[]) => Promise<void> }) {
+  const [state, setState] = useState<'idle' | 'sending' | 'error'>('idle');
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+      if (detail?.success) {
+        setState('idle'); // success — card can be hidden or stay
+      } else {
+        setState('error');
+      }
+    };
+    window.addEventListener('conflict_retry_result', handler);
+    return () => window.removeEventListener('conflict_retry_result', handler);
+  }, []);
+
+  const handleRetry = async () => {
+    setState('sending');
+    try {
+      await onRetry(planId, taskIds);
+      // Timeout fallback: if no response in 8s, show error
+      timeoutRef.current = setTimeout(() => setState(prev => prev === 'sending' ? 'error' : prev), 8000);
+    } catch {
+      setState('error');
+    }
+  };
   return (
     <div className="mx-4 my-1 bg-hub-danger/10 border border-hub-danger/30 rounded-hub-lg px-4 py-2">
       <div className="flex items-center gap-2">
-        <span className="text-xs text-hub-secondary">Conflict tasks need retry</span>
+        {state === 'error' ? (
+          <span className="text-xs text-hub-danger">Retry failed — plan may have expired</span>
+        ) : (
+          <span className="text-xs text-hub-secondary">Conflict tasks need retry</span>
+        )}
         <button
-          onClick={() => { setClicked(true); onRetry(planId, taskIds); }}
-          disabled={clicked}
-          className="ml-auto px-3 py-1 bg-hub-primary hover:bg-hub-primary/80 disabled:opacity-50 text-white text-xs rounded-md font-medium transition"
-        >{clicked ? 'Retrying...' : `Retry ${taskIds.length} Task(s) Sequentially`}</button>
+          onClick={handleRetry}
+          disabled={state === 'sending'}
+          className={`ml-auto px-3 py-1 text-white text-xs rounded-md font-medium transition ${state === 'error' ? 'bg-hub-danger hover:bg-hub-danger/80' : 'bg-hub-primary hover:bg-hub-primary/80'} disabled:opacity-50`}
+        >{state === 'sending' ? 'Retrying...' : state === 'error' ? 'Retry Again' : `Retry ${taskIds.length} Task(s) Sequentially`}</button>
       </div>
     </div>
   );
