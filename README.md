@@ -1,4 +1,41 @@
+<div align="center">
+
+<img src="https://img.shields.io/badge/TypeScript-3178C6?style=flat&logo=typescript&logoColor=white">
+<img src="https://img.shields.io/badge/Hono-4.6-ff6b35?style=flat">
+<img src="https://img.shields.io/badge/React-18-61DAFB?style=flat&logo=react&logoColor=black">
+<img src="https://img.shields.io/badge/Prisma-5.22-2D3748?style=flat&logo=prisma&logoColor=white">
+<img src="https://img.shields.io/badge/PostgreSQL-16-4169E1?style=flat&logo=postgresql&logoColor=white">
+<img src="https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white">
+<img src="https://img.shields.io/badge/WebSocket-ws-000?style=flat">
+<img src="https://img.shields.io/badge/Zustand-5.0-8B5CF6?style=flat">
+<img src="https://img.shields.io/badge/TailwindCSS-3.4-06B6D4?style=flat&logo=tailwindcss&logoColor=white">
+
+<br><br>
+
 # AgentHub
+
+<h3>智能多 Agent 协作中枢</h3>
+
+<img src="https://img.shields.io/badge/status-active-success?style=flat-square">
+<img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
+<img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square">
+
+<br>
+
+> **AgentHub 不是又一个 Chat UI。** 它是 **Smart Hub** — 主动协调、编排、管理多个 AI Agent 的协作平台。  
+> 就像 Git 让开发者协作写代码，AgentHub 让 AI Agent 协作完成任务。
+
+<br>
+
+<h3>
+<a href="https://github.com/doloveplayer/agentHub/blob/master/index.html">📄 查看完整项目介绍页面（交互式 HTML）</a>
+</h3>
+
+<br>
+
+---
+
+</div>
 
 智能多 Agent 协作中枢 — IM 风格的 Web 聊天应用，作为多个 AI 编程 Agent 的统一管理和调度平台。
 
@@ -117,6 +154,16 @@ cd apps/web && npx vite
 | 后端 | Hono + Prisma + WebSocket | REST API、实时通信、沙箱管理 |
 | 沙箱 | Docker + Dockerode | 容器隔离、文件挂载、进程管理 |
 | 共享 | TypeScript | 前后端共享类型定义 |
+
+## 文档索引
+
+| 文档 | 说明 |
+|------|------|
+| [📄 项目介绍页 (HTML)](/index.html) | 交互式项目主页，深色/浅色主题切换，架构/功能/技术栈全览 |
+| [📘 技术架构 (Word)](/TECH_ARCHITECTURE.docx) | 10 章纯文字技术架构 + 答辩 Q&A，适合打印成册 |
+| [📝 技术架构 (Markdown)](/TECH_ARCHITECTURE.md) | 架构/选型/数据模型/安全/部署完整文档 |
+| [🎤 答辩介绍稿](/PRESENTATION_SCRIPT.md) | 30 分钟技术答辩逐字稿 |
+| [⚙️ 运行手册](/RUNBOOK.md) | 部署运维操作指南 |
 
 ## 开源协议
 
