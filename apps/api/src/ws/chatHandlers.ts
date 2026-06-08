@@ -11,6 +11,7 @@ import { config } from '../config.js';
 import { parseReviewReport, parseTestOutput } from '../artifacts/ArtifactTools.js';
 import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDetection.js';
 import { agentRuntime } from '../agent/AgentRuntime.js';
+import { PinnedStore } from '../agent/PinnedStore.js';
 
 import { pendingRecoveries } from './handler.js';
 import {
@@ -375,9 +376,16 @@ ${agentPrompt}`;
       diffAgentName,
       `Before ${diffAgentName} turn`,
     );
+    // Inject pinned messages into agent context
+    let pinnedBlock = '';
+    try {
+      const pinnedBudget = Math.floor(config.agent.contextTokenBudget * 0.4);
+      pinnedBlock = await PinnedStore.buildInjectionPrompt(sessionId, pinnedBudget, sandbox?.hostWorkDir) || '';
+    } catch { /* best-effort */ }
+
     // Use AgentRuntime for global agent lifecycle management.
     // Build the full prompt with mode prefix for context awareness.
-    const fullPrompt = `${modePrefix}\n\n${agentPrompt}${quoteContextBlock}`;
+    const fullPrompt = `${modePrefix}\n\n${pinnedBlock}${agentPrompt}${quoteContextBlock}`;
 
     if (!mention.agentId) {
       console.error(`[ws] No agent resolved for mention in session=${sessionId}`);
