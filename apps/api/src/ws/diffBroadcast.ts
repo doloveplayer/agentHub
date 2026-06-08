@@ -136,7 +136,9 @@ export function broadcastDiffSummary(
     sessionAgentTaskContext.get(sessionId)!.set(agentName, { planId: context.planId, taskId: context.taskId });
   }
 
-  const files = WorkspaceManager.getWorkspaceDiff(workspacePath, beforeVersion.id)
+  // Diff between this agent's own before/after versions, NOT before→current working tree.
+  // Using before→current would include changes from concurrent agents, causing false conflicts.
+  const files = WorkspaceManager.diffBetweenVersions(workspacePath, beforeVersion.id, afterVersion.id)
     .filter((file) => file.diff.trim().length > 0);
   if (files.length === 0) return;
 
