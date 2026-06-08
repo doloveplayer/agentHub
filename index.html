@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentHub — 智能多 Agent 协作中枢</title>
+<meta name="description" content="AgentHub 是一个 IM 风格的 Web 聊天应用，作为多个 AI 编程 Agent 的智能协作中枢。支持多 Agent DAG 编排、Docker 沙箱隔离、流式对话和产物预览。">
+<style>
+/* ═══════════════════════════════════════════════════════
+   AgentHub Design System — 严格遵循 apps/web/src/index.css
+   ═══════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+:root {
+  /* Semantic */
+  --bg-root:         oklch(0.97 0.005 95);
+  --bg-surface:      oklch(1 0 0);
+  --bg-raised:       oklch(1 0 0);
+  --bg-hover:        oklch(0.95 0.005 95);
+  --bg-active:       oklch(0.90 0.04 185);
+  --bg-input:        oklch(0.96 0.005 95);
+  --bg-code:         oklch(0.97 0.005 95);
+
+  --border-subtle:   oklch(0 0 0 / 8%);
+  --border-default:  oklch(0 0 0 / 12%);
+  --border-emphasis: oklch(0 0 0 / 18%);
+
+  --accent-primary:  oklch(0.50 0.12 185);
+  --accent-hover:    oklch(0.43 0.12 185);
+  --accent-warning:  oklch(0.65 0.18 80);
+  --accent-danger:   oklch(0.50 0.22 25);
+  --accent-success:  oklch(0.50 0.18 150);
+  --accent-link:     oklch(0.50 0.15 245);
+  --accent-purple:   oklch(0.50 0.20 280);
+
+  --agent-code:      oklch(0.50 0.22 280);
+  --agent-review:    oklch(0.50 0.18 145);
+  --agent-planner:   oklch(0.55 0.12 185);
+  --agent-test:      oklch(0.50 0.15 250);
+  --agent-security:  oklch(0.55 0.18 85);
+
+  --text-primary:    oklch(0.15 0 0);
+  --text-secondary:  oklch(0.35 0.005 250);
+  --text-tertiary:   oklch(0.50 0.005 250);
+  --text-muted:      oklch(0.65 0.005 250);
+
+  --radius-sm:       4px;
+  --radius-md:       6px;
+  --radius-lg:       8px;
+  --radius-xl:       12px;
+  --radius-2xl:      16px;
+
+  --transition-fast: 120ms ease-out;
+  --transition-base: 180ms ease-out;
+  --transition-slow: 250ms ease-in-out;
+  --transition-slower: 400ms ease-in-out;
+
+  --scrollbar-thumb: oklch(0 0 0 / 15%);
+  --scrollbar-track: transparent;
+}
+
+.dark {
+  --bg-root:         oklch(0.22 0.003 106);
+  --bg-surface:      oklch(0.26 0.004 106);
+  --bg-raised:       oklch(0.28 0.004 106);
+  --bg-hover:        oklch(0.31 0.004 106);
+  --bg-active:       oklch(0.34 0.04 190);
+  --bg-input:        oklch(0.255 0.004 106);
+  --bg-code:         oklch(0.20 0.008 260);
+
+  --border-subtle:   oklch(1 0.191 22.216 / 10%);
+  --border-default:  oklch(1 0.191 22.216 / 14%);
+  --border-emphasis: oklch(1 0.191 22.216 / 22%);
+
+  --accent-primary:  oklch(0.76 0.12 185);
+  --accent-hover:    oklch(0.68 0.12 185);
+  --accent-warning:  oklch(0.72 0.15 80);
+  --accent-danger:   oklch(0.55 0.22 25);
+  --accent-success:  oklch(0.58 0.16 150);
+  --accent-link:     oklch(0.62 0.14 240);
+  --accent-purple:   oklch(0.55 0.18 280);
+
+  --agent-code:      oklch(0.55 0.22 280);
+  --agent-review:    oklch(0.55 0.18 145);
+  --agent-planner:   oklch(0.65 0.12 185);
+  --agent-test:      oklch(0.58 0.15 250);
+  --agent-security:  oklch(0.65 0.15 85);
+
+  --text-primary:    oklch(0.98 0 0 / 94%);
+  --text-secondary:  oklch(0.92 0.005 250 / 82%);
+  --text-tertiary:   oklch(0.80 0.005 250 / 55%);
+  --text-muted:      oklch(0.80 0.005 250 / 30%);
+
+  --scrollbar-thumb: oklch(1 0.191 22.216 / 18%);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+  background: var(--bg-root);
+  color: var(--text-primary);
+}
+
+body {
+  background: var(--bg-root);
+  color: var(--text-primary);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ─── Scrollbar ─── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-emphasis); }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+
+/* ─── Focus ─── */
+*:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─── Transitions ─── */
+a, button, input, textarea, select, [tabindex] {
+  transition-property: color, background-color, border-color, opacity, box-shadow, transform;
+  transition-duration: var(--transition-base);
+  transition-timing-function: ease-out;
+}
+
+/* ─── Animations ─── */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pulse-ring {
+  0%   { box-shadow: 0 0 0 0 oklch(0.76 0.12 185 / 40%); }
+  70%  { box-shadow: 0 0 0 12px oklch(0.76 0.12 185 / 0%); }
+  100% { box-shadow: 0 0 0 0 oklch(0.76 0.12 185 / 0%); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes code-scroll {
+  0%   { transform: translateY(0); opacity: 0.8; }
+  100% { transform: translateY(-18px); opacity: 0; }
+}
+@keyframes border-glow {
+  0%, 100% { border-color: var(--accent-primary); box-shadow: 0 0 12px oklch(0.76 0.12 185 / 15%); }
+  50%      { border-color: var(--accent-purple); box-shadow: 0 0 12px oklch(0.55 0.18 280 / 15%); }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.5s ease-out forwards;
+  opacity: 0;
+}
+.animate-fade-in {
+  animation: fade-in 0.6s ease-out forwards;
+  opacity: 0;
+}
+
+/* ─── Glass surfaces ─── */
+.glass {
+  background-color: oklch(1 0 0 / 75%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.dark .glass {
+  background-color: oklch(0.26 0.004 106 / 60%);
+}
+
+/* ══════════════════════════════════════════════
+   NAVIGATION
+   ══════════════════════════════════════════════ */
+.nav {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: 52px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px;
+}
+.nav-left { display: flex; align-items: center; gap: 12px; }
+.nav-logo {
+  width: 28px; height: 28px;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-purple));
+  border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 14px;
+}
+.nav-title { font-weight: 600; font-size: 15px; color: var(--text-primary); letter-spacing: -0.01em; }
+.nav-right { display: flex; align-items: center; gap: 8px; }
+
+.nav-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 14px; border-radius: var(--radius-md);
+  font-size: 13px; font-weight: 500; color: var(--text-secondary);
+  text-decoration: none; cursor: pointer;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+.nav-link:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+.nav-cta {
+  background: var(--accent-primary); color: #fff; border-color: transparent;
+  font-weight: 600;
+}
+.nav-cta:hover {
+  background: var(--accent-hover); color: #fff;
+  border-color: transparent;
+}
+.dark .nav-cta { color: oklch(0.15 0 0); }
+
+/* Theme toggle */
+.theme-toggle {
+  width: 34px; height: 34px; border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 16px; color: var(--text-tertiary);
+}
+.theme-toggle:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+/* ─── Mobile nav ─── */
+.mobile-nav-links { display: none; }
+@media (max-width: 768px) {
+  .nav-right { display: none; }
+  .mobile-nav-links {
+    display: flex; gap: 8px;
+    padding: 12px 24px; border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-root);
+    overflow-x: auto;
+  }
+  .mobile-nav-links .nav-link { white-space: nowrap; flex-shrink: 0; }
+}
+
+/* ══════════════════════════════════════════════
+   HERO
+   ══════════════════════════════════════════════ */
+.hero {
+  min-height: 88vh;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center;
+  padding: 80px 24px 48px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Ambient background glow */
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -20%; left: 50%; transform: translateX(-50%);
+  width: 800px; height: 800px;
+  background: radial-gradient(circle, oklch(0.76 0.12 185 / 12%) 0%, transparent 70%);
+  pointer-events: none;
+}
+.dark .hero::before {
+  background: radial-gradient(circle, oklch(0.76 0.12 185 / 8%) 0%, transparent 70%);
+}
+
+.hero-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: 20px;
+  font-size: 13px; font-weight: 500;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  margin-bottom: 28px;
+  animation: fade-in-up 0.5s ease-out forwards;
+}
+.hero-badge-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent-success);
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+.hero h1 {
+  font-size: clamp(36px, 7vw, 64px);
+  font-weight: 700; letter-spacing: -0.03em;
+  line-height: 1.1;
+  max-width: 720px;
+  animation: fade-in-up 0.5s 0.1s ease-out forwards; opacity: 0;
+}
+.hero h1 span {
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-purple));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-desc {
+  margin-top: 20px; max-width: 560px;
+  font-size: 17px; font-weight: 400; line-height: 1.6;
+  color: var(--text-secondary);
+  animation: fade-in-up 0.5s 0.2s ease-out forwards; opacity: 0;
+}
+
+.hero-actions {
+  margin-top: 32px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+  animation: fade-in-up 0.5s 0.3s ease-out forwards; opacity: 0;
+}
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 22px; border-radius: var(--radius-lg);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  text-decoration: none;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.btn:hover { background: var(--bg-hover); border-color: var(--border-emphasis); }
+
+.btn-primary {
+  background: var(--accent-primary); color: #fff; border-color: transparent;
+}
+.btn-primary:hover { background: var(--accent-hover); color: #fff; border-color: transparent; }
+.dark .btn-primary { color: oklch(0.15 0 0); }
+
+.btn-ghost {
+  background: transparent; border-color: transparent; color: var(--text-secondary);
+}
+.btn-ghost:hover { background: var(--bg-hover); color: var(--text-primary); }
+
+
+/* ══════════════════════════════════════════════
+   SECTIONS
+   ══════════════════════════════════════════════ */
+.section {
+  padding: 80px 24px;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+.section-label {
+  display: inline-block;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+  color: var(--accent-primary); text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.section-title {
+  font-size: clamp(24px, 4vw, 36px);
+  font-weight: 700; letter-spacing: -0.02em;
+  line-height: 1.2; margin-bottom: 12px;
+}
+.section-desc {
+  font-size: 16px; color: var(--text-secondary);
+  max-width: 600px; line-height: 1.6; margin-bottom: 40px;
+}
+
+/* ─── Cards ─── */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xl);
+  padding: 24px;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+.card:hover {
+  border-color: var(--border-default);
+  box-shadow: 0 4px 24px oklch(0 0 0 / 6%);
+}
+.dark .card:hover { box-shadow: 0 4px 24px oklch(0 0 0 / 20%); }
+
+.card-icon {
+  width: 40px; height: 40px; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; margin-bottom: 14px;
+}
+.card-icon.code { background: oklch(0.55 0.22 280 / 12%); color: var(--agent-code); }
+.card-icon.review { background: oklch(0.55 0.18 145 / 12%); color: var(--agent-review); }
+.card-icon.planner { background: oklch(0.65 0.12 185 / 12%); color: var(--agent-planner); }
+.card-icon.test { background: oklch(0.58 0.15 250 / 12%); color: var(--agent-test); }
+.card-icon.security { background: oklch(0.65 0.15 85 / 12%); color: var(--agent-security); }
+.card-icon.purple { background: oklch(0.55 0.18 280 / 12%); color: oklch(0.55 0.18 280); }
+.card-icon.teal { background: oklch(0.65 0.12 185 / 12%); color: oklch(0.65 0.12 185); }
+.card-icon.green { background: oklch(0.58 0.16 150 / 12%); color: oklch(0.58 0.16 150); }
+
+.card h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; letter-spacing: -0.01em; }
+.card p { font-size: 14px; color: var(--text-secondary); line-height: 1.55; }
+
+/* ─── Feature cards (larger) ─── */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+  gap: 20px;
+}
+@media (max-width: 520px) {
+  .feature-grid { grid-template-columns: 1fr; }
+}
+
+.feature-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2xl);
+  padding: 32px;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+.feature-card:hover {
+  border-color: var(--border-default);
+  box-shadow: 0 4px 32px oklch(0 0 0 / 6%);
+}
+.dark .feature-card:hover { box-shadow: 0 4px 32px oklch(0 0 0 / 25%); }
+.feature-card h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.feature-card p { font-size: 14px; color: var(--text-secondary); line-height: 1.6; }
+.feature-card .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; }
+
+.tag {
+  font-size: 11px; font-weight: 600; padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  background: var(--bg-root);
+}
+
+/* ─── Architecture diagram ─── */
+.arch-diagram {
+  margin: 32px 0;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.arch-layer {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px 24px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  transition: border-color var(--transition-base), transform var(--transition-base);
+}
+.arch-layer:hover {
+  border-color: var(--accent-primary);
+  transform: translateX(4px);
+}
+.arch-layer-num {
+  width: 32px; height: 32px; border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; flex-shrink: 0;
+  background: var(--accent-primary); color: #fff;
+}
+.dark .arch-layer-num { color: oklch(0.15 0 0); }
+.arch-layer-info { flex: 1; }
+.arch-layer-name { font-weight: 600; font-size: 14px; }
+.arch-layer-desc { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+.arch-layer-count {
+  font-size: 13px; font-weight: 600; color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* ─── Tech stack grid ─── */
+.tech-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+.tech-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  font-size: 13px; font-weight: 500;
+  transition: border-color var(--transition-base);
+}
+.tech-item:hover { border-color: var(--accent-primary); }
+.tech-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--accent-primary);
+}
+
+/* ─── Table ─── */
+.table-wrap {
+  overflow-x: auto;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-subtle);
+  margin: 20px 0;
+}
+.table-wrap table {
+  width: 100%; border-collapse: collapse;
+  font-size: 13px; text-align: left;
+}
+.table-wrap th {
+  padding: 12px 16px; font-weight: 600; font-size: 12px;
+  color: var(--text-secondary); letter-spacing: 0.03em;
+  text-transform: uppercase; background: var(--bg-root);
+  border-bottom: 1px solid var(--border-default);
+}
+.table-wrap td {
+  padding: 12px 16px; color: var(--text-secondary);
+  border-top: 1px solid var(--border-subtle);
+}
+.table-wrap tr:first-child td { border-top: none; }
+
+/* ─── Code block ─── */
+.code-block {
+  background: var(--bg-code);
+  border: 1px solid var(--border-subtle);
+  border-left: 2px solid oklch(0.76 0.12 185 / 40%);
+  border-radius: var(--radius-lg);
+  padding: 16px 20px;
+  margin: 16px 0;
+  overflow-x: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px; line-height: 1.6; color: var(--text-primary);
+  white-space: pre;
+}
+.dark .code-block {
+  border-left-color: oklch(0.76 0.12 185 / 25%);
+}
+
+
+/* ─── Lifecycle Flow Diagram ─── */
+.flow {
+  margin: 32px 0;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px;
+}
+.flow-row {
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; flex-wrap: wrap;
+}
+.flow-row-center { width: 100%; }
+.flow-node {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 14px 18px;
+  text-align: center;
+  min-width: 140px; max-width: 210px;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.flow-node:hover {
+  border-color: var(--accent-primary);
+  box-shadow: 0 4px 20px oklch(0 0 0 / 8%);
+}
+.dark .flow-node:hover { box-shadow: 0 4px 20px oklch(0 0 0 / 25%); }
+.flow-node-wide { max-width: 500px; }
+.flow-step {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; flex-shrink: 0;
+  color: #fff;
+}
+.flow-node strong { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
+.flow-node small { font-size: 12px; color: var(--text-tertiary); line-height: 1.5; }
+
+/* Node color variants */
+.flow-user .flow-step { background: var(--agent-test); }
+.flow-user { border-left: 3px solid var(--agent-test); }
+.flow-planner .flow-step { background: var(--agent-planner); }
+.flow-planner { border-left: 3px solid var(--agent-planner); }
+.flow-confirm .flow-step { background: var(--agent-code); }
+.flow-confirm { border-left: 3px solid var(--agent-code); }
+.flow-exec .flow-step { background: var(--accent-primary); }
+.flow-exec { border-left: 3px solid var(--accent-primary); }
+.flow-done .flow-step { background: var(--accent-success); }
+.flow-done { border-left: 3px solid var(--accent-success); }
+.flow-retry .flow-step { background: var(--accent-danger); }
+.flow-retry { border-left: 3px solid var(--accent-danger); }
+
+.flow-arrow {
+  font-size: 20px; font-weight: 700; color: var(--text-muted);
+  flex-shrink: 0;
+}
+.flow-down-arrow {
+  font-size: 18px; color: var(--text-muted); text-align: center;
+  padding: 2px 0;
+}
+
+/* Execution loop box */
+.flow-loop-box {
+  border: 1px dashed var(--accent-primary);
+  border-radius: var(--radius-2xl);
+  padding: 20px 16px 12px;
+  position: relative;
+  margin: 4px 0;
+  background: oklch(0.76 0.12 185 / 3%);
+}
+.flow-loop-label {
+  position: absolute; top: -10px; left: 24px;
+  background: var(--bg-root); padding: 0 10px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--accent-primary); text-transform: uppercase;
+}
+.flow-loop-note {
+  text-align: center; font-size: 12px; color: var(--text-muted);
+  margin-top: 10px; font-style: italic;
+}
+
+/* Branch layout */
+.flow-branch {
+  display: flex; gap: 32px; width: 100%; justify-content: center;
+  flex-wrap: wrap; margin-top: 8px;
+}
+.flow-branch-success, .flow-branch-failure {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 2px; min-width: 200px;
+}
+.flow-branch-failure {
+  border-left: 1px solid var(--border-subtle);
+  padding-left: 32px;
+}
+.flow-failure-chain {
+  display: flex; align-items: center; gap: 8px;
+  flex-wrap: wrap; justify-content: center;
+}
+@media (max-width: 768px) {
+  .flow-branch { flex-direction: column; align-items: center; }
+  .flow-branch-failure { border-left: none; padding-left: 0; border-top: 1px solid var(--border-subtle); padding-top: 20px; }
+  .flow-row { gap: 4px; }
+  .flow-node { min-width: 100px; max-width: 150px; padding: 10px 12px; }
+  .flow-node-wide { max-width: 320px; }
+}
+
+/* ─── Tabs (for feature deep-dive) ─── */
+.tabs { display: flex; gap: 2px; margin-bottom: 24px; border-bottom: 1px solid var(--border-subtle); }
+.tab {
+  padding: 10px 18px; font-size: 13px; font-weight: 500;
+  color: var(--text-tertiary); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+  background: none; border-top: none; border-left: none; border-right: none;
+}
+.tab:hover { color: var(--text-primary); }
+.tab.active { color: var(--accent-primary); border-bottom-color: var(--accent-primary); }
+.tab-content { display: none; }
+.tab-content.active { display: block; animation: fade-in-up 0.3s ease-out; }
+
+/* ══════════════════════════════════════════════
+   FOOTER
+   ══════════════════════════════════════════════ */
+.footer {
+  text-align: center; padding: 48px 24px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-tertiary); font-size: 13px;
+}
+.footer a { color: var(--accent-link); text-decoration: none; }
+.footer a:hover { text-decoration: underline; }
+
+/* ══════════════════════════════════════════════
+   RESPONSIVE
+   ══════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .section { padding: 48px 16px; }
+  .hero h1 { font-size: 32px; }
+  .hero-desc { font-size: 15px; }
+  .feature-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════
+     NAVIGATION
+     ══════════════════════════════════════════════ -->
+<nav class="nav glass">
+  <div class="nav-left">
+    <div class="nav-logo">A</div>
+    <span class="nav-title">AgentHub</span>
+  </div>
+  <div class="nav-right">
+    <a href="#architecture" class="nav-link">架构</a>
+    <a href="#features" class="nav-link">功能</a>
+    <a href="#tech-stack" class="nav-link">技术栈</a>
+    <a href="#modules" class="nav-link">核心模块</a>
+    <a href="https://github.com/doloveplayer/agentHub" target="_blank" rel="noopener" class="nav-link nav-cta">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+    <button class="theme-toggle" onclick="toggleTheme()" title="切换主题" aria-label="切换深色/浅色主题">
+      <span class="theme-icon-light">☀️</span>
+      <span class="theme-icon-dark">🌙</span>
+    </button>
+  </div>
+</nav>
+
+<!-- Mobile nav links -->
+<div class="mobile-nav-links">
+  <a href="#architecture" class="nav-link">架构</a>
+  <a href="#features" class="nav-link">功能</a>
+  <a href="#tech-stack" class="nav-link">技术栈</a>
+  <a href="#modules" class="nav-link">核心模块</a>
+  <a href="https://github.com/doloveplayer/agentHub" target="_blank" rel="noopener" class="nav-link nav-cta">GitHub</a>
+</div>
+
+<!-- ══════════════════════════════════════════════
+     HERO
+     ══════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="hero-badge">
+    <span class="hero-badge-dot"></span>
+    开源多 Agent 协作平台
+  </div>
+  <h1>智能多 <span>Agent</span><br>协作中枢</h1>
+  <p class="hero-desc">
+    AgentHub 是一个 IM 风格的 Web 聊天应用，让多个 AI Agent 像真正的工程团队一样协作——Planner 拆解任务、DAG 依赖调度、Docker 沙箱隔离、ContextBus 共享记忆。
+  </p>
+  <div class="hero-actions">
+    <a href="https://github.com/doloveplayer/agentHub" target="_blank" rel="noopener" class="btn btn-primary">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      GitHub
+    </a>
+    <a href="#architecture" class="btn">探索架构</a>
+    <a href="#features" class="btn btn-ghost">查看功能 →</a>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     架构
+     ══════════════════════════════════════════════ -->
+<section class="section" id="architecture">
+  <span class="section-label">Architecture</span>
+  <h2 class="section-title">七层架构设计</h2>
+  <p class="section-desc">
+    7 个逻辑架构层，层间依赖遵循严格的自上而下单向原则。
+  </p>
+
+  <div class="arch-diagram">
+    <div class="arch-layer" style="animation: fade-in-up 0.4s 0.05s ease-out forwards; opacity: 0;">
+      <div class="arch-layer-num" style="background: var(--agent-test);">1</div>
+      <div class="arch-layer-info">
+        <div class="arch-layer-name">前端 UI 层</div>
+        <div class="arch-layer-desc">React 组件 · Zustand Store · Hooks · Monaco Editor · React Flow DAG 可视化</div>
+      </div>
+      <div class="arch-layer-count">72 文件</div>
+    </div>
+    <div class="arch-layer" style="animation: fade-in-up 0.4s 0.10s ease-out forwards; opacity: 0;">
+      <div class="arch-layer-num" style="background: var(--agent-planner);">2</div>
+      <div class="arch-layer-info">
+        <div class="arch-layer-name">后端 API 层</div>
+        <div class="arch-layer-desc">Hono 路由 · WebSocket · Agent Provider · 任务调度 · ContextBus · Dockerode</div>
+      </div>
+      <div class="arch-layer-count">180 文件</div>
+    </div>
+    <div class="arch-layer" style="animation: fade-in-up 0.4s 0.15s ease-out forwards; opacity: 0;">
+      <div class="arch-layer-num" style="background: var(--agent-code);">3</div>
+      <div class="arch-layer-info">
+        <div class="arch-layer-name">共享库层</div>
+        <div class="arch-layer-desc">TypeScript 类型定义 · Zod 校验 Schema · 共享常量和工具函数</div>
+      </div>
+      <div class="arch-layer-count">4 文件</div>
+    </div>
+    <div class="arch-layer" style="animation: fade-in-up 0.4s 0.20s ease-out forwards; opacity: 0;">
+      <div class="arch-layer-num" style="background: var(--agent-review);">4</div>
+      <div class="arch-layer-info">
+        <div class="arch-layer-name">数据持久化层</div>
+        <div class="arch-layer-desc">Prisma Schema · 18 个 SQL 迁移 · PostgreSQL 16</div>
+      </div>
+      <div class="arch-layer-count">20 文件</div>
+    </div>
+    <div class="arch-layer" style="animation: fade-in-up 0.4s 0.25s ease-out forwards; opacity: 0;">
+      <div class="arch-layer-num" style="background: var(--agent-security);">5</div>
+      <div class="arch-layer-info">
+        <div class="arch-layer-name">基础设施层</div>
+        <div class="arch-layer-desc">Docker 镜像 · Nginx · SDK Runner · 运维脚本</div>
+      </div>
+      <div class="arch-layer-count">15 文件</div>
+    </div>
+    <div class="arch-layer" style="animation: fade-in-up 0.4s 0.30s ease-out forwards; opacity: 0;">
+      <div class="arch-layer-num" style="background: var(--text-tertiary);">6</div>
+      <div class="arch-layer-info">
+        <div class="arch-layer-name">配置层</div>
+        <div class="arch-layer-desc">TypeScript 编译配置 · ESLint · 包管理 · XML Schema</div>
+      </div>
+      <div class="arch-layer-count">143 文件</div>
+    </div>
+    <div class="arch-layer" style="animation: fade-in-up 0.4s 0.35s ease-out forwards; opacity: 0;">
+      <div class="arch-layer-num" style="background: var(--text-muted);">7</div>
+      <div class="arch-layer-info">
+        <div class="arch-layer-name">文档层</div>
+        <div class="arch-layer-desc">架构设计 · 迭代计划 · 测试报告 · Agent 技能文档</div>
+      </div>
+      <div class="arch-layer-count">230 文件</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     技术栈
+     ══════════════════════════════════════════════ -->
+<section class="section" id="tech-stack" style="padding-top: 20px;">
+  <span class="section-label">Tech Stack</span>
+  <h2 class="section-title">技术栈与方案选型</h2>
+  <p class="section-desc">
+    每项技术的选择都有明确的工程理由——不做过度设计，不走技术炫技，每个依赖都有其不可替代的价值。
+  </p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>层次</th><th>技术</th><th>选型理由</th></tr>
+      </thead>
+      <tbody>
+        <tr><td style="font-weight:600;">后端框架</td><td>原生 WebSocket 升级，比 Express 快 3-5 倍，TypeScript-first</td></tr>
+        <tr><td style="font-weight:600;">ORM</td><td>类型安全查询，自动迁移生成，完美 TypeScript 集成</td></tr>
+        <tr><td style="font-weight:600;">容器引擎</td><td>Node.js 原生 Docker API，无需 CLI 依赖，流式输出支持</td></tr>
+        <tr><td style="font-weight:600;">WebSocket</td><td>最成熟的 Node.js WebSocket 库，单进程万级并发</td></tr>
+        <tr><td style="font-weight:600;">运行时校验</td><td>TypeScript 类型推断 + 运行时校验，前后端共享</td></tr>
+        <tr><td style="font-weight:600;">前端框架</td><td>生态最成熟，并发特性，毫秒级 HMR</td></tr>
+        <tr><td style="font-weight:600;">状态管理</td><td>比 Redux 轻 10 倍，支持非序列化数据（WebSocket 实例）</td></tr>
+        <tr><td style="font-weight:600;">样式</td><td>原子化 CSS，零运行时，组件级样式隔离</td></tr>
+        <tr><td style="font-weight:600;">DAG 可视化</td><td>工业级图可视化，自定义节点和边，自动布局</td></tr>
+        <tr><td style="font-weight:600;">代码编辑</td><td>VS Code 内核，Diff 模式原生支持，语法高亮</td></tr>
+        <tr><td style="font-weight:600;">Markdown</td><td>流式渲染 Agent 输出，GFM 扩展（表格/任务列表）</td></tr>
+        <tr><td style="font-weight:600;">AI SDK</td><td>双 Provider 支持，通过工厂模式统一接入</td></tr>
+        <tr><td style="font-weight:600;">认证</td><td>无状态认证适合 WebSocket 长连接，纯 JS 哈希无原生依赖</td></tr>
+        <tr><td style="font-weight:600;">数据库</td><td>JSON 类型原生支持，强事务保证，Prisma 最佳兼容</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="tech-grid" style="margin-top: 28px;">
+    <div class="tech-item"><span class="tech-dot"></span> TypeScript</div>
+    <div class="tech-item"><span class="tech-dot" style="background: var(--agent-planner);"></span> Hono</div>
+    <div class="tech-item"><span class="tech-dot" style="background: var(--agent-code);"></span> React 18</div>
+    <div class="tech-item"><span class="tech-dot" style="background: var(--agent-review);"></span> Prisma</div>
+    <div class="tech-item"><span class="tech-dot" style="background: var(--agent-test);"></span> Docker</div>
+    <div class="tech-item"><span class="tech-dot" style="background: var(--agent-security);"></span> PostgreSQL</div>
+    <div class="tech-item"><span class="tech-dot" style="background: var(--accent-purple);"></span> WebSocket</div>
+    <div class="tech-item"><span class="tech-dot" style="background: var(--accent-link);"></span> Zustand</div>
+    <div class="tech-item"><span class="tech-dot"></span> TailwindCSS</div>
+    <div class="tech-item"><span class="tech-dot" style="background: var(--agent-planner);"></span> Vite</div>
+    <div class="tech-item"><span class="tech-dot" style="background: var(--agent-code);"></span> Zod</div>
+    <div class="tech-item"><span class="tech-dot" style="background: var(--agent-review);"></span> Monaco</div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     请求生命周期
+     ══════════════════════════════════════════════ -->
+<section class="section" style="padding-top: 20px;">
+  <span class="section-label">Lifecycle</span>
+  <h2 class="section-title">完整请求生命周期</h2>
+  <p class="section-desc">从用户发送消息到所有任务执行完毕的闭环流程。</p>
+
+  <!-- Lifecycle Flow Diagram -->
+  <div class="flow">
+    <!-- Row: User Input -->
+    <div class="flow-row">
+      <div class="flow-node flow-user">
+        <span class="flow-step">1</span>
+        <strong>连接建立</strong>
+        <small>JWT 认证 → WebSocket 双向通道建立</small>
+      </div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node flow-user">
+        <span class="flow-step">2</span>
+        <strong>消息解析</strong>
+        <small>@提及提取 · 命令识别 · 意图分析</small>
+      </div>
+    </div>
+
+    <!-- Arrow down -->
+    <div class="flow-down-arrow">▼</div>
+
+    <!-- Planner -->
+    <div class="flow-row flow-row-center">
+      <div class="flow-node flow-planner flow-node-wide">
+        <span class="flow-step">3</span>
+        <strong>Planner 任务拆解</strong>
+        <small>接收需求 + 上下文 + Agent 列表 → 生成 DAG 计划 → Schema 校验 → 持久化</small>
+      </div>
+    </div>
+
+    <!-- Arrow down -->
+    <div class="flow-down-arrow">▼</div>
+
+    <!-- Confirm -->
+    <div class="flow-row flow-row-center">
+      <div class="flow-node flow-confirm">
+        <span class="flow-step">4</span>
+        <strong>计划可视确认</strong>
+        <small>React Flow 渲染 DAG · 用户审查/修改 · 确认执行</small>
+      </div>
+    </div>
+
+    <!-- Arrow down -->
+    <div class="flow-down-arrow">▼</div>
+
+    <!-- Execution Loop (5-8) -->
+    <div class="flow-loop-box">
+      <div class="flow-loop-label">执行循环</div>
+      <div class="flow-row">
+        <div class="flow-node flow-exec">
+          <span class="flow-step">5</span>
+          <strong>依赖调度</strong>
+          <small>扫描就绪任务 · 并发槽位计算 · FIFO 选取</small>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-exec">
+          <span class="flow-step">6</span>
+          <strong>Agent 启动</strong>
+          <small>Provider 创建 · 沙箱执行 · 上下文注入</small>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-exec">
+          <span class="flow-step">7</span>
+          <strong>流式推送</strong>
+          <small>stdout 解析 · 事件标准化 · WS 广播</small>
+        </div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node flow-exec">
+          <span class="flow-step">8</span>
+          <strong>验证完成</strong>
+          <small>退出码 + 产物检查 · ContextBus 写入</small>
+        </div>
+      </div>
+      <!-- Loop back -->
+      <div class="flow-loop-note">← 触发下游任务解锁，回到步骤 5 继续调度 →</div>
+    </div>
+
+    <!-- Branch: Success vs Failure -->
+    <div class="flow-branch">
+      <div class="flow-branch-success">
+        <div class="flow-down-arrow" style="color: var(--accent-success);">▼</div>
+        <div class="flow-row flow-row-center">
+          <div class="flow-node flow-done">
+            <span class="flow-step">12</span>
+            <strong>计划完成</strong>
+            <small>生成执行摘要 · Planner 反思 · 归档</small>
+          </div>
+        </div>
+      </div>
+      <div class="flow-branch-failure">
+        <div class="flow-down-arrow" style="color: var(--accent-danger);">▼ 失败</div>
+        <div class="flow-failure-chain">
+          <div class="flow-node flow-retry">
+            <span class="flow-step">9</span>
+            <strong>自动重试</strong>
+            <small>3 次 · 指数退避</small>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node flow-retry">
+            <span class="flow-step">10</span>
+            <strong>ManagerLoop</strong>
+            <small>审查分析 · 决策</small>
+          </div>
+          <div class="flow-arrow">→</div>
+          <div class="flow-node flow-retry">
+            <span class="flow-step">11</span>
+            <strong>Planner 升级</strong>
+            <small>重新评估方案</small>
+          </div>
+        </div>
+        <div class="flow-loop-note" style="color: var(--accent-danger);">失败恢复后重新进入执行循环</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     FEATURES
+     ══════════════════════════════════════════════ -->
+<section class="section" id="features" style="padding-top: 20px;">
+  <span class="section-label">Features</span>
+  <h2 class="section-title">核心功能模块</h2>
+  <p class="section-desc">9 大核心模块覆盖从 Agent 接入到产物交付的完整链路。</p>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="card-icon code" style="width:44px;height:44px;font-size:22px;margin-bottom:18px;">🔌</div>
+      <h3>Agent 提供者抽象层</h3>
+      <p>AbstractProvider 接口（6 个核心方法 + capabilities 声明）+ ProviderFactory 注册表。Claude Code SDK、OpenCode CLI、Test 三种 Provider，新增 Provider 只需实现接口并注册，路由/会话/调度层零改动。每个 Provider 有独立的 EventParser，将原生事件格式转换为统一的 UnifiedAgentEvent。</p>
+      <div class="tag-row"><span class="tag">工厂模式</span><span class="tag">接口抽象</span><span class="tag">事件规范化</span></div>
+    </div>
+
+    <div class="feature-card">
+      <div class="card-icon security" style="width:44px;height:44px;font-size:22px;margin-bottom:18px;">🐳</div>
+      <h3>Docker 沙箱隔离</h3>
+      <p>每 Session 一个独立容器，三层挂载体系：/sandbox（Agent 运行时）→ /workspace（用户代码）→ /home/agents（持久化身份跨 Session 共享）。Dockerode 管理容器生命周期，execStream 实现 Docker Multiplex 协议解析，毫秒级流式输出推送。Solo 512MB / Group 2GB 内存限制。</p>
+      <div class="tag-row"><span class="tag">容器隔离</span><span class="tag">Multiplex 协议</span><span class="tag">三层挂载</span></div>
+    </div>
+
+    <div class="feature-card">
+      <div class="card-icon planner" style="width:44px;height:44px;font-size:22px;margin-bottom:18px;">📊</div>
+      <h3>任务编排与 DAG 调度</h3>
+      <p>Planner 拆解需求 → Zod 校验 DAG 计划 → Dispatcher 事件驱动调度（consumeReadyTasks）→ 并行执行无依赖任务 → 依赖满足自动触发下游。三级恢复链：自动重试（指数退避）→ ManagerLoop 审查（LLM 驱动的失败分析）→ Planner 升级（重规划）。全局 + Session 两级并发控制。</p>
+      <div class="tag-row"><span class="tag">DAG 调度</span><span class="tag">事件驱动</span><span class="tag">三级恢复</span></div>
+    </div>
+
+    <div class="feature-card">
+      <div class="card-icon purple" style="width:44px;height:44px;font-size:22px;margin-bottom:18px;">🧠</div>
+      <h3>ContextBus 共享总线</h3>
+      <p>结构化键值存储（Map + 版本号 + 类型标签），7 天线性衰减 + 引用加权的优先级排序算法。ContextTokenBudget 自动裁剪超出窗口预算的低优先级条目。Pinned 消息机制支持用户手动标记关键信息强制注入。增量查询（getNew）减少重复 Token 消耗。Persisted to PostgreSQL.</p>
+      <div class="tag-row"><span class="tag">优先级衰减</span><span class="tag">增量查询</span><span class="tag">Pinned 注入</span></div>
+    </div>
+
+    <div class="feature-card">
+      <div class="card-icon teal" style="width:44px;height:44px;font-size:22px;margin-bottom:18px;">🔐</div>
+      <h3>权限代理与安全模型</h3>
+      <p>三种权限模式（ask/smart/trust）适配不同安全场景。PermissionProxy 拦截 Agent 危险操作，基于白名单 + 路径前缀校验判断。ask 模式下通过 WebSocket 推送权限请求给用户实时确认。超时自动拒绝（默认 3 分钟可配）。AES-256-GCM 加密 Provider API Key，解密后注入容器环境变量不经过前端。</p>
+      <div class="tag-row"><span class="tag">纵深防御</span><span class="tag">白名单校验</span><span class="tag">加密存储</span></div>
+    </div>
+
+    <div class="feature-card">
+      <div class="card-icon green" style="width:44px;height:44px;font-size:22px;margin-bottom:18px;">🎨</div>
+      <h3>产物预览与引用编辑</h3>
+      <p>HTML 内嵌预览（iframe + 内置静态服务器）、PPTX Canvas 渲染、Monaco DiffEditor 代码对比、结构化 Hunk 接受/拒绝。引用编辑系统：选中 Agent 产物文本 → QuoteToolbar 弹出 → 创建 QuoteReference（含源消息/选择文本/文件路径/行号）→ Agent 精确定位修改。</p>
+      <div class="tag-row"><span class="tag">多格式预览</span><span class="tag">Diff 对比</span><span class="tag">精确引用</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     核心模块深度
+     ══════════════════════════════════════════════ -->
+<section class="section" id="modules" style="padding-top: 20px;">
+  <span class="section-label">Deep Dive</span>
+  <h2 class="section-title">核心模块实现细节</h2>
+  <p class="section-desc">点击切换查看各核心模块的详细实现。</p>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('tab-agent')">Agent Provider</button>
+    <button class="tab" onclick="switchTab('tab-sandbox')">Docker 沙箱</button>
+    <button class="tab" onclick="switchTab('tab-dag')">DAG 调度</button>
+    <button class="tab" onclick="switchTab('tab-context')">ContextBus</button>
+    <button class="tab" onclick="switchTab('tab-websocket')">WebSocket</button>
+  </div>
+
+  <!-- Tab: Agent Provider -->
+  <div class="tab-content active" id="tab-agent">
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon code">1</div>
+        <h3>统一接入接口</h3>
+        <p>定义了 6 个核心行为：启动 Agent、发送提示词、停止执行、注册事件回调、健康检查、切换信任模式。同时声明每个 Provider 的能力矩阵——是否支持持久会话、权限代理、流式输出、独立记忆、独立配置，上层调度模块依据这些能力做出差异化处理。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon planner">2</div>
+        <h3>工厂注册机制</h3>
+        <p>使用注册表模式管理所有 Provider——系统启动时注册内置 Provider 的工厂函数，运行时根据名称动态创建实例。上层模块通过统一的创建接口获取 Provider，完全不感知具体实现。新增 Provider 只需实现接口并注册一行代码，其余模块零改动。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon purple">3</div>
+        <h3>Claude Code 接入</h3>
+        <p>在 Docker 沙箱容器内以子进程方式启动 Claude 命令行工具，通过容器执行接口的标准输入管道传入提示词。构建安全的运行环境变量集合（包含认证令牌等敏感信息），通过容器环境注入而非文件系统传递。标准输出采用结构化 JSON 流式格式，经事件解析器实时转换为统一事件格式后推送给前端。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon teal">4</div>
+        <h3>OpenCode 接入</h3>
+        <p>原生支持会话标识参数，天然具备跨多次调用的上下文保持能力，无需额外维护会话状态。拥有独立的事件解析器处理其特有的输出格式差异。通过跳过权限检查的标志位实现权限代理——危险操作不会阻塞等待，而是将决策权交还给 AgentHub 平台。支持运行时动态切换模型和 API 端点，无需重启。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Docker 沙箱 -->
+  <div class="tab-content" id="tab-sandbox">
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon security">🐳</div>
+        <h3>容器生命周期</h3>
+        <p>创建阶段：在主机上建立沙箱目录和临时文件目录，通过 Docker 引擎 API 创建容器实例，配置绑定挂载路径和内存上限。启动阶段：容器进入运行状态，等待后续的命令执行。执行阶段：通过容器执行接口在运行中的容器内启动 Agent 进程，实时获取标准输出和标准错误流。销毁阶段：停止并删除容器，可选清理主机上的关联目录。容器命名规则为固定前缀加会话标识，便于运维追踪。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon planner">📂</div>
+        <h3>三层挂载体系</h3>
+        <p>第一层——沙箱目录挂载到容器内的沙箱路径，存放 Agent 运行时配置文件、执行计划、临时日志等。第二层——用户工作区目录挂载到容器内的工作区路径，Agent 在此读写项目代码和生成产物。第三层——Agent 持久化身份目录挂载到容器内的共享路径，包含 Agent 的行为配置、长期记忆、自定义技能定义，跨不同会话自动共享，Agent 在一个会话中学到的经验在下一个会话中自动可用。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon code">📡</div>
+        <h3>流式输出机制</h3>
+        <p>Docker 引擎将标准输出和标准错误交织在同一个数据流中传输，采用多路复用帧协议——每帧包含 8 字节头部（标识流类型和数据长度）和数据体。系统内部实现了完整的多路分解逻辑：持续从流中读取帧头、识别流类型（标准输入/标准输出/标准错误）、按声明长度拉取数据体、根据流类型将内容分发到对应的输出回调。这使得 Agent 的实时输出可以在毫秒级延迟内呈现在前端界面上。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon green">🛡️</div>
+        <h3>安全边界</h3>
+        <p>文件系统隔离（容器内无法访问主机 /etc、/home、/root）+ 网络隔离（Docker 桥接 + NAT）+ 资源限制（Solo 512MB / Group 2GB）+ 进程隔离（Linux Namespaces + Capabilities 限制）。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: DAG 调度 -->
+  <div class="tab-content" id="tab-dag">
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon planner">1</div>
+        <h3>计划生成机制</h3>
+        <p>专门的规划 Agent 接收用户自然语言需求、当前会话的可用 Agent 列表（含名称、描述、专长）和项目基础上下文后，将需求拆解为结构化的有向无环图计划。每个任务节点包含唯一标识、标题、描述、执行 Agent 类型、依赖的前置任务列表、预期产物路径。生成的计划先经过严格的 Schema 校验确保结构合法性，随后持久化到数据库的计划执行表中，支持重启恢复。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon code">2</div>
+        <h3>依赖感知调度</h3>
+        <p>调度器持续扫描任务列表，找出所有前置依赖已全部完成的任务，将其标记为就绪状态。然后计算当前可用槽位——取全局并发上限减去当前运行数、以及单会话并发上限减去该会话当前运行数，两者中较小的值作为可启动数量。从就绪任务中按先进先出顺序选取相应数量的任务启动执行。整个调度是事件驱动的：每当一个任务完成或失败，立即触发新一轮扫描以解锁可能的下游任务。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon review">3</div>
+        <h3>三级恢复策略</h3>
+        <p>第一级——自动重试：最多 3 次，采用 2 秒、4 秒、8 秒指数退避间隔，适用于网络抖动等临时性故障。第二级——管理循环审查：独立于执行 Agent 的审查 Agent 分析失败任务的输出、上游结果和当前文件树，判断是表面报错还是实质性失败，做出继续执行、重新规划或终止计划的决策。第三级——规划 Agent 升级：将完整失败上下文提交回规划 Agent，由其重新评估方案可行性，必要时重新设计任务分配或技术路线。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon teal">4</div>
+        <h3>两级并发控制</h3>
+        <p>全局级——限制整个系统同时运行的 Agent 总数（默认 5 个，可配置范围 1 到 20），主要目的是控制 AI 服务 API 的并发调用量，避免触发限流。会话级——限制单个会话内同时运行的 Agent 数量（默认 8 个，可配置范围 1 到 50），防止单用户独占所有计算资源。所有并发参数支持运行时通过 API 动态调整并持久化到数据库，运维人员无需重启服务即可根据实际负载调整策略。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: ContextBus -->
+  <div class="tab-content" id="tab-context">
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon purple">1</div>
+        <h3>数据结构设计</h3>
+        <p>内部使用键值对映射存储上下文条目。每个条目包含：唯一键名、任意类型的值、类型标签（区分约定、决策、已知问题、依赖映射、任务交接、项目事实、产物信息共 7 种）、版本号（用于冲突检测和增量查询）、写入者标识、标签数组（用于分类检索）、状态标记（活跃、已废弃、已被替代）、创建和更新时间戳（用于衰减计算）、引用计数（用于优先级加权）。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon planner">2</div>
+        <h3>优先级权重与衰减</h3>
+        <p>每条上下文在注入 Agent 前会经过优先级排序，综合三个维度打分。类型基础分反映了不同类别信息的重要程度——项目约定权重最高（Agent 必须遵守的规则），架构决策次之（影响设计方向），已知问题第三（避免踩坑），依次到产物信息最低。时间衰减采用 7 天线性模型，一周前未更新的条目权重降为零。引用加分机制让被多个 Agent 频繁引用的条目自动提升优先级，确保核心知识不会因时间推移而被挤出上下文窗口。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon code">3</div>
+        <h3>上下文预算管理</h3>
+        <p>AI 模型的上下文窗口有限，不能将所有历史条目全部注入。系统在每次 Agent 启动时按优先级降序排列所有条目，逐条注入到上下文提示词中，当累计 Token 数接近预设预算上限（默认可配）时停止。被裁剪的低优先级条目不会丢失——它们仍保留在共享总线中，后续查询时仍然可见。用户手动固定的消息不受预算裁剪影响，始终强制注入到每个 Agent 的上下文中。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon green">4</div>
+        <h3>持久化与恢复</h3>
+        <p>上下文条目通过数据库表持久化。会话标识与键名构成复合唯一约束，值以字符串形式存储（消费方自行反序列化），类型字段提供分类能力，版本号支持乐观锁和增量查询，标签以 JSON 数组存储支持多维检索。同时建立会话标识和计划标识双索引以加速常见查询。会话重启后，所有上下文从数据库完整恢复，Agent 的协作记忆不丢失。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: WebSocket -->
+  <div class="tab-content" id="tab-websocket">
+    <div class="card-grid">
+      <div class="card">
+        <div class="card-icon teal">1</div>
+        <h3>连接管理</h3>
+        <p>WebSocket 服务器附加到 HTTP 服务器上，复用同一端口，简化部署和跨域配置。客户端连接时通过 URL 查询参数携带认证令牌和会话标识。连接建立后，在异步的身份校验和数据库查询完成之前，所有到达的消息会被暂存到缓冲区；一旦会话就绪标志位被设置，缓冲区中的消息立即按序重放到消息处理器。这个设计消除了竞态条件——确保在连接完全初始化之前不会丢失任何消息。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon code">2</div>
+        <h3>消息类型体系</h3>
+        <p>系统定义了十余种 WebSocket 消息类型，覆盖完整的协作流程：聊天消息发送、停止 Agent、权限响应、权限模式切换、计划确认与取消、任务重试与修改、强制完成与失败、重规划请求、冲突重试等。每条消息通过类型字段路由到对应的处理函数——聊天消息进入对话处理器，计划操作进入计划处理器，权限操作进入审批处理器——各模块职责单一、边界清晰。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon purple">3</div>
+        <h3>Agent 事件推送</h3>
+        <p>Agent 在沙箱内执行期间，标准输出流经事件解析器实时转换为结构化事件，通过 WebSocket 广播推送到前端。事件类型覆盖完整的执行生命周期：推理过程（展示 Agent 的思考链）、工具调用（显示 Agent 调用什么工具及参数）、工具结果（展示返回值）、权限请求（需要用户确认的操作）、Token 用量更新（实时成本追踪）、子 Agent 启停、文件产物通知、阶段完成标记、以及最终的退出事件（携带退出码）。</p>
+      </div>
+      <div class="card">
+        <div class="card-icon review">4</div>
+        <h3>可靠性保障</h3>
+        <p>前端实现了指数退避重连逻辑——断开后按 1 秒、2 秒、4 秒递增等待时间，最大间隔 30 秒。重连成功后从后端 REST 接口拉取最新消息列表和会话状态，与本地缓存合并以消除断线期间的数据差。服务启动时自动扫描并清理所有状态为"流式输出中"的残留消息——将它们标记为已完成，防止因上次异常退出导致前端永久显示"正在输入"。可选的消息序列号机制用于检测丢失事件并请求重发。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     DATA MODEL
+     ══════════════════════════════════════════════ -->
+<section class="section" style="padding-top: 20px;">
+  <span class="section-label">Data Model</span>
+  <h2 class="section-title">数据模型设计</h2>
+  <p class="section-desc">Prisma ORM + PostgreSQL 16，JSON 字段用于动态结构，双层 Token 统计。</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>表名</th><th>设计要点</th></tr></thead>
+      <tbody>
+        <tr><td style="font-weight:600;">User</td><td>API Key 加密存储，密钥与 JWT Secret 分离</td></tr>
+        <tr><td style="font-weight:600;">Session</td><td>核心聚合根，关联所有会话数据</td></tr>
+        <tr><td style="font-weight:600;">SessionAgent</td><td>多对多中间表，携带会话级配置覆盖和 Token 统计</td></tr>
+        <tr><td style="font-weight:600;">Agent</td><td>持久化 Agent 身份，跨 Session 共享</td></tr>
+        <tr><td style="font-weight:600;">Message</td><td>消息级 Token 统计，流式状态追踪</td></tr>
+        <tr><td style="font-weight:600;">PlanExecution</td><td>DAG 计划持久化，JSON 存储任务列表</td></tr>
+        <tr><td style="font-weight:600;">ContextEntryRecord</td><td>ContextBus 持久化，版本控制 + 双索引</td></tr>
+        <tr><td style="font-weight:600;">PinnedMessage</td><td>固定消息，可选自动注入 Agent 上下文</td></tr>
+        <tr><td style="font-weight:600;">QuoteReference</td><td>精确引用追踪，支持多源类型</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     SECURITY
+     ══════════════════════════════════════════════ -->
+<section class="section" style="padding-top: 20px;">
+  <span class="section-label">Security</span>
+  <h2 class="section-title">五层纵深防御</h2>
+  <p class="section-desc">每一层都假设外层可能被突破，提供独立的防护能力。</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-icon teal">🔒</div>
+      <h3>L1 传输层</h3>
+      <p>生产环境 HTTPS + WSS 全流量 TLS 加密。Nginx 反向代理负责证书管理和 TLS 终止。WebSocket 连接升级后仍保持加密通道。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon code">🔑</div>
+      <h3>L2 认证层</h3>
+      <p>JWT Token 无状态认证（7 天有效期）适用于 WebSocket 长连接场景。bcryptjs cost=10 密码哈希。WebSocket Token 通过 URL 查询参数传递（TLS 保护下安全）。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon planner">🛡️</div>
+      <h3>L3 授权层</h3>
+      <p>每路由中间件校验 Token → 提取 userId → 数据查询附加 userId 条件。在数据访问层而非路由层实施授权，杜绝 IDOR 漏洞。Session 所有权验证。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon security">🐳</div>
+      <h3>L4 运行时层</h3>
+      <p>Docker 容器文件系统 + 进程隔离。PermissionProxy 三种模式（ask/smart/trust）。路径遍历防护（path.resolve + startsWith 白名单）。超时自动拒绝。</p>
+    </div>
+    <div class="card">
+      <div class="card-icon purple">🔐</div>
+      <h3>L5 数据层</h3>
+      <p>AES-256-GCM 加密 Provider API Key。密钥与 JWT Secret 独立。API Key 解密后注入容器 Env，不经过前端和容器文件系统。启动时脏状态自动清理。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     COMPARISON TABLE
+     ══════════════════════════════════════════════ -->
+<section class="section" style="padding-top: 20px;">
+  <span class="section-label">Positioning</span>
+  <h2 class="section-title">竞品差异化定位</h2>
+  <p class="section-desc">AgentHub 不是"更强的 AI"，而是"更好的协作基础设施"——就像 Git 不写代码但让开发者更好地协作。</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>维度</th><th>AgentHub</th><th>Claude Code / Copilot</th><th>LangChain / CrewAI</th><th>AutoGPT / BabyAGI</th></tr>
+      </thead>
+      <tbody>
+        <tr><td style="font-weight:600;">协作模式</td><td>多 Agent DAG 编排</td><td>单 Agent 独立工作</td><td>Agent 框架，需自行编排</td><td>自主循环，无协作</td></tr>
+        <tr><td style="font-weight:600;">环境隔离</td><td style="color: var(--accent-success);">每会话 Docker 沙箱</td><td>无隔离</td><td>取决于实现</td><td>无隔离</td></tr>
+        <tr><td style="font-weight:600;">任务调度</td><td style="color: var(--accent-success);">依赖感知 DAG + 三级恢复</td><td>无任务调度</td><td>需自行实现</td><td>简单线性循环</td></tr>
+        <tr><td style="font-weight:600;">上下文共享</td><td style="color: var(--accent-success);">结构化 ContextBus + Pinned</td><td>无共享</td><td>无内置共享总线</td><td>无共享</td></tr>
+        <tr><td style="font-weight:600;">Provider 扩展</td><td>工厂模式，接口驱动</td><td>单一 Provider</td><td>多 LLM 但无 Agent CLI</td><td>不适用</td></tr>
+        <tr><td style="font-weight:600;">安全模型</td><td style="color: var(--accent-success);">5 层纵深防御</td><td>基础权限确认</td><td>取决于实现</td><td>无安全模型</td></tr>
+        <tr><td style="font-weight:600;">产物管理</td><td>预览+编辑+版本历史</td><td>仅文本输出</td><td>无产物管理</td><td>无产物管理</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════
+     STATS
+     ══════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════════
+     FOOTER
+     ══════════════════════════════════════════════ -->
+<footer class="footer">
+  <p>
+    <strong>AgentHub</strong> — 智能多 Agent 协作中枢 &nbsp;|&nbsp;
+    <a href="https://github.com/doloveplayer/agentHub" target="_blank" rel="noopener">GitHub</a> &nbsp;|&nbsp;
+    <a href="https://github.com/doloveplayer/agentHub/blob/master/TECH_ARCHITECTURE.md" target="_blank" rel="noopener">技术架构文档</a> &nbsp;|&nbsp;
+    <a href="https://github.com/doloveplayer/agentHub/blob/master/README.md" target="_blank" rel="noopener">README</a>
+  </p>
+  <p style="margin-top: 8px; font-size: 12px;">
+    分析基准 commit: b878745 &nbsp;|&nbsp; 数据来源: understand-anything 知识图谱 + CodeGraph AST 索引
+  </p>
+</footer>
+
+<!-- ══════════════════════════════════════════════
+     SCRIPTS
+     ══════════════════════════════════════════════ -->
+<script>
+// ── Theme toggle ──
+function toggleTheme() {
+  const html = document.documentElement;
+  html.classList.toggle('dark');
+  updateThemeIcon();
+  localStorage.setItem('theme', html.classList.contains('dark') ? 'dark' : 'light');
+}
+
+function updateThemeIcon() {
+  const isDark = document.documentElement.classList.contains('dark');
+  document.querySelector('.theme-icon-light').style.display = isDark ? 'none' : 'inline';
+  document.querySelector('.theme-icon-dark').style.display = isDark ? 'inline' : 'none';
+}
+
+// Load saved theme or detect system preference
+(function() {
+  const saved = localStorage.getItem('theme');
+  if (saved === 'light') {
+    document.documentElement.classList.remove('dark');
+  } else if (saved === 'dark') {
+    document.documentElement.classList.add('dark');
+  } else if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+    document.documentElement.classList.remove('dark');
+  }
+  updateThemeIcon();
+})();
+
+// ── Tab switching ──
+function switchTab(tabId) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelector(`[onclick="switchTab('${tabId}')"]`).classList.add('active');
+  document.getElementById(tabId).classList.add('active');
+}
+
+// ── Intersection Observer for scroll animations ──
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.style.opacity = '1';
+      entry.target.style.transform = 'translateY(0)';
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.card, .feature-card, .arch-layer, .timeline-item').forEach(el => {
+  el.style.transition = 'opacity 0.5s ease-out, transform 0.5s ease-out';
+  observer.observe(el);
+});
+</script>
+
+</body>
+</html>
