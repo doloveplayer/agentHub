@@ -29,6 +29,7 @@ export interface ProviderConfig {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  variant?: string;
   env?: Record<string, string>;
   agentName?: string;
   hostWorkDir?: string;
@@ -63,6 +64,7 @@ export interface AbstractProvider {
   write(input: string): void;
   stop(): void;
   onEvent(handler: EventHandler): void;
+  removeAllListeners(): void;
   isAlive(): boolean;
   getAgentHome(): string;
   updateTrustMode(mode: boolean): void;

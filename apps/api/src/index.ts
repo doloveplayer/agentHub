@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
-import type { Server } from "http";
 import type http from "http";
 import type net from "net";
 
@@ -30,6 +29,7 @@ import settingsRoutes from "./routes/settings.js";
 import avatarRoutes from "./routes/avatar.js";
 import quoteRefRoutes from "./routes/quoteReferences.js";
 import pinnedRoutes from "./routes/pinned.js";
+import { planRecovery } from "./routes/planRecovery.js";
 import { seedAgentTemplates } from "./defaultAgents.js";
 
 // Clean up stale streaming messages from previous run
@@ -133,13 +133,15 @@ app.route("/api/review", reviewRoutes);
 app.route("/api/settings", settingsRoutes);
 app.route("/api/avatar", avatarRoutes);
 app.route("/api/quote-references", quoteRefRoutes);
+app.route("/api/plans", planRecovery);
 
 // Health check
 app.get("/api/health", (c) => {
   return c.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Debug endpoint: test Claude Code auth inside a sandbox container
+// Debug endpoint: test Claude Code auth inside a sandbox container (dev only)
+if (process.env.NODE_ENV !== "production") {
 app.get("/api/debug/claude-auth", async (c) => {
   const debugId = "debug-" + Date.now();
   try {
@@ -188,6 +190,7 @@ app.get("/api/debug/claude-auth", async (c) => {
     return c.json({ error: err.message }, 500);
   }
 });
+} // end debug endpoint guard
 
 // Start HTTP server with Hono's Node.js adapter
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
@@ -197,15 +200,15 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
 // Task scheduling is handled by in-process DAG dispatch (ws/taskDispatcher.ts).
 
 // Graceful shutdown — clean up resources before exit
-process.on("SIGINT", async () => {
-  console.log("[shutdown] Cleaning up...");
-  // Stop accepting new connections
+async function gracefulShutdown(signal: string) {
+  console.log(`[shutdown] Received ${signal}, cleaning up...`);
   nodeServer.close();
-  // Disconnect Prisma
   await prisma.$disconnect().catch(() => {});
   console.log("[shutdown] Exiting...");
   process.exit(0);
-});
+}
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 
 // Attach WebSocket handler (Hono's serve returns a Node http.Server at runtime)
 // HMR WebSocket proxy: forward preview-proxy WebSocket upgrades to the sandbox container

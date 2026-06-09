@@ -195,17 +195,47 @@ const SessionHeader = React.memo(function SessionHeader({
 });
 
 /** Inline conflict retry button shown below conflict_unresolved messages. */
-function ConflictRetryCard({ planId, taskIds, onRetry }: { planId: string; taskIds: string[]; onRetry: (planId: string, taskIds: string[]) => void }) {
-  const [clicked, setClicked] = useState(false);
+function ConflictRetryCard({ planId, taskIds, onRetry }: { planId: string; taskIds: string[]; onRetry: (planId: string, taskIds: string[]) => Promise<void> }) {
+  const [state, setState] = useState<'idle' | 'sending' | 'error'>('idle');
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (timeoutRef.current) { clearTimeout(timeoutRef.current); timeoutRef.current = null; }
+      if (detail?.success) {
+        setState('idle'); // success — card can be hidden or stay
+      } else {
+        setState('error');
+      }
+    };
+    window.addEventListener('conflict_retry_result', handler);
+    return () => window.removeEventListener('conflict_retry_result', handler);
+  }, []);
+
+  const handleRetry = async () => {
+    setState('sending');
+    try {
+      await onRetry(planId, taskIds);
+      // Timeout fallback: if no response in 8s, show error
+      timeoutRef.current = setTimeout(() => setState(prev => prev === 'sending' ? 'error' : prev), 8000);
+    } catch {
+      setState('error');
+    }
+  };
   return (
     <div className="mx-4 my-1 bg-hub-danger/10 border border-hub-danger/30 rounded-hub-lg px-4 py-2">
       <div className="flex items-center gap-2">
-        <span className="text-xs text-hub-secondary">Conflict tasks need retry</span>
+        {state === 'error' ? (
+          <span className="text-xs text-hub-danger">Retry failed — plan may have expired</span>
+        ) : (
+          <span className="text-xs text-hub-secondary">Conflict tasks need retry</span>
+        )}
         <button
-          onClick={() => { setClicked(true); onRetry(planId, taskIds); }}
-          disabled={clicked}
-          className="ml-auto px-3 py-1 bg-hub-primary hover:bg-hub-primary/80 disabled:opacity-50 text-white text-xs rounded-md font-medium transition"
-        >{clicked ? 'Retrying...' : `Retry ${taskIds.length} Task(s) Sequentially`}</button>
+          onClick={handleRetry}
+          disabled={state === 'sending'}
+          className={`ml-auto px-3 py-1 text-white text-xs rounded-md font-medium transition ${state === 'error' ? 'bg-hub-danger hover:bg-hub-danger/80' : 'bg-hub-primary hover:bg-hub-primary/80'} disabled:opacity-50`}
+        >{state === 'sending' ? 'Retrying...' : state === 'error' ? 'Retry Again' : `Retry ${taskIds.length} Task(s) Sequentially`}</button>
       </div>
     </div>
   );
@@ -322,7 +352,7 @@ const MessageItem = React.memo(function MessageItem({
   );
 }, (prev, next) => {
   // Custom comparator: only re-render if message content, status, or agent info changed
-  return prev.msg === next.msg
+  return prev.msg.id === next.msg.id
     && prev.msg.status === next.msg.status
     && prev.msg.content === next.msg.content
     && prev.agentDisplayName === next.agentDisplayName
@@ -390,7 +420,10 @@ export function ChatView() {
   useEffect(() => {
     const handler = (e: Event) => {
       const entry = (e as CustomEvent).detail;
-      if (entry) setCommLogEntries(prev => [...prev, entry]);
+      if (entry) setCommLogEntries(prev => {
+        const next = [...prev, entry];
+        return next.length > 500 ? next.slice(-500) : next;
+      });
     };
     window.addEventListener('comm_log', handler);
     return () => window.removeEventListener('comm_log', handler);
@@ -422,17 +455,29 @@ export function ChatView() {
   }, [activeSessionId]);
 
   // New artifact detection — snapshot-based: only show files created AFTER session starts
+  const DISMISSED_KEY = 'agenthub_dismissed_artifacts';
   const initialFilesRef = useRef<Set<string>>(new Set());
   const snapshotReadyRef = useRef(false);
   const [latestArtifact, setLatestArtifact] = useState<{ path: string; name: string; type: 'pptx' | 'html' } | null>(null);
-  const [dismissedPaths, setDismissedPaths] = useState<Set<string>>(new Set());
+  const [dismissedPaths, setDismissedPaths] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(DISMISSED_KEY);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
+  const dismissedPathsRef = useRef(dismissedPaths);
+  dismissedPathsRef.current = dismissedPaths;
 
-  // Reset snapshot when session changes
+  // Persist dismissedPaths to localStorage
+  useEffect(() => {
+    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...dismissedPaths]));
+  }, [dismissedPaths]);
+
+  // Reset snapshot when session changes (keep dismissedPaths — persisted via localStorage)
   useEffect(() => {
     initialFilesRef.current = new Set();
     snapshotReadyRef.current = false;
     setLatestArtifact(null);
-    setDismissedPaths(new Set());
   }, [activeSessionId]);
 
   const scanNewArtifacts = useCallback(async () => {
@@ -459,7 +504,7 @@ export function ChatView() {
       }
 
       // Subsequent calls: find new files not in snapshot and not dismissed
-      const newFiles = allFiles.filter(f => !initialFilesRef.current.has(f.path) && !dismissedPaths.has(f.path));
+      const newFiles = allFiles.filter(f => !initialFilesRef.current.has(f.path) && !dismissedPathsRef.current.has(f.path));
       const previewable = newFiles.filter(f => /\.pptx$/i.test(f.name) || /\.html?$/i.test(f.name));
       previewable.sort((a, b) => b.modifiedAt - a.modifiedAt);
       const newest = previewable[0] ?? null;
@@ -471,7 +516,7 @@ export function ChatView() {
         setLatestArtifact(null);
       }
     } catch { /* sandbox not ready */ }
-  }, [activeSessionId, dismissedPaths]);
+  }, [activeSessionId]);
 
   const dismissArtifact = useCallback(() => {
     if (latestArtifact) {

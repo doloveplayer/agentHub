@@ -26,12 +26,16 @@ AgentHub **不**重新实现：
 ### 关键目录
 
 ```
-.agents/{agentId}/          — agent 持久化主目录（CLAUDE.md、memory、skills），跨 session 共享
+.agent-runtime/{agentId}/   — agent 持久化主目录（CLAUDE.md、memory、skills），跨 session 共享
 .sandboxes/{sessionId}/     — 会话运行时（plan.json、agent 配置、inbox）
 apps/api/src/               — 后端：Hono + Prisma + Dockerode + WebSocket
 apps/web/src/               — 前端：React + Vite + Zustand + Tailwind
 packages/shared/src/        — 前后端共享类型
 docker/                     — 沙箱镜像 + sdk-runner
+docs/adr/                   — 架构决策记录（ADR）
+docs/changelog/             — 按月功能总结
+docs/plans/                 — 活跃 plan
+docs/architecture/          — 设计文档（specs）和测试报告（reports）
 ```
 
 ## 常用命令
@@ -44,7 +48,7 @@ bash scripts/startup.sh          # 日志 → ./logs/
 bash scripts/cleanup.sh
 
 # 构建沙箱镜像（Dockerfile 变更后）
-docker build -t agenthub-sandbox:latest -f docker/sandbox.Dockerfile .
+docker build -t agenthub-sandbox:latest -f docker/sandbox.Dockerfile docker/
 
 # TypeScript 类型检查
 npx tsc --noEmit -p apps/api/tsconfig.json
@@ -59,33 +63,27 @@ git remote set-url origin git@github.com:doloveplayer/agentHub.git
 
 ## 计划管理工作流
 
-计划和实现必须保持同步：
+计划和实现必须保持同步。完成即更新、分歧先讨论、改 Plan 再改 Code。
 
-- **完成即更新**：每完成一个功能阶段，必须同步更新 `docs/superpowers/plans/` 下对应 plan 文件的勾选状态（`- [ ]` → `- [x]`），不允许累积到多个阶段一起更新
-- **分歧先讨论**：实施过程中发现 plan 的设计需要调整时，必须先与我讨论更优方案，而不是静默偏离 plan
-- **改 Plan 再改 Code**：确认调整方向后，先修改 plan 文件使其反映新方案，再执行代码修改。杜绝 plan 和实际实现各说各话
+→ 详细执行指南：使用 `/plan-management` skill
+
+## 文档归档
+
+文档按三层结构组织：ADR（架构决策）→ Changelog（按月功能总结）→ Plan（临时执行计划）。功能完成后归档 plan 到 changelog，架构决策写入 ADR。
+
+→ 详细执行指南：使用 `/doc-archival` skill
 
 ## 代码审查工作流
 
-每完成一个功能板块，必须进行代码审查：
+每完成一个功能板块，必须进行代码审查。不要跳过。
 
-- 输入 `/code-review` 触发自动化代码审查
-- 审查基于当前未提交的改动（或最近一次 commit）对比计划/需求文档
-- 修复 Critical 和 Important 问题
-- 不要跳过审查认为"改动简单没必要"
+→ 详细执行指南：使用 `/code-review-workflow` skill
 
 ## 排错 SOP
 
-排查问题和 debug 时必须遵循：
+排查顺序：日志 → 沙箱输出 → Agent 目录 → 工作目录 → Docker 容器 → 模型输出 → 复现 → 系统化排查。不要跳步直奔修复。
 
-1. **检查日志**：优先查看 `logs/` 目录下的 `backend.log`、`frontend.log`
-2. **检查沙箱输出**：`.sandboxes/{sessionId}/` 下可能有 agent 的实际输出和错误日志
-3. **检查 Agent 持久化目录**：`.agents/{agentId}/` 下有 agent 的 CLAUDE.md、memory、skills
-4. **检查工作目录**：确认 session 绑定的 workspace 目录内容和版本追踪 `.agenthub/versions.json`
-5. **检查 Docker 容器状态**：`docker inspect <container>` 验证挂载是否正确（`/workspace`, `/sandbox`, `/home/agents`）
-6. **检查模型实际输出**：通过沙箱日志确认 Claude Code 的真实 stdout/stderr
-7. **复现问题**：复现测试消息触发实际流程，从日志和截图中定位错误
-8. **复杂 bug**：启用 `/systematic-debugging` 技能进行系统化排查
+→ 详细执行指南：使用 `/troubleshooting-sop` skill
 
 ## 代码编写规则
 
@@ -93,12 +91,9 @@ git remote set-url origin git@github.com:doloveplayer/agentHub.git
 
 ## 可视化测试
 
-功能测试和 UI 审查应使用截图 + 图片分析 MCP（`analyze_image`、`ui_diff_check`）。
+UI 功能通过截图 + 图像分析 MCP 验证，不要用纯文字描述替代视觉确认。
 
-- 启动：`cd apps/api && npx tsx src/index.ts` + `cd apps/web && npx vite`
-- 浏览器自动化：`document-skills:webapp-testing`（Playwright）
-- 中间截图保存至 `screenTmp/AgentScreenshots/`
-- TypeScript 编译检查：`npx tsc --noEmit -p apps/api/tsconfig.json && npx tsc --noEmit -p apps/web/tsconfig.json`
+→ 详细执行指南：使用 `/visual-testing` skill
 
 ## E2E 测试（绕过认证）
 

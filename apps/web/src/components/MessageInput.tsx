@@ -39,6 +39,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const activeSessionType = useAppStore((s) => s.sessions.find((session: any) => session.id === s.activeSessionId)?.type);
   const addMessage = useAppStore((s) => s.addMessage);
+  const addToast = useAppStore((s) => s.addToast);
   const messages = useAppStore((s) => s.messages);
   const recentMessages = (messages[activeSessionId ?? ''] ?? []).slice(-20).map(m => m.content).filter(Boolean);
   const myHistory = (messages[activeSessionId ?? ''] ?? []).filter((m: any) => m.senderType === 'human').map((m: any) => m.content);
@@ -57,6 +58,8 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
   const [slashQuery, setSlashQuery] = useState('');
   const [showSlash, setShowSlash] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
+  const [pendingSkillAgents, setPendingSkillAgents] = useState<AgentConfig[]>([]);
+  const [skillAgentIndex, setSkillAgentIndex] = useState(0);
   const pendingQuoteRef = useRef<PromptInsertDetail['quoteRef'] | null>(null);
 
   const matchSource = mentionableAgents ?? agents;
@@ -69,13 +72,14 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
     if (!session) return [];
     const agentIds = new Set((session.agents || []).map(sa => sa.agentId));
     const seen = new Set<string>();
-    const result: { name: string; description: string }[] = [];
+    const result: { name: string; description: string; agentId: string; agentDisplayName: string }[] = [];
     for (const a of agents) {
       if (!agentIds.has(a.id)) continue;
       for (const s of (a.skills || [])) {
-        if (!seen.has(s.name)) {
-          seen.add(s.name);
-          result.push({ name: s.name, description: s.description });
+        const key = `${s.name}::${a.id}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          result.push({ name: s.name, description: s.description, agentId: a.id, agentDisplayName: a.displayName });
         }
       }
     }
@@ -164,9 +168,44 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
   };
 
   const handleSelectCommand = (command: string) => {
-    setValue(command + ' ');
+    const skillName = command.slice(1);
+    const owners = agentSkills.filter(s => s.name === skillName);
+
+    // Solo sessions don't support mentions — skip auto-tag
+    if (activeSessionType === 'group' && owners.length === 1) {
+      const owner = owners[0];
+      setTags((prev) => {
+        if (prev.some(t => t.agentId === owner.agentId)) return prev;
+        return [...prev, { agentId: owner.agentId, agentName: owner.name, displayName: owner.agentDisplayName }];
+      });
+      setValue(command + ' ');
+    } else if (activeSessionType === 'group' && owners.length > 1) {
+      const agentConfigs: AgentConfig[] = owners.map(o => {
+        const full = agents.find(a => a.id === o.agentId);
+        return full || { id: o.agentId, name: '', displayName: o.agentDisplayName, description: '', systemPrompt: '', provider: 'claude-code', type: 'user', skills: [] } as AgentConfig;
+      });
+      setPendingSkillAgents(agentConfigs);
+      setSkillAgentIndex(0);
+      setValue(command + ' ');
+      setShowSlash(false);
+      setSlashQuery('');
+      return;
+    } else {
+      setValue(command + ' ');
+    }
+
     setShowSlash(false);
     setSlashQuery('');
+    ref.current?.focus();
+  };
+
+  const handleSkillAgentSelect = (agent: AgentConfig) => {
+    setTags((prev) => {
+      if (prev.some(t => t.agentId === agent.id)) return prev;
+      return [...prev, { agentId: agent.id, agentName: agent.name, displayName: agent.displayName }];
+    });
+    setPendingSkillAgents([]);
+    setSkillAgentIndex(0);
     ref.current?.focus();
   };
 
@@ -206,6 +245,17 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
         setShowPopup(false);
         return;
       }
+    }
+
+    if (pendingSkillAgents.length > 0) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSkillAgentIndex(i => (i + 1) % pendingSkillAgents.length); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setSkillAgentIndex(i => (i - 1 + pendingSkillAgents.length) % pendingSkillAgents.length); return; }
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (pendingSkillAgents[skillAgentIndex]) handleSkillAgentSelect(pendingSkillAgents[skillAgentIndex]);
+        return;
+      }
+      if (e.key === 'Escape') { setPendingSkillAgents([]); return; }
     }
 
     // Up arrow → cycle backward through sent message history
@@ -305,7 +355,31 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
       }
     }
 
-    onSend(finalValue, tags, orchestrationMode, quoteReferenceId, skillInvocation);
+    // Fallback: if skillInvocation is set but no tags, auto-find owner (group only)
+    let sendTags = tags;
+    if (skillInvocation && tags.length === 0 && activeSessionType === 'group') {
+      const owners = agentSkills.filter(s => s.name === skillInvocation);
+      if (owners.length === 1) {
+        const owner = owners[0];
+        const ownerAgent = agents.find(a => a.id === owner.agentId);
+        sendTags = [{ agentId: owner.agentId, agentName: ownerAgent?.name || '', displayName: owner.agentDisplayName }];
+      } else if (owners.length > 1) {
+        addToast(`多个 Agent 拥有 ${skillInvocation}，请 @指定 Agent`, 'info');
+        return;
+      }
+    }
+
+    // Warn if target agent doesn't have the skill
+    if (skillInvocation && sendTags.length > 0) {
+      for (const t of sendTags) {
+        const targetAgent = agents.find(a => a.id === t.agentId);
+        if (targetAgent && !(targetAgent.skills || []).some((s: any) => s.name === skillInvocation)) {
+          addToast(`${targetAgent.displayName} 没有 ${skillInvocation}，skill 将被忽略`, 'info');
+        }
+      }
+    }
+
+    onSend(finalValue, sendTags, orchestrationMode, quoteReferenceId, skillInvocation);
 
     // Touch session updatedAt locally for immediate sort feedback
     if (activeSessionId) {
@@ -375,6 +449,17 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
             onClose={() => setShowSlash(false)}
             position={{ top: 0, left: 8 }}
             agentSkills={agentSkills}
+          />
+        )}
+
+        {pendingSkillAgents.length > 0 && (
+          <AgentMentionPopup
+            agents={pendingSkillAgents}
+            query=""
+            focusedIndex={skillAgentIndex}
+            onSelect={handleSkillAgentSelect}
+            onClose={() => { setPendingSkillAgents([]); setSkillAgentIndex(0); }}
+            position={{ top: 0, left: 8 }}
           />
         )}
 

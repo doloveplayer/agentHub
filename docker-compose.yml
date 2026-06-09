@@ -6,7 +6,7 @@ services:
     ports:
       - '3000:3000'
     environment:
-      - DATABASE_URL=postgresql://agenthub:agenthub@postgres:5432/agenthub
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-agenthub}:${POSTGRES_PASSWORD:-agenthub}@postgres:5432/${POSTGRES_DB:-agenthub}
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=${JWT_SECRET}
       - GITHUB_CLIENT_ID=${GITHUB_CLIENT_ID}
@@ -26,15 +26,15 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: agenthub
-      POSTGRES_PASSWORD: agenthub
-      POSTGRES_DB: agenthub
+      POSTGRES_USER: ${POSTGRES_USER:-agenthub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agenthub}
+      POSTGRES_DB: ${POSTGRES_DB:-agenthub}
     ports:
       - '5432:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U agenthub']
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-agenthub}']
       interval: 5s
       timeout: 5s
       retries: 5

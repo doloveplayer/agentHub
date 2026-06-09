@@ -126,11 +126,25 @@ export function TaskDAG({ tasks, onTaskClick, onConnectDep, onEditTask, onDelete
       layerNodes.set(layer, arr);
     }
 
+    // Estimate node width from title length (no truncation)
+    const estimateWidth = (task: TaskState): number => {
+      const titleW = task.title.length * 7 + 32; // ~7px/char + 32px padding
+      const agentW = ((task.assignedAgentName || task.agentType || '').length) * 6 + 32;
+      return Math.max(180, titleW, agentW);
+    };
+
+    const NODE_GAP = 32; // horizontal gap between nodes in same layer
     const ns: Node[] = [];
-    for (const [id, layer] of layers) {
+    for (const [layer, ids] of layerNodes) {
       const yPos = layer * 120 + 20;
-      const xPos = (layerNodes.get(layer) || []).indexOf(id) * 220 + 20;
-      ns.push({ id, position: { x: xPos, y: yPos }, type: 'custom', data: nodeMap.get(id)! as unknown as Record<string, unknown> });
+      // Pre-calculate widths for this layer
+      const widths = ids.map(id => estimateWidth(nodeMap.get(id)!));
+      // Cumulative x positions: each node starts after previous node + gap
+      let xCursor = 20;
+      for (let i = 0; i < ids.length; i++) {
+        ns.push({ id: ids[i], position: { x: xCursor, y: yPos }, type: 'custom', data: nodeMap.get(ids[i])! as unknown as Record<string, unknown> });
+        xCursor += widths[i] + NODE_GAP;
+      }
     }
 
     const es: Edge[] = [];

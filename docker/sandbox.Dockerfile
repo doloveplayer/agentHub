@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN npm install -g @anthropic-ai/claude-code
 RUN npm install -g @anthropic-ai/claude-agent-sdk
 RUN npm install -g zod
+RUN npm install -g opencode-ai@1.15.13
 
 # Use non-root user for --dangerously-skip-permissions compatibility
 RUN mkdir -p /workspace \
@@ -28,4 +29,3 @@ USER node
 WORKDIR /workspace
 
 CMD ["tail", "-f", "/dev/null"]
-RUN npm install -g opencode-ai@1.15.13

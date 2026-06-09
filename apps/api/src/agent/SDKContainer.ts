@@ -1,13 +1,14 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
+import { stripAnsi } from './stripAnsi.js';
 
 export interface SDKContainerOptions {
   containerId: string;
   prompt: string;
   hostWorkDir: string;
   hostSandboxDir: string;  // host path to sandbox dir (agent config + runtime files)
-  agentHomeDir?: string;   // host path to agent persistent home (.agents/<agentId>)
+  agentHomeDir?: string;   // host path to agent persistent home (.agent-runtime/<agentId>)
   agentTag: string;
   agentConfigTag?: string;
   permissionMode: string;
@@ -47,9 +48,9 @@ export function spawnSDKInDocker(
   if (!envVars['ANTHROPIC_API_KEY'] && envVars['ANTHROPIC_AUTH_TOKEN']) {
     envVars['ANTHROPIC_API_KEY'] = envVars['ANTHROPIC_AUTH_TOKEN'];
   }
-  // Forward ANTHROPIC_MODEL to sdk-runner via AGENTHUB_MODEL
+  // Forward ANTHROPIC_MODEL to sdk-runner via AGENTHUB_MODEL (strip ANSI remnants)
   if (envVars['ANTHROPIC_MODEL']) {
-    envVars['AGENTHUB_MODEL'] = envVars['ANTHROPIC_MODEL'];
+    envVars['AGENTHUB_MODEL'] = stripAnsi(envVars['ANTHROPIC_MODEL']);
   }
   // Forward thinking config to sdk-runner
   if (envVars['ANTHROPIC_THINKING_EFFORT']) {

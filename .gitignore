@@ -13,15 +13,23 @@ build/
 
 # Docker sandbox runtime
 .sandboxes/
-.agents/
+.agent-runtime/
 
-# Claude Code local state
-.claude/
+# Claude Code local state (share CLAUDE.md, skills/; keep personal/config files local)
+.claude/settings.json
+.claude/settings.local.json
+.claude/memory/
+.claude/worktrees/
+.claude/agents/
+.claude/test.txt
 .codex/
+.codegraph/
+.understand-anything/
 
 # IDE
 .vscode/
 .idea/
+.trae/
 
 # OS
 .DS_Store
@@ -40,6 +48,10 @@ tmp/
 temp/
 *.tmp
 
+# Test files
+*.test.ts
+*.test.tsx
+
 # Dev utility scripts (contain dev secrets)
 apps/api/scripts/gen_token.ts
 docs/superpowers/plans/.archived
@@ -52,6 +64,8 @@ memory.md
 
 # Backup files
 PRD.backup.*.md
+PRD.md
+TESTCASES.md
 
 .superpowers/*
 testAgent/

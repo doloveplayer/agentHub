@@ -84,7 +84,7 @@ export function AgentCard({ agentId, displayName, status, events, onStop, agentN
   // providerConfig may be a JSON string (Prisma Json type) or an object
   const rawConfig = (agentConfig as any)?.providerConfig;
   const pConfig = typeof rawConfig === 'string' ? (() => { try { return JSON.parse(rawConfig); } catch { return {}; } })() : (rawConfig || {});
-  const model = pConfig.model || 'deepseek-v4-pro';
+  const model = pConfig.model || 'claude-sonnet-4-20250514';
   const thinkingLevel = pConfig.thinking ? 'high' : 'off';
 
   // Dashboard data - prioritize real-time events, fallback to persisted data

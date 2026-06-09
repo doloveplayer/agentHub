@@ -1,4 +1,9 @@
 import { prisma } from './db/prisma.js';
+import { stripAnsi } from './agent/stripAnsi.js';
+
+const DEFAULT_MODEL = process.env.ANTHROPIC_MODEL
+  ? stripAnsi(process.env.ANTHROPIC_MODEL)
+  : '';
 
 export async function seedAgentTemplates() {
   const templates = [
@@ -27,7 +32,7 @@ export async function seedAgentTemplates() {
 - Validate input at system boundaries only — trust internal code
 - Don't hardcode secrets, tokens, or credentials`,
       provider: 'claude-code',
-      providerConfig: process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {},
+      providerConfig: DEFAULT_MODEL ? { model: DEFAULT_MODEL } : {},
     },
     {
       name: 'review-agent',
@@ -62,7 +67,7 @@ For each finding:
 - Don't re-verify things you can confirm by reading the code
 - Don't approve if there are unfixed HIGH findings`,
       provider: 'claude-code',
-      providerConfig: process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {},
+      providerConfig: DEFAULT_MODEL ? { model: DEFAULT_MODEL } : {},
     },
     {
       name: 'devops-agent',
@@ -102,7 +107,7 @@ For each finding:
 - Don't add monitoring/alerting unless explicitly requested
 - Don't optimize prematurely — measure first`,
       provider: 'claude-code',
-      providerConfig: process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {},
+      providerConfig: DEFAULT_MODEL ? { model: DEFAULT_MODEL } : {},
     },
     {
       name: 'planner',
@@ -240,7 +245,7 @@ When your input contains "## Plan Escalation —" at the top level, you are in *
 3. Output in Chinese. Do NOT output AGENTHUB_PLAN or call any tools.`,
       provider: 'claude-code',
       providerConfig: {
-        ...(process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {}),
+        ...(DEFAULT_MODEL ? { model: DEFAULT_MODEL } : {}),
         thinking: (process.env.DEFAULT_THINKING !== 'false'),
       },
     },
@@ -274,7 +279,7 @@ When your input contains "## Plan Escalation —" at the top level, you are in *
 - Do NOT modify source files, add features, or fix bugs — your sole responsibility is testing
 - If you find a bug, report it — do not fix it yourself`,
       provider: 'claude-code',
-      providerConfig: process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {},
+      providerConfig: DEFAULT_MODEL ? { model: DEFAULT_MODEL } : {},
     },
   ];
 
@@ -315,7 +320,7 @@ export const defaultAgents = [
 - Don't hardcode secrets, tokens, or credentials`,
     provider: 'claude-code',
     providerConfig: {
-      ...(process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {}),
+      ...(DEFAULT_MODEL ? { model: DEFAULT_MODEL } : {}),
       permissions: {
         allow: [
           'Read(/workspace/**)',
@@ -384,7 +389,7 @@ For each finding:
 - Don't approve if there are unfixed HIGH findings`,
     provider: 'claude-code',
     providerConfig: {
-      ...(process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {}),
+      ...(DEFAULT_MODEL ? { model: DEFAULT_MODEL } : {}),
       permissions: {
         allow: ['Read(/workspace/**)', 'Bash(ls:/workspace/**)', 'Bash(cat:/workspace/**)', 'Bash(find:/workspace/**)', 'Bash(npm:*:*)', 'Bash(npx:*:*)', 'Bash(node:*:*)', 'Bash(git:*:*)'],
         deny: [
@@ -425,7 +430,7 @@ For each finding:
 - If you find a bug, report it — do not fix it yourself`,
     provider: 'claude-code',
     providerConfig: {
-      ...(process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {}),
+      ...(DEFAULT_MODEL ? { model: DEFAULT_MODEL } : {}),
       permissions: {
         allow: [
           'Read(/workspace/**)',
@@ -577,7 +582,7 @@ When your input contains "## Plan Escalation —" at the top level, you are in *
 3. Output in Chinese. Do NOT output AGENTHUB_PLAN or call any tools.`,
     provider: 'claude-code',
     providerConfig: {
-      ...(process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : {}),
+      ...(DEFAULT_MODEL ? { model: DEFAULT_MODEL } : {}),
       thinking: (process.env.DEFAULT_THINKING !== 'false'),
       permissions: {
         allow: [
@@ -633,7 +638,7 @@ When your input contains "## Plan Escalation —" at the top level, you are in *
 - Don't add monitoring/alerting unless explicitly requested
 - Don't optimize prematurely — measure first`,
     provider: 'claude-code',
-    providerConfig: process.env.ANTHROPIC_MODEL ? { model: process.env.ANTHROPIC_MODEL } : { permissions: {
+    providerConfig: DEFAULT_MODEL ? { model: DEFAULT_MODEL } : { permissions: {
       allowedTools: [
         'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob',
         'Bash(docker:*)', 'Bash(docker-compose:*)', 'Bash(kubectl:*)',

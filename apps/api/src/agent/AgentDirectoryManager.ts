@@ -33,7 +33,7 @@ function parseSkillFrontmatter(content: string): SkillDef {
 
 export class AgentDirectoryManager {
 
-  /** Ensure agent persistent home directory exists at .agents/<agentId>/ */
+  /** Ensure agent persistent home directory exists at .agent-runtime/<agentId>/ */
   static ensureAgentHome(agentId: string, agentName: string, systemPrompt: string, skills?: SkillDef[] | null): string {
     const homeDir = resolve(AGENTS_ROOT, agentId);
     const claudeConfigDir = resolve(homeDir, '.claude');

@@ -230,6 +230,26 @@ export class WorkspaceManager {
     };
   }
 
+  /** Diff between two version refs, returning per-file diffs (for conflict detection). */
+  static diffBetweenVersions(workspacePath: string, fromVersionId: string, toVersionId: string): FileDiff[] {
+    const absPath = resolve(workspacePath);
+    assertGitRepo(absPath);
+    const from = findVersion(absPath, fromVersionId);
+    const to = findVersion(absPath, toVersionId);
+    const changedFiles = runGit(absPath, ['diff', '--name-only', from.ref, to.ref], false)
+      .split('\n').filter(isUserWorkspacePath);
+    return changedFiles.map((filePath) => {
+      const diff = runGit(absPath, ['diff', '--no-ext-diff', '--unified=3', from.ref, to.ref, '--', filePath], false);
+      return {
+        path: filePath,
+        baseRef: from.ref,
+        headRef: to.ref,
+        diff,
+        hunks: parseDiffHunks(diff),
+      };
+    });
+  }
+
   static restoreVersion(workspacePath: string, versionId: string): boolean {
     const absPath = resolve(workspacePath);
     assertGitRepo(absPath);
@@ -439,6 +459,7 @@ function ensureGitRepo(absPath: string): void {
     '_repl_prompt_*',
     '_env*',
     '_inbox_*',
+    '_comm_*',
     '.agenthub/',
     '.claude/',
     '',

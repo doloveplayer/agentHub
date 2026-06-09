@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Plus, MessageSquare, Trash2, Users, X, AlertTriangle, Loader2, RefreshCw, Pencil, ChevronDown, ChevronRight, Bot, Save, Pin, Archive, ArchiveRestore, Search } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { api } from '../lib/api';
+import { CreateAgentModal } from './CreateAgentModal';
 import type { Session, AgentConfig } from '@agenthub/shared';
 
 interface Props { onCloseMobile?: () => void; iconMode?: boolean; onToggleIconMode?: () => void; }
@@ -138,46 +139,26 @@ export function SessionList({ onCloseMobile, iconMode, onToggleIconMode }: Props
     return m;
   }, [agents]);
 
-  const [customAgentMode, setCustomAgentMode] = useState(false);
-  const [customName, setCustomName] = useState('');
-  const [customDisplay, setCustomDisplay] = useState('');
-  const [customDesc, setCustomDesc] = useState('');
-  const [customPrompt, setCustomPrompt] = useState('');
+  const [showCreateAgentModal, setShowCreateAgentModal] = useState(false);
 
-  const handleCreate = async (type: 'solo' | 'group') => {
-    if (type === 'solo' && customAgentMode && customDisplay && customDesc && customPrompt) {
-      let name = customName || customDisplay.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-+|-+$/g, '');
-      if (!name || name.length < 2) name = 'custom-agent-' + Date.now().toString(36);
-      const session = await api.createSession({
-        type: 'solo',
-        customAgent: { name, displayName: customDisplay, description: customDesc, systemPrompt: customPrompt },
-      });
-      setSessions([session, ...sessions]);
-      api.getAgents().then(setAgents).catch(console.error);
-      if (session.permissionMode) setSessionPermissionMode(session.id, session.permissionMode);
-      setActiveSession(session.id);
-      resetCreate();
-      return;
-    }
-    const session = await api.createSession(type === 'group' ? { type: 'group' } : {});
+  const handleCreate = async (type: 'group') => {
+    const session = await api.createSession({ type: 'group' });
     setSessions([session, ...sessions]);
-    if (type === 'group') {
-      api.getAgents().then(setAgents).catch(console.error);
-    }
+    api.getAgents().then(setAgents).catch(console.error);
     if (session.permissionMode) {
       setSessionPermissionMode(session.id, session.permissionMode);
     }
     setActiveSession(session.id);
-    resetCreate();
+    setShowCreate(false);
   };
 
-  const resetCreate = () => {
-    setShowCreate(false);
-    setCustomAgentMode(false);
-    setCustomName('');
-    setCustomDisplay('');
-    setCustomDesc('');
-    setCustomPrompt('');
+  const handleCreateSoloSession = async (agentId: string) => {
+    const session = await api.createSession({ type: 'solo', agentIds: [agentId] });
+    setSessions([session, ...sessions]);
+    if (session.permissionMode) {
+      setSessionPermissionMode(session.id, session.permissionMode);
+    }
+    setActiveSession(session.id);
   };
 
   const handleSelect = async (id: string) => {
@@ -485,7 +466,17 @@ export function SessionList({ onCloseMobile, iconMode, onToggleIconMode }: Props
         )}
 
         {/* Sessions */}
-        {!isCollapsed && agentSessions.map((s) => renderSessionRow(s))}
+        {!isCollapsed && (
+          <>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCreateSoloSession(agent.id); }}
+              className="w-full text-left px-4 py-1.5 text-xs text-hub-tertiary hover:text-hub-accent hover:bg-hub-hover transition"
+            >
+              + New Solo Session
+            </button>
+            {agentSessions.map((s) => renderSessionRow(s))}
+          </>
+        )}
       </div>
     );
   };
@@ -536,36 +527,17 @@ export function SessionList({ onCloseMobile, iconMode, onToggleIconMode }: Props
       {/* === New Session === */}
       <div className="px-2 pb-1">
         <div className="relative">
-          <button onClick={() => setShowCreate(!showCreate)} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-hub-secondary hover:bg-hub-hover rounded-lg transition">
-            <MessageSquare className="w-4 h-4" />
-            <span>New Session</span>
+          <button onClick={() => setShowCreate(!showCreate)} className="p-1.5 hover:bg-hub-hover rounded-hub-lg transition" title="New Session">
+            <Plus className="w-4 h-4 text-hub-tertiary" />
           </button>
           {showCreate && (
-            <div className="absolute top-full left-2 mt-0.5 glass-surface-heavy border border-hub rounded-hub-lg shadow-xl z-50 w-64 overflow-hidden">
-              {!customAgentMode ? (
-                <>
-                  <button onClick={() => handleCreate('solo')} className="w-full text-left px-4 py-2.5 text-[13px] text-hub-secondary hover:bg-hub-hover flex items-center gap-2.5 transition">
-                    <MessageSquare className="w-3.5 h-3.5" /> Solo (Default Agent)
-                  </button>
-                  <button onClick={() => setCustomAgentMode(true)} className="w-full text-left px-4 py-2.5 text-[13px] text-hub-secondary hover:bg-hub-hover flex items-center gap-2.5 transition border-t border-hub">
-                    <MessageSquare className="w-3.5 h-3.5" /> Solo (Custom Agent)
-                  </button>
-                  <button onClick={() => handleCreate('group')} className="w-full text-left px-4 py-2.5 text-[13px] text-hub-secondary hover:bg-hub-hover flex items-center gap-2.5 transition border-t border-hub">
-                    <Users className="w-3.5 h-3.5" /> Group Session
-                  </button>
-                </>
-              ) : (
-                <div className="p-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium text-hub-primary">Custom Agent</span>
-                    <button onClick={resetCreate} className="p-0.5 hover:bg-hub-hover rounded text-hub-tertiary"><X className="w-3.5 h-3.5" /></button>
-                  </div>
-                  <input type="text" value={customDisplay} onChange={e => setCustomDisplay(e.target.value)} placeholder="Display Name *" autoFocus className="w-full px-2 py-1.5 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent" />
-                  <input type="text" value={customDesc} onChange={e => setCustomDesc(e.target.value)} placeholder="Description" className="w-full px-2 py-1.5 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent" />
-                  <textarea value={customPrompt} onChange={e => setCustomPrompt(e.target.value)} placeholder="System Prompt" rows={4} className="w-full px-2 py-1.5 text-xs bg-hub-surface border border-hub-border rounded text-hub-primary focus:outline-none focus:border-hub-accent resize-none" />
-                  <button onClick={() => handleCreate('solo')} disabled={!customDisplay || !customDesc || !customPrompt} className="w-full px-3 py-1.5 text-xs font-medium bg-hub-accent text-white rounded hover:bg-hub-accent-hover transition disabled:opacity-40">Create</button>
-                </div>
-              )}
+            <div className="absolute top-full left-0 mt-1 glass-surface-heavy border border-hub rounded-hub-lg shadow-xl z-50 w-56 overflow-hidden">
+              <button onClick={() => { setShowCreate(false); setShowCreateAgentModal(true); }} className="w-full text-left px-3 py-2.5 text-[13px] text-hub-secondary hover:bg-hub-hover flex items-center gap-2.5 transition">
+                <Bot className="w-3.5 h-3.5" /> Create Agent
+              </button>
+              <button onClick={() => handleCreate('group')} className="w-full text-left px-3 py-2.5 text-[13px] text-hub-secondary hover:bg-hub-hover flex items-center gap-2.5 transition border-t border-hub">
+                <Users className="w-3.5 h-3.5" /> Group Session
+              </button>
             </div>
           )}
         </div>
@@ -652,6 +624,18 @@ export function SessionList({ onCloseMobile, iconMode, onToggleIconMode }: Props
             </div>
           </div>
         </div>
+      )}
+
+      {showCreateAgentModal && (
+        <CreateAgentModal
+          open={showCreateAgentModal}
+          onClose={() => setShowCreateAgentModal(false)}
+          onCreated={() => {
+            setShowCreateAgentModal(false);
+            // Refresh sessions to pick up the new one
+            api.getSessions().then(useAppStore.getState().setSessions).catch(() => {});
+          }}
+        />
       )}
     </div>
   );

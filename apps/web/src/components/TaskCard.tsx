@@ -12,10 +12,10 @@ interface Props {
   onPause?: () => void;
   onForceComplete?: (taskId: string) => void;
   onForceFail?: (taskId: string) => void;
-  onDismiss?: (planId: string) => void;
+  onArchive?: (planId: string) => void;
 }
 
-export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry, onReplan, onPause, onForceComplete, onForceFail, onDismiss }: Props) {
+export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry, onReplan, onPause, onForceComplete, onForceFail, onArchive }: Props) {
   const done = tasks.filter(t => t.status === 'done').length;
   const failed = tasks.filter(t => t.status === 'failed').length;
   const running = tasks.filter(t => t.status === 'running').length;
@@ -37,10 +37,10 @@ export function TaskCard({ planId, planTitle, summary, tasks, onConfirm, onRetry
             {waiting > 0 && ` · ${waiting} waiting`}
             {failed > 0 && ` · ${failed} failed`}
           </span>
-          {onDismiss && (
-            <button onClick={() => onDismiss(planId)}
-              className="text-xs text-hub-muted hover:text-hub-danger hover:bg-hub-danger/10 p-1 rounded transition"
-              title="Dismiss this plan card">
+          {onArchive && (
+            <button onClick={() => onArchive(planId)}
+              className="text-xs text-hub-muted hover:text-hub-accent hover:bg-hub-accent/10 p-1 rounded transition"
+              title="归档此计划">
               ✕
             </button>
           )}

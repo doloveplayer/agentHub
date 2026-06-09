@@ -191,6 +191,30 @@ export interface TaskPlanResult {
   createdAt: string;
 }
 
+export interface RecoveredPlan {
+  planId: string;
+  sessionId: string;
+  planTitle: string;
+  status: 'executing' | 'pending_confirmation' | 'completed' | 'failed';
+  tasks: Array<{
+    id: string;
+    title: string;
+    description: string;
+    agentType: string;
+    dependsOn: string[];
+    expectedOutput: string;
+    priority: string;
+    agentName: string;
+    agentId: string;
+    status: string;
+    dependents: string[];
+  }>;
+}
+
+export interface PlanRecoveryResponse {
+  plans: RecoveredPlan[];
+}
+
 export interface DeploymentStatusEvent {
   type: 'deployment_status';
   deploymentId: string;

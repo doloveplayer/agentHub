@@ -37,7 +37,7 @@ const updateSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
   description: z.string().min(1).max(500).optional(),
   systemPrompt: z.string().min(1).optional(),
-  provider: z.enum(['claude-code', 'codex']).optional(),
+  provider: z.enum(['claude-code', 'opencode']).optional(),
   providerConfig: z.record(z.unknown()).optional(),
   capabilities: z.record(z.unknown()).optional(),
   isActive: z.boolean().optional(),
@@ -49,6 +49,7 @@ const createSchema = z.object({
   displayName: z.string().min(1).max(64),
   description: z.string().min(1).max(500),
   systemPrompt: z.string().min(1).max(8000),
+  provider: z.enum(['claude-code', 'opencode']).optional(),
   skills: z.array(skillDefSchema).optional(),
 });
 
@@ -135,19 +136,10 @@ agents.post('/from-md', async (c) => {
   }
 
   const name = meta.name || `custom-${Date.now()}`;
-  const provider = (meta.provider as 'claude-code' | 'codex') || 'claude-code';
+  const provider = (meta.provider as 'claude-code' | 'opencode') || 'claude-code';
 
   if (!/^[a-z0-9-]+$/.test(name)) {
     return c.json({ error: 'name must be kebab-case' }, 400);
-  }
-
-  // Codex requires API key — check User.encryptedApiKeys
-  if (provider === 'codex') {
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { encryptedApiKeys: true } });
-    const keys = user?.encryptedApiKeys ? JSON.parse(user.encryptedApiKeys) : {};
-    if (!keys.codex) {
-      return c.json({ error: 'Codex provider requires an API key. Configure it in Provider Settings first.' }, 400);
-    }
   }
 
   // providerConfig: user-provided or platform defaults
@@ -170,7 +162,7 @@ agents.post('/from-md', async (c) => {
 
 function getDefaultProviderConfig(provider: string): Record<string, unknown> {
   if (provider === 'claude-code') return { model: 'claude-sonnet-4-6' };
-  if (provider === 'codex') return { model: 'gpt-5' };
+  if (provider === 'opencode') return { model: 'deepseek-chat' };
   return {};
 }
 
@@ -344,7 +336,16 @@ agents.post('/:id/skills', async (c) => {
 
 // PUT /:id — update agent (MUST be AFTER fixed-path routes)
 agents.put('/:id', async (c) => {
+  const { userId } = c.get('user');
   const id = c.req.param('id');
+
+  // Ownership check
+  const existing = await prisma.agent.findUnique({ where: { id }, select: { createdBy: true, type: true } });
+  if (!existing) return c.json({ error: 'Agent not found' }, 404);
+  if (existing.type === 'user' && existing.createdBy !== userId) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
   let body: unknown;
   try { body = await c.req.json(); } catch { return c.json({ error: 'Invalid JSON' }, 400); }
   const parsed = updateSchema.safeParse(body);

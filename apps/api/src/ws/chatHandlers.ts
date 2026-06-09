@@ -11,6 +11,7 @@ import { config } from '../config.js';
 import { parseReviewReport, parseTestOutput } from '../artifacts/ArtifactTools.js';
 import { detectLanguage, languageConsistencyPrompt } from '../agent/languageDetection.js';
 import { agentRuntime } from '../agent/AgentRuntime.js';
+import { PinnedStore } from '../agent/PinnedStore.js';
 
 import { pendingRecoveries } from './handler.js';
 import {
@@ -375,9 +376,16 @@ ${agentPrompt}`;
       diffAgentName,
       `Before ${diffAgentName} turn`,
     );
+    // Inject pinned messages into agent context
+    let pinnedBlock = '';
+    try {
+      const pinnedBudget = Math.floor(config.agent.contextTokenBudget * 0.4);
+      pinnedBlock = await PinnedStore.buildInjectionPrompt(sessionId, pinnedBudget, sandbox?.hostWorkDir) || '';
+    } catch { /* best-effort */ }
+
     // Use AgentRuntime for global agent lifecycle management.
     // Build the full prompt with mode prefix for context awareness.
-    const fullPrompt = `${modePrefix}\n\n${agentPrompt}${quoteContextBlock}`;
+    const fullPrompt = `${modePrefix}\n\n${pinnedBlock}${agentPrompt}${quoteContextBlock}`;
 
     if (!mention.agentId) {
       console.error(`[ws] No agent resolved for mention in session=${sessionId}`);
@@ -567,6 +575,8 @@ export function handlePermissionResponse(sessionId: string, data: { permissionId
   const timeout = permissionTimeouts.get(data.permissionId);
   if (timeout) { clearTimeout(timeout); permissionTimeouts.delete(data.permissionId); }
   pendingPermissions.delete(data.permissionId);
+  // Notify frontend so resolvedPermissionIds persists across re-renders/refresh
+  broadcast(sessionId, { type: 'permission_resolved', permissionId: data.permissionId, allowed: data.allowed });
   const stateMap = agentStates.get(sessionId);
   if (!stateMap) return;
   const st = stateMap.get(agentMessageId);

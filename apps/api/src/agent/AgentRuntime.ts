@@ -166,6 +166,33 @@ class AgentRuntime {
     if (!entry) {
       const sessionPermMode = sessionPermissionModes.get(sessionId) || 'ask';
       entry = await this.ensureRunning(agentId, sandbox, trustMode, sessionPermMode);
+    } else {
+      // Detect provider mismatch: agent config changed provider in DB.
+      // If idle, restart with new provider. If busy, queue to avoid switching mid-task.
+      const currentProvider = await prisma.agent.findUnique({
+        where: { id: agentId },
+        select: { provider: true },
+      });
+      if (currentProvider && currentProvider.provider !== entry.provider.name) {
+        if (entry.currentSession === null) {
+          // Idle — restart with new provider, then fall through to send the prompt
+          await this.reprovider(agentId, entry, currentProvider.provider);
+          // reprovider starts a standby process; we need to stop it cleanly
+          // before sendPrompt starts the real one. stopChild() kills the
+          // standby docker exec without tearing down the container.
+          try { entry.provider.stopChild?.(); } catch { /* best effort */ }
+        } else {
+          // Busy — queue and let next call pick up the new provider
+          entry.queue.push({ sessionId, prompt, agentMessageId });
+          broadcast(sessionId, {
+            type: 'agent_queued',
+            agentId,
+            agentMessageId,
+            message: 'Agent config changed. Position in queue: ' + (entry.queue.length),
+          });
+          return;
+        }
+      }
     }
 
     // Detect container mismatch: agent was running in a different session's container.
@@ -262,7 +289,7 @@ class AgentRuntime {
       hostWorkDir = agent.hostWorkDir!;
     }
 
-    // Ensure agent persistent home exists at .agents/<agentId>/
+    // Ensure agent persistent home exists at .agent-runtime/<agentId>/
     AgentDirectoryManager.ensureAgentHome(agentId, agent.name, agent.systemPrompt, agent.skills as any[] | null);
 
     const provider = ProviderFactory.create(agent.provider);
@@ -286,7 +313,7 @@ class AgentRuntime {
     );
 
     const isPlanner = agent.name === 'planner' || agent.name.startsWith('planner-');
-    const model = (agent.providerConfig as any)?.model || process.env.ANTHROPIC_MODEL || 'deepseek-v4-pro';
+    const model = (agent.providerConfig as any)?.model || process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514';
     const entry: AgentEntry = {
       provider,
       containerId,
@@ -502,6 +529,7 @@ class AgentRuntime {
             { hostWorkDir: entry.hostWorkDir, trustMode: entry.trustMode, sessionPermissionMode: entry.sessionPermissionMode, agentName: entry.currentAgentName || undefined },
           );
 
+          entry.provider.removeAllListeners();
           entry.provider.onEvent((e: UnifiedAgentEvent) => {
             this.handleAgentEvent(agentId, entry, e);
           });
@@ -772,13 +800,34 @@ class AgentRuntime {
   private processNextOrIdle(agentId: string, entry: AgentEntry): void {
     const next = entry.queue.shift();
     if (next) {
-      entry.currentSession = next.sessionId;
-      entry.currentMessageId = next.agentMessageId || null;
-      entry.currentAgentId = agentId;
-      // Reset intent scan offset for the new prompt
-      entry.intentScanOffset = 0;
-      entry.accumulatedOutput = '';
-      entry.provider.sendPrompt(next.prompt);
+      // Re-check provider mismatch: the agent's provider may have changed in DB
+      // while it was busy. If so, reprovider before sending.
+      prisma.agent.findUnique({
+        where: { id: agentId },
+        select: { provider: true },
+      }).then((current) => {
+        if (current && current.provider !== entry.provider.name) {
+          return this.reprovider(agentId, entry, current.provider).then(() => {
+            try { entry.provider.stopChild?.(); } catch { /* best effort */ }
+          });
+        }
+      }).then(() => {
+        entry.currentSession = next.sessionId;
+        entry.currentMessageId = next.agentMessageId || null;
+        entry.currentAgentId = agentId;
+        entry.intentScanOffset = 0;
+        entry.accumulatedOutput = '';
+        entry.provider.sendPrompt(next.prompt);
+      }).catch((e) => {
+        console.error('[AgentRuntime] processNextOrIdle error:', e);
+        // Still try to send with existing provider as fallback
+        entry.currentSession = next.sessionId;
+        entry.currentMessageId = next.agentMessageId || null;
+        entry.currentAgentId = agentId;
+        entry.intentScanOffset = 0;
+        entry.accumulatedOutput = '';
+        entry.provider.sendPrompt(next.prompt);
+      });
     } else {
       // Agent becomes idle — check if other agents have pending inbox messages
       const sessionId = entry.currentSession || entry.lastSessionId;
@@ -852,6 +901,57 @@ class AgentRuntime {
   }
 
   /** Switch agent to a different session's container without losing persistent identity. */
+  /** Restart agent with a new provider after config change (same container). */
+  private async reprovider(agentId: string, entry: AgentEntry, newProvider: string): Promise<void> {
+    const agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
+
+    console.log(`[AgentRuntime] Reprovider ${agent.name}: ${entry.provider.name} → ${newProvider}`);
+
+    // Remove event listeners from old provider before stopping to prevent
+    // stale stdout events from corrupting the new provider's state.
+    try { entry.provider.removeAllListeners(); } catch { /* best effort */ }
+    try { entry.provider.stop(); } catch { /* best effort */ }
+
+    // Create new provider in same container
+    const provider = ProviderFactory.create(newProvider);
+    const agentHomeDir = AgentDirectoryManager.getAgentHome(agentId);
+    const pc = agent.providerConfig as Record<string, unknown> | null;
+    await provider.start(
+      'agent-' + agentId,
+      'Standby — waiting for tasks',
+      entry.containerId,
+      '/workspace',
+      {
+        apiKey: pc?.apiKey as string | undefined,
+        model: pc?.model as string | undefined,
+        baseUrl: pc?.baseUrl as string | undefined,
+        variant: pc?.variant as string | undefined,
+        hostWorkDir: entry.hostWorkDir,
+        hostSandboxDir: entry.hostSandboxDir,
+        agentHomeDir,
+        agentName: agent.name,
+        trustMode: entry.trustMode,
+        sessionPermissionMode: entry.sessionPermissionMode,
+      },
+    );
+
+    provider.onEvent((event: UnifiedAgentEvent) => {
+      void this.handleAgentEvent(agentId, entry, event);
+    });
+
+    entry.provider = provider;
+
+    // Update model for context window calculation
+    const newModel = (pc?.model as string) || '';
+    if (newModel) entry.model = newModel;
+
+    // Update DB
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { containerStatus: 'running' },
+    }).catch((e) => console.error('[AgentRuntime] Failed to update agent after reprovider:', e));
+  }
+
   private async rehomeAgent(agentId: string, entry: AgentEntry, sandbox: SandboxInfo): Promise<void> {
     const agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
 

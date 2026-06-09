@@ -118,6 +118,10 @@ interface AppState {
   removeStreamingMessage: (sessionId: string, msgId: string) => void;
   isSessionStreaming: (sessionId: string) => boolean;
   setTaskPlan: (sessionId: string, planId: string, tasks: TaskState[]) => void;
+  restoreTaskPlans: (sessionId: string, plans: Array<{
+    planId: string; planTitle: string; status: string;
+    tasks: Array<{ id: string; title: string; description: string; agentType: string; dependsOn: string[]; expectedOutput: string; priority: string; agentName: string; agentId: string; status: string; dependents: string[] }>;
+  }>) => void;
   removeTaskPlan: (sessionId: string, planId: string) => void;
   updateTaskStatus: (planId: string, taskId: string, status: TaskState['status']) => void;
   updateTaskField: (planId: string, taskId: string, field: string, value: any) => void;
@@ -348,9 +352,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addAgentEvent: (messageId, event) =>
     set((state) => {
+      const prev = state.agentEvents[messageId] ?? [];
+      const next = [...prev, event];
+      // Cap at 200 events per message to prevent memory bloat
+      const capped = next.length > 200 ? next.slice(-200) : next;
       const nextAgentEvents = {
         ...state.agentEvents,
-        [messageId]: [...(state.agentEvents[messageId] ?? []), event],
+        [messageId]: capped,
       };
 
       if (event.type === 'skill_use') {
@@ -384,6 +392,38 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
       planSessionMap: { ...state.planSessionMap, [planId]: sessionId },
     })),
+
+  restoreTaskPlans: (sessionId, plans) =>
+    set((state) => {
+      const existing = state.taskPlans[sessionId] ?? {};
+      const existingIds = new Set(Object.keys(existing));
+      const nextSession = { ...existing };
+      const nextMap = { ...state.planSessionMap };
+
+      for (const plan of plans) {
+        if (existingIds.has(plan.planId)) continue;
+        nextSession[plan.planId] = plan.tasks.map((t) => ({
+          taskId: t.id,
+          planId: plan.planId,
+          title: t.title,
+          agentType: t.agentType,
+          status: (['waiting', 'queued', 'running', 'done', 'failed', 'blocked'].includes(t.status)
+            ? t.status : 'failed') as TaskState['status'],
+          dependsOn: t.dependsOn,
+          expectedOutput: t.expectedOutput,
+          priority: t.priority,
+          assignedAgentName: t.agentName,
+          assignedAgentId: t.agentId,
+          description: t.description,
+        }));
+        nextMap[plan.planId] = sessionId;
+      }
+
+      return {
+        taskPlans: { ...state.taskPlans, [sessionId]: nextSession },
+        planSessionMap: nextMap,
+      };
+    }),
 
   removeTaskPlan: (sessionId, planId) =>
     set((state) => {

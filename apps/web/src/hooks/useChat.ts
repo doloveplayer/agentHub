@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import type { AgentEvent } from '../store/appStore';
 import { api } from '../lib/api';
@@ -42,6 +42,17 @@ export function useChat(sessionId: string) {
     return agents.filter((a) => memberIds.has(a.id));
   }, [agents, sessions, sessionId]);
   const { addMessage, appendToMessage, setMessageStatus, addAgentEvent, addStreamingMessage, removeStreamingMessage, setTaskPlan, removeTaskPlan, incrementUnread, addDiffCard, upsertDeploymentCard, addTestReport, addReviewReport, addToast, addResolvedPermission } = useAppStore();
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear reconnect timer on unmount or session change
+  useEffect(() => {
+    return () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+    };
+  }, [sessionId]);
 
   const ensureConnection = useCallback((): Promise<WebSocket> => {
     if (!token || !sessionId) return Promise.reject(new Error('No token or sessionId'));
@@ -78,6 +89,18 @@ export function useChat(sessionId: string) {
         clearTimeout(timeout);
         console.log('[WS] Connected to session', sessionId);
         resolve(ws);
+
+        // Recover incomplete plans after successful connection
+        api.recoverPlans(sessionId)
+          .then((res) => {
+            if (res.plans?.length > 0) {
+              useAppStore.getState().restoreTaskPlans(sessionId, res.plans);
+              console.log(`[WS] Recovered ${res.plans.length} plan(s) for session ${sessionId}`);
+            }
+          })
+          .catch((err) => {
+            console.warn('[WS] Plan recovery failed:', err);
+          });
       };
 
       ws.onmessage = (evt) => {
@@ -114,6 +137,10 @@ export function useChat(sessionId: string) {
               const errMsg = safeContent(data.error) || safeContent(data.message) || 'Unknown agent error';
               console.error('[WS] Agent error:', errMsg);
               addToast(errMsg, 'error');
+              // Notify ConflictRetryCard if this is a conflict retry failure
+              if (errMsg.includes('Plan') && errMsg.includes('not found') || errMsg.includes('No tasks could be reset')) {
+                window.dispatchEvent(new CustomEvent('conflict_retry_result', { detail: { success: false, error: errMsg } }));
+              }
               if (data.agentMessageId) {
                 const targetSessionId = findMessageSessionId(data.agentMessageId, sessionId);
                 appendToMessage(targetSessionId, data.agentMessageId, `\n\n---\n**Error:** ${errMsg}`);
@@ -358,6 +385,11 @@ export function useChat(sessionId: string) {
                   : undefined,
               } as any;
               cuStore.addMessage(sessionId, cuMsg);
+              break;
+            }
+            case 'conflict_retrying': {
+              addToast(`Retrying ${data.taskIds?.length ?? 0} conflicting task(s) sequentially`, 'info');
+              window.dispatchEvent(new CustomEvent('conflict_retry_result', { detail: { success: true } }));
               break;
             }
             case 'inbox_update':
@@ -620,7 +652,7 @@ export function useChat(sessionId: string) {
         if (socketPool.get(sessionId) === ws) socketPool.delete(sessionId);
         // Auto-reconnect on non-manual close (not 1000=normal, 4001=user not found, 4003=access denied)
         if (evt.code !== 1000 && evt.code !== 4001 && evt.code !== 4003) {
-          setTimeout(() => {
+          reconnectTimerRef.current = setTimeout(() => {
             if (sessionId === useAppStore.getState().activeSessionId) {
               ensureConnection().catch(() => {});
             }

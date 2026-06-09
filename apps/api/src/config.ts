@@ -165,7 +165,7 @@ export const config = {
 
   defaultAdmin: {
     username: optional('ADMIN_USERNAME', 'admin'),
-    password: optional('ADMIN_PASSWORD', '123456'),
+    password: required('ADMIN_PASSWORD'),
   },
 
   redis: {
@@ -184,7 +184,7 @@ export const config = {
     image: optional('AGENT_CONTAINER_IMAGE', 'agenthub-sandbox:latest'),
     memoryMb: optionalInt('AGENT_CONTAINER_MEMORY_MB', 1024),
     idleTimeoutMs: optionalInt('AGENT_IDLE_TIMEOUT_MS', 30 * 60 * 1000), // 30 min
-    hostRoot: optional('AGENT_HOST_ROOT', resolve(PROJECT_ROOT, '.agents')),
+    hostRoot: optional('AGENT_HOST_ROOT', resolve(PROJECT_ROOT, '.agent-runtime')),
   },
 
   frontendUrl: optional('FRONTEND_URL', 'http://localhost:5175'),

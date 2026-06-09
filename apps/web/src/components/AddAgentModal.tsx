@@ -16,6 +16,7 @@ export function AddAgentModal({ sessionId, open, onClose }: Props) {
   const sessions = useAppStore((s) => s.sessions);
   const user = useAppStore((s) => s.user);
   const addAgentToSession = useAppStore((s) => s.addAgentToSession);
+  const addToast = useAppStore((s) => s.addToast);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [adding, setAdding] = useState(false);
@@ -51,8 +52,9 @@ export function AddAgentModal({ sessionId, open, onClose }: Props) {
         if (agent) addAgentToSession(sessionId, agent);
       }
       onClose();
-    } catch (err) {
-      console.error('Failed to add agents:', err);
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to add agents';
+      addToast(msg, 'error');
     } finally {
       setAdding(false);
     }

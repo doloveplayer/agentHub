@@ -580,7 +580,15 @@ sessions.get('/:id/agents/:agentId', async (c) => {
 
 // GET /:id/comm-log — read session communication log
 sessions.get('/:id/comm-log', async (c) => {
+  const { userId } = c.get('user');
   const sessionId = c.req.param('id');
+
+  // Ownership check
+  const session = await prisma.session.findUnique({ where: { id: sessionId }, select: { userId: true } });
+  if (!session || session.userId !== userId) {
+    return c.json({ error: 'Forbidden' }, 403);
+  }
+
   const { SessionCommLog } = await import('../agent/SessionCommLog.js');
   const entries = SessionCommLog.readAll(sessionId);
   return c.json({ entries });
