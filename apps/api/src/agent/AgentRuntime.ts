@@ -175,8 +175,12 @@ class AgentRuntime {
       });
       if (currentProvider && currentProvider.provider !== entry.provider.name) {
         if (entry.currentSession === null) {
-          // Idle — restart with new provider
+          // Idle — restart with new provider, then fall through to send the prompt
           await this.reprovider(agentId, entry, currentProvider.provider);
+          // reprovider starts a standby process; we need to stop it cleanly
+          // before sendPrompt starts the real one. stopChild() kills the
+          // standby docker exec without tearing down the container.
+          try { entry.provider.stopChild?.(); } catch { /* best effort */ }
         } else {
           // Busy — queue and let next call pick up the new provider
           entry.queue.push({ sessionId, prompt, agentMessageId });
@@ -796,13 +800,34 @@ class AgentRuntime {
   private processNextOrIdle(agentId: string, entry: AgentEntry): void {
     const next = entry.queue.shift();
     if (next) {
-      entry.currentSession = next.sessionId;
-      entry.currentMessageId = next.agentMessageId || null;
-      entry.currentAgentId = agentId;
-      // Reset intent scan offset for the new prompt
-      entry.intentScanOffset = 0;
-      entry.accumulatedOutput = '';
-      entry.provider.sendPrompt(next.prompt);
+      // Re-check provider mismatch: the agent's provider may have changed in DB
+      // while it was busy. If so, reprovider before sending.
+      prisma.agent.findUnique({
+        where: { id: agentId },
+        select: { provider: true },
+      }).then((current) => {
+        if (current && current.provider !== entry.provider.name) {
+          return this.reprovider(agentId, entry, current.provider).then(() => {
+            try { entry.provider.stopChild?.(); } catch { /* best effort */ }
+          });
+        }
+      }).then(() => {
+        entry.currentSession = next.sessionId;
+        entry.currentMessageId = next.agentMessageId || null;
+        entry.currentAgentId = agentId;
+        entry.intentScanOffset = 0;
+        entry.accumulatedOutput = '';
+        entry.provider.sendPrompt(next.prompt);
+      }).catch((e) => {
+        console.error('[AgentRuntime] processNextOrIdle error:', e);
+        // Still try to send with existing provider as fallback
+        entry.currentSession = next.sessionId;
+        entry.currentMessageId = next.agentMessageId || null;
+        entry.currentAgentId = agentId;
+        entry.intentScanOffset = 0;
+        entry.accumulatedOutput = '';
+        entry.provider.sendPrompt(next.prompt);
+      });
     } else {
       // Agent becomes idle — check if other agents have pending inbox messages
       const sessionId = entry.currentSession || entry.lastSessionId;
@@ -882,20 +907,25 @@ class AgentRuntime {
 
     console.log(`[AgentRuntime] Reprovider ${agent.name}: ${entry.provider.name} → ${newProvider}`);
 
-    // Stop old provider
+    // Remove event listeners from old provider before stopping to prevent
+    // stale stdout events from corrupting the new provider's state.
+    try { entry.provider.removeAllListeners(); } catch { /* best effort */ }
     try { entry.provider.stop(); } catch { /* best effort */ }
 
     // Create new provider in same container
     const provider = ProviderFactory.create(newProvider);
     const agentHomeDir = AgentDirectoryManager.getAgentHome(agentId);
+    const pc = agent.providerConfig as Record<string, unknown> | null;
     await provider.start(
       'agent-' + agentId,
       'Standby — waiting for tasks',
       entry.containerId,
       '/workspace',
       {
-        apiKey: (agent.providerConfig as any)?.apiKey,
-        model: (agent.providerConfig as any)?.model,
+        apiKey: pc?.apiKey as string | undefined,
+        model: pc?.model as string | undefined,
+        baseUrl: pc?.baseUrl as string | undefined,
+        variant: pc?.variant as string | undefined,
         hostWorkDir: entry.hostWorkDir,
         hostSandboxDir: entry.hostSandboxDir,
         agentHomeDir,
@@ -910,6 +940,10 @@ class AgentRuntime {
     });
 
     entry.provider = provider;
+
+    // Update model for context window calculation
+    const newModel = (pc?.model as string) || '';
+    if (newModel) entry.model = newModel;
 
     // Update DB
     await prisma.agent.update({

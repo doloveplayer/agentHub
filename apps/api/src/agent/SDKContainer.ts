@@ -1,14 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
-
-/** Strip ANSI escape sequences and their remnants from a string. */
-function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\x1b\[\d*(;\d+)*m/g, '')
-    .replace(/\[\d*m\]?/g, '')
-    .trim();
-}
+import { stripAnsi } from './stripAnsi.js';
 
 export interface SDKContainerOptions {
   containerId: string;

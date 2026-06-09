@@ -1,16 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
-
-/** Strip ANSI escape sequences and their remnants from a string.
- *  Handles both full sequences (\x1b[1m) and bare remnants ([1m, [0m, [1m])
- *  that remain after the ESC byte is stripped. */
-function stripAnsiEscapes(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(/\x1b\[\d*(;\d+)*m/g, '')  // full ANSI: ESC[...m
-    .replace(/\[\d*m\]?/g, '')                // bare remnants: [1m, [0m], etc.
-    .trim();
-}
+import { stripAnsi } from './stripAnsi.js';
 
 export interface OpenCodeContainerOptions {
   containerId: string;
@@ -34,7 +25,7 @@ export function generateOpenCodeConfig(
   baseUrl: string,
   model: string,
 ): object {
-  const modelName = stripAnsiEscapes(model);
+  const modelName = stripAnsi(model);
 
   return {
     model: `deepseek/${modelName}`,
@@ -71,7 +62,7 @@ export function spawnOpenCodeInDocker(
   const apiKey = process.env.OPENCODE_API_KEY || opts.apiKey || '';
 
   // Model   : agent config model → OPENCODE_MODEL → 'deepseek-chat'
-  const resolvedModel = stripAnsiEscapes(
+  const resolvedModel = stripAnsi(
     opts.model || process.env.OPENCODE_MODEL || 'deepseek-chat',
   );
 
