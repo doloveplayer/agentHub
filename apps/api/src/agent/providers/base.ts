@@ -29,6 +29,7 @@ export interface ProviderConfig {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+  variant?: string;
   env?: Record<string, string>;
   agentName?: string;
   hostWorkDir?: string;

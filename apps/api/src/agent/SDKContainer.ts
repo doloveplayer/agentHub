@@ -2,6 +2,14 @@ import { spawn, type ChildProcess } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { resolve } from 'path';
 
+/** Strip ANSI escape sequences and their remnants from a string. */
+function stripAnsi(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1b\[\d*(;\d+)*m/g, '')
+    .replace(/\[\d*m\]?/g, '')
+    .trim();
+}
+
 export interface SDKContainerOptions {
   containerId: string;
   prompt: string;
@@ -47,9 +55,9 @@ export function spawnSDKInDocker(
   if (!envVars['ANTHROPIC_API_KEY'] && envVars['ANTHROPIC_AUTH_TOKEN']) {
     envVars['ANTHROPIC_API_KEY'] = envVars['ANTHROPIC_AUTH_TOKEN'];
   }
-  // Forward ANTHROPIC_MODEL to sdk-runner via AGENTHUB_MODEL
+  // Forward ANTHROPIC_MODEL to sdk-runner via AGENTHUB_MODEL (strip ANSI remnants)
   if (envVars['ANTHROPIC_MODEL']) {
-    envVars['AGENTHUB_MODEL'] = envVars['ANTHROPIC_MODEL'];
+    envVars['AGENTHUB_MODEL'] = stripAnsi(envVars['ANTHROPIC_MODEL']);
   }
   // Forward thinking config to sdk-runner
   if (envVars['ANTHROPIC_THINKING_EFFORT']) {

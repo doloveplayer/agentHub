@@ -20,6 +20,7 @@ export class OpenCodeProvider implements AbstractProvider {
   private currentTrustMode = true;
   private currentModel: string | undefined;
   private currentBaseUrl: string | undefined;
+  private currentVariant: string | undefined;
   private childProc: import('child_process').ChildProcess | null = null;
   private pendingCleanup: (() => void) | null = null;
   private partialLine = '';
@@ -72,6 +73,7 @@ export class OpenCodeProvider implements AbstractProvider {
     this.currentTrustMode = config.trustMode ?? true;
     this.currentModel = config.model;
     this.currentBaseUrl = config.baseUrl;
+    this.currentVariant = config.variant;
 
     return this.runInContainer(prompt, undefined);
   }
@@ -107,6 +109,7 @@ export class OpenCodeProvider implements AbstractProvider {
       trustMode: this.currentTrustMode,
       baseUrl: this.currentBaseUrl,
       model: this.currentModel,
+      variant: this.currentVariant,
       resumeSession,
     });
 

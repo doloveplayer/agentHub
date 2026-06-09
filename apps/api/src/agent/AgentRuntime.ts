@@ -166,6 +166,29 @@ class AgentRuntime {
     if (!entry) {
       const sessionPermMode = sessionPermissionModes.get(sessionId) || 'ask';
       entry = await this.ensureRunning(agentId, sandbox, trustMode, sessionPermMode);
+    } else {
+      // Detect provider mismatch: agent config changed provider in DB.
+      // If idle, restart with new provider. If busy, queue to avoid switching mid-task.
+      const currentProvider = await prisma.agent.findUnique({
+        where: { id: agentId },
+        select: { provider: true },
+      });
+      if (currentProvider && currentProvider.provider !== entry.provider.name) {
+        if (entry.currentSession === null) {
+          // Idle — restart with new provider
+          await this.reprovider(agentId, entry, currentProvider.provider);
+        } else {
+          // Busy — queue and let next call pick up the new provider
+          entry.queue.push({ sessionId, prompt, agentMessageId });
+          broadcast(sessionId, {
+            type: 'agent_queued',
+            agentId,
+            agentMessageId,
+            message: 'Agent config changed. Position in queue: ' + (entry.queue.length),
+          });
+          return;
+        }
+      }
     }
 
     // Detect container mismatch: agent was running in a different session's container.
@@ -853,6 +876,48 @@ class AgentRuntime {
   }
 
   /** Switch agent to a different session's container without losing persistent identity. */
+  /** Restart agent with a new provider after config change (same container). */
+  private async reprovider(agentId: string, entry: AgentEntry, newProvider: string): Promise<void> {
+    const agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
+
+    console.log(`[AgentRuntime] Reprovider ${agent.name}: ${entry.provider.name} → ${newProvider}`);
+
+    // Stop old provider
+    try { entry.provider.stop(); } catch { /* best effort */ }
+
+    // Create new provider in same container
+    const provider = ProviderFactory.create(newProvider);
+    const agentHomeDir = AgentDirectoryManager.getAgentHome(agentId);
+    await provider.start(
+      'agent-' + agentId,
+      'Standby — waiting for tasks',
+      entry.containerId,
+      '/workspace',
+      {
+        apiKey: (agent.providerConfig as any)?.apiKey,
+        model: (agent.providerConfig as any)?.model,
+        hostWorkDir: entry.hostWorkDir,
+        hostSandboxDir: entry.hostSandboxDir,
+        agentHomeDir,
+        agentName: agent.name,
+        trustMode: entry.trustMode,
+        sessionPermissionMode: entry.sessionPermissionMode,
+      },
+    );
+
+    provider.onEvent((event: UnifiedAgentEvent) => {
+      void this.handleAgentEvent(agentId, entry, event);
+    });
+
+    entry.provider = provider;
+
+    // Update DB
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { containerStatus: 'running' },
+    }).catch((e) => console.error('[AgentRuntime] Failed to update agent after reprovider:', e));
+  }
+
   private async rehomeAgent(agentId: string, entry: AgentEntry, sandbox: SandboxInfo): Promise<void> {
     const agent = await prisma.agent.findUniqueOrThrow({ where: { id: agentId } });
 
