@@ -559,72 +559,6 @@ a, button, input, textarea, select, [tabindex] {
   .hero-desc { font-size: 15px; }
   .feature-grid { grid-template-columns: 1fr; }
 }
-
-/* ─── Demos Section ─── */
-.demo-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
-  margin-top: 32px;
-}
-.demo-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
-  cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
-}
-.demo-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 32px oklch(0 0 0 / 12%);
-  border-color: var(--accent-primary);
-}
-.dark .demo-card:hover { box-shadow: 0 12px 32px oklch(0 0 0 / 30%); }
-.demo-card-thumb {
-  width: 100%;
-  aspect-ratio: 16/10;
-  object-fit: cover;
-  background: var(--bg-code);
-  display: block;
-}
-.demo-card-body { padding: 14px 16px 16px; }
-.demo-card-body h3 {
-  font-size: 15px; font-weight: 600; margin: 0 0 4px;
-  color: var(--text-primary);
-}
-.demo-card-body p {
-  font-size: 13px; color: var(--text-tertiary);
-  margin: 0; line-height: 1.5;
-}
-@media (max-width: 768px) {
-  .demo-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
-}
-@media (max-width: 480px) {
-  .demo-grid { grid-template-columns: 1fr; }
-}
-
-/* ─── Lightbox ─── */
-.lightbox {
-  display: none; position: fixed; inset: 0; z-index: 9999;
-  background: oklch(0 0 0 / 80%); backdrop-filter: blur(8px);
-  align-items: center; justify-content: center;
-}
-.lightbox.open { display: flex; }
-.lightbox-close {
-  position: absolute; top: 20px; right: 24px;
-  width: 44px; height: 44px; border-radius: 50%;
-  background: oklch(1 0 0 / 15%); border: none;
-  color: #fff; font-size: 24px; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: background 0.2s; z-index: 1;
-}
-.lightbox-close:hover { background: oklch(1 0 0 / 30%); }
-.lightbox-media {
-  max-width: 90vw; max-height: 85vh;
-  border-radius: var(--radius-lg);
-  box-shadow: 0 20px 60px oklch(0 0 0 / 30%);
-}
 </style>
 </head>
 <body>
@@ -1607,26 +1541,6 @@ a, button, input, textarea, select, [tabindex] {
 </section>
 
 <!-- ══════════════════════════════════════════════
-     DEMOS
-     ══════════════════════════════════════════════ -->
-<section class="section" id="demos">
-  <span class="section-label">Demos</span>
-  <h2 class="section-title">使用演示</h2>
-  <p class="section-desc">Agent 产出的真实案例——PPT、HTML 页面、游戏等。</p>
-
-  <div class="demo-grid" id="demoGrid">
-    <!-- Cards populated by JS -->
-  </div>
-</section>
-
-<!-- ─── Lightbox ─── -->
-<div class="lightbox" id="lightbox" onclick="closeLightbox()">
-  <button class="lightbox-close" onclick="closeLightbox()" title="Close">&times;</button>
-  <video class="lightbox-media" id="lightboxVideo" controls playsinline style="display:none;"></video>
-  <img class="lightbox-media" id="lightboxImage" alt="" style="display:none;" />
-</div>
-
-<!-- ══════════════════════════════════════════════
      STATS
      ══════════════════════════════════════════════ -->
 <!-- ══════════════════════════════════════════════
@@ -1697,50 +1611,6 @@ document.querySelectorAll('.card, .feature-card, .arch-layer, .timeline-item').f
   el.style.transition = 'opacity 0.5s ease-out, transform 0.5s ease-out';
   observer.observe(el);
 });
-
-// ── Demos: card grid + lightbox ──
-const demos = [
-  { title: 'PPT 演示文稿生成', desc: 'Agent 根据描述自动生成 PPTX 幻灯片', thumb: 'demos/pptx-thumb.png', src: 'demos/pptx-demo.mp4', type: 'video' },
-  { title: 'HTML 页面制作', desc: '一句话生成响应式网页并即时预览', thumb: 'demos/html-thumb.png', src: 'demos/html-demo.mp4', type: 'video' },
-  { title: '交互游戏脚本', desc: 'Agent 编写并运行小游戏', thumb: 'demos/game-thumb.png', src: 'demos/game-demo.mp4', type: 'video' },
-];
-const grid = document.getElementById('demoGrid');
-demos.forEach(d => {
-  const card = document.createElement('div');
-  card.className = 'demo-card';
-  card.innerHTML = `<img class="demo-card-thumb" src="${d.thumb}" alt="${d.title}" loading="lazy" onerror="this.style.display='none'" /><div class="demo-card-body"><h3>${d.title}</h3><p>${d.desc}</p></div>`;
-  card.onclick = (e) => { e.stopPropagation(); openLightbox(d); };
-  grid.appendChild(card);
-});
-
-function openLightbox(demo) {
-  const lb = document.getElementById('lightbox');
-  const video = document.getElementById('lightboxVideo');
-  const image = document.getElementById('lightboxImage');
-  lb.classList.add('open');
-  document.body.style.overflow = 'hidden';
-  if (demo.type === 'video') {
-    video.src = demo.src;
-    video.style.display = '';
-    video.play().catch(() => {});
-    image.style.display = 'none';
-  } else {
-    image.src = demo.src;
-    image.style.display = '';
-    video.style.display = 'none';
-  }
-}
-function closeLightbox() {
-  const lb = document.getElementById('lightbox');
-  const video = document.getElementById('lightboxVideo');
-  const image = document.getElementById('lightboxImage');
-  lb.classList.remove('open');
-  document.body.style.overflow = '';
-  video.pause();
-  video.removeAttribute('src');
-  image.removeAttribute('src');
-}
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
 </script>
 
 </body>
