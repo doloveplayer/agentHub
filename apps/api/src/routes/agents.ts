@@ -392,13 +392,11 @@ agents.delete('/:id', async (c) => {
     } catch { /* best-effort */ }
   }
 
-  // Clean host work dir
-  if (agent.hostWorkDir) {
-    try {
-      const { AgentContainer } = await import('../agent/AgentContainer.js');
-      await AgentContainer.destroyHostDir(agent.id);
-    } catch { /* best-effort */ }
-  }
+  // Clean agent persistent home (.agent-runtime/<agentId>/)
+  try {
+    const { AgentContainer } = await import('../agent/AgentContainer.js');
+    await AgentContainer.destroyHostDir(agent.id);
+  } catch { /* best-effort */ }
 
   // Notify all groups this agent belongs to before removal
   const sessionAgents = await prisma.sessionAgent.findMany({

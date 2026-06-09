@@ -329,7 +329,7 @@ sessions.delete('/:id', async (c) => {
     });
     for (const agent of orphanedAgents) {
       await prisma.agent.delete({ where: { id: agent.id } });
-      const homeDir = path.resolve('.agents', agent.id);
+      const homeDir = path.resolve(config.agentContainer.hostRoot, agent.id);
       if (existsSync(homeDir)) {
         try { rmSync(homeDir, { recursive: true, force: true }); } catch { /* ignore */ }
       }

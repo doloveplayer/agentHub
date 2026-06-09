@@ -13,6 +13,7 @@ export function RemoveAgentModal({ sessionId, open, onClose }: Props) {
   const sessions = useAppStore((s) => s.sessions);
   const agents = useAppStore((s) => s.agents);
   const removeAgentFromSession = useAppStore((s) => s.removeAgentFromSession);
+  const setAgents = useAppStore((s) => s.setAgents);
   const [removing, setRemoving] = useState<Set<string>>(new Set());
 
   const session = sessions.find((s) => s.id === sessionId);
@@ -25,6 +26,16 @@ export function RemoveAgentModal({ sessionId, open, onClose }: Props) {
     try {
       await api.removeAgentFromSession(sessionId, agentId);
       removeAgentFromSession(sessionId, agentId);
+
+      // If agent has no other sessions, delete it entirely
+      const otherSessions = sessions.filter(
+        (s) => s.id !== sessionId && s.agents?.some((sa: any) => sa.agentId === agentId),
+      );
+      if (otherSessions.length === 0) {
+        await api.deleteAgent(agentId);
+        api.getAgents().then(setAgents).catch(console.error);
+      }
+
       onClose();
     } catch (err) {
       console.error('Failed to remove agent:', err);
