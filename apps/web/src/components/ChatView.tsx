@@ -651,7 +651,20 @@ export function ChatView() {
       await navigator.clipboard.writeText(text);
       addToast('Copied', 'success');
     } catch {
-      addToast('Failed to copy', 'error');
+      // Fallback for HTTP (navigator.clipboard requires HTTPS)
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        addToast('Copied', 'success');
+      } catch {
+        addToast('Failed to copy', 'error');
+      }
     }
   }, [addToast]);
 
