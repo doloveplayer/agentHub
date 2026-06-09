@@ -877,11 +877,12 @@ a, button, input, textarea, select, [tabindex] {
       display: grid;
       place-items: center;
       border-radius: 50%;
-      color: #fff;
+      color: currentColor;
       font-size: 24px;
       font-weight: 900;
-      background: currentColor;
-      box-shadow: 0 8px 24px color-mix(in srgb, currentColor 48%, transparent);
+      background: rgba(255,255,255,0.92);
+      border: 2px solid currentColor;
+      box-shadow: 0 8px 24px color-mix(in srgb, currentColor 24%, transparent);
       z-index: 2;
     }
 
@@ -935,6 +936,9 @@ a, button, input, textarea, select, [tabindex] {
       width: 36px;
       height: 36px;
       font-size: 20px;
+      background: rgba(255,255,255,0.92);
+      border: 2px solid currentColor;
+      color: currentColor;
     }
     .ah-exec-zone .ah-step-card .ah-step-icon {
       left: 18px;
