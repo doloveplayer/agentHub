@@ -32,6 +32,10 @@ apps/api/src/               — 后端：Hono + Prisma + Dockerode + WebSocket
 apps/web/src/               — 前端：React + Vite + Zustand + Tailwind
 packages/shared/src/        — 前后端共享类型
 docker/                     — 沙箱镜像 + sdk-runner
+docs/adr/                   — 架构决策记录（ADR）
+docs/changelog/             — 按月功能总结
+docs/plans/                 — 活跃 plan
+docs/architecture/          — 设计文档（specs）和测试报告（reports）
 ```
 
 ## 常用命令
@@ -62,6 +66,12 @@ git remote set-url origin git@github.com:doloveplayer/agentHub.git
 计划和实现必须保持同步。完成即更新、分歧先讨论、改 Plan 再改 Code。
 
 → 详细执行指南：使用 `/plan-management` skill
+
+## 文档归档
+
+文档按三层结构组织：ADR（架构决策）→ Changelog（按月功能总结）→ Plan（临时执行计划）。功能完成后归档 plan 到 changelog，架构决策写入 ADR。
+
+→ 详细执行指南：使用 `/doc-archival` skill
 
 ## 代码审查工作流
 
