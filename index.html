@@ -847,6 +847,17 @@ a, button, input, textarea, select, [tabindex] {
         inset 0 1px 0 rgba(255,255,255,.82),
         0 0 20px color-mix(in srgb, currentColor 8%, transparent);
       overflow: hidden;
+      transition: transform 0.2s ease-out, box-shadow 0.2s ease-out, border-color 0.2s ease-out;
+      cursor: default;
+    }
+
+    .ah-step-card:hover {
+      transform: translateY(-2px);
+      border-color: color-mix(in srgb, currentColor 60%, rgba(255,255,255,0.2));
+      box-shadow:
+        0 20px 44px rgba(16, 24, 40, .16),
+        inset 0 1px 0 rgba(255,255,255,.88),
+        0 0 32px color-mix(in srgb, currentColor 16%, transparent);
     }
 
     .ah-step-card::before {
