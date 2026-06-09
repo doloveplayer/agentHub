@@ -523,109 +523,7 @@ a, button, input, textarea, select, [tabindex] {
 }
 
 
-/* ─── Lifecycle Flow Diagram ─── */
-.flow {
-  margin: 32px 0;
-  display: flex; flex-direction: column; align-items: center;
-  gap: 2px;
-}
-.flow-row {
-  display: flex; align-items: center; justify-content: center;
-  gap: 8px; flex-wrap: wrap;
-}
-.flow-row-center { width: 100%; }
-.flow-node {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 14px 18px;
-  text-align: center;
-  min-width: 140px; max-width: 210px;
-  transition: border-color var(--transition-base), box-shadow var(--transition-base);
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-}
-.flow-node:hover {
-  border-color: var(--accent-primary);
-  box-shadow: 0 4px 20px oklch(0 0 0 / 8%);
-}
-.dark .flow-node:hover { box-shadow: 0 4px 20px oklch(0 0 0 / 25%); }
-.flow-node-wide { max-width: 500px; }
-.flow-step {
-  width: 24px; height: 24px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 700; flex-shrink: 0;
-  color: #fff;
-}
-.flow-node strong { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; }
-.flow-node small { font-size: 12px; color: var(--text-tertiary); line-height: 1.5; }
 
-/* Node color variants */
-.flow-user .flow-step { background: var(--agent-test); }
-.flow-user { border-left: 3px solid var(--agent-test); }
-.flow-planner .flow-step { background: var(--agent-planner); }
-.flow-planner { border-left: 3px solid var(--agent-planner); }
-.flow-confirm .flow-step { background: var(--agent-code); }
-.flow-confirm { border-left: 3px solid var(--agent-code); }
-.flow-exec .flow-step { background: var(--accent-primary); }
-.flow-exec { border-left: 3px solid var(--accent-primary); }
-.flow-done .flow-step { background: var(--accent-success); }
-.flow-done { border-left: 3px solid var(--accent-success); }
-.flow-retry .flow-step { background: var(--accent-danger); }
-.flow-retry { border-left: 3px solid var(--accent-danger); }
-
-.flow-arrow {
-  font-size: 20px; font-weight: 700; color: var(--text-muted);
-  flex-shrink: 0;
-}
-.flow-down-arrow {
-  font-size: 18px; color: var(--text-muted); text-align: center;
-  padding: 2px 0;
-}
-
-/* Execution loop box */
-.flow-loop-box {
-  border: 1px dashed var(--accent-primary);
-  border-radius: var(--radius-2xl);
-  padding: 20px 16px 12px;
-  position: relative;
-  margin: 4px 0;
-  background: oklch(0.76 0.12 185 / 3%);
-}
-.flow-loop-label {
-  position: absolute; top: -10px; left: 24px;
-  background: var(--bg-root); padding: 0 10px;
-  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
-  color: var(--accent-primary); text-transform: uppercase;
-}
-.flow-loop-note {
-  text-align: center; font-size: 12px; color: var(--text-muted);
-  margin-top: 10px; font-style: italic;
-}
-
-/* Branch layout */
-.flow-branch {
-  display: flex; gap: 32px; width: 100%; justify-content: center;
-  flex-wrap: wrap; margin-top: 8px;
-}
-.flow-branch-success, .flow-branch-failure {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 2px; min-width: 200px;
-}
-.flow-branch-failure {
-  border-left: 1px solid var(--border-subtle);
-  padding-left: 32px;
-}
-.flow-failure-chain {
-  display: flex; align-items: center; gap: 8px;
-  flex-wrap: wrap; justify-content: center;
-}
-@media (max-width: 768px) {
-  .flow-branch { flex-direction: column; align-items: center; }
-  .flow-branch-failure { border-left: none; padding-left: 0; border-top: 1px solid var(--border-subtle); padding-top: 20px; }
-  .flow-row { gap: 4px; }
-  .flow-node { min-width: 100px; max-width: 150px; padding: 10px 12px; }
-  .flow-node-wide { max-width: 320px; }
-}
 
 /* ─── Tabs (for feature deep-dive) ─── */
 .tabs { display: flex; gap: 2px; margin-bottom: 24px; border-bottom: 1px solid var(--border-subtle); }
@@ -840,124 +738,531 @@ a, button, input, textarea, select, [tabindex] {
   </div>
 </section>
 
-<!-- ══════════════════════════════════════════════
-     请求生命周期
-     ══════════════════════════════════════════════ -->
-<section class="section" style="padding-top: 20px;">
-  <span class="section-label">Lifecycle</span>
-  <h2 class="section-title">完整请求生命周期</h2>
-  <p class="section-desc">从用户发送消息到所有任务执行完毕的闭环流程。</p>
+<section id="lifecycle" class="ah-lifecycle-section">
+  <style>
+    .ah-lifecycle-section {
+      /* 无深色科技风背景：透明承接页面原有背景 */
+      --panel: rgba(255, 255, 255, 0.94);
+      --panel-2: rgba(255, 255, 255, 0.88);
+      --text: #101828;
+      --muted: #667085;
+      --line: rgba(84, 110, 255, 0.26);
+      --blue: #2563eb;
+      --purple: #7c3aed;
+      --cyan: #0891b2;
+      --green: #16a34a;
+      --orange: #ea580c;
+      --red: #dc2626;
+      --radius: 18px;
+      color: var(--text);
+      background: transparent;
+      padding: 88px 20px 96px;
+      overflow: hidden;
+    }
 
-  <!-- Lifecycle Flow Diagram -->
-  <div class="flow">
-    <!-- Row: User Input -->
-    <div class="flow-row">
-      <div class="flow-node flow-user">
-        <span class="flow-step">1</span>
-        <strong>连接建立</strong>
-        <small>JWT 认证 → WebSocket 双向通道建立</small>
+    .ah-lifecycle-wrap {
+      width: min(1200px, 100%);
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .ah-lifecycle-title {
+      text-align: center;
+      margin-bottom: 54px;
+    }
+
+    .ah-lifecycle-title h2 {
+      margin: 0 0 14px;
+      font-size: clamp(34px, 5vw, 58px);
+      line-height: 1.05;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      text-shadow: none;
+    }
+
+    .ah-lifecycle-title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(15px, 2vw, 20px);
+      letter-spacing: 0.18em;
+    }
+
+    .ah-stage-heads,
+    .ah-main-flow {
+      display: grid;
+      grid-template-columns: 1.05fr 1.05fr 1.95fr 1fr;
+      gap: 28px;
+      align-items: start;
+    }
+
+    .ah-stage-heads {
+      margin-bottom: 18px;
+      padding: 0 8px;
+    }
+
+    .ah-stage-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 34px;
+      font-weight: 800;
+      font-size: 20px;
+      white-space: nowrap;
+    }
+
+    .ah-stage-head .ah-stage-icon {
+      width: 38px;
+      height: 38px;
+      display: grid;
+      place-items: center;
+      border-radius: 13px;
+      background: rgba(255,255,255,0.9);
+      border: 1px solid currentColor;
+      box-shadow: 0 8px 22px color-mix(in srgb, currentColor 16%, transparent);
+    }
+
+    .ah-blue { color: var(--blue); }
+    .ah-purple { color: var(--purple); }
+    .ah-cyan { color: var(--cyan); }
+    .ah-green { color: var(--green); }
+    .ah-orange { color: var(--orange); }
+
+    .ah-stage-head::after {
+      content: "";
+      flex: 1;
+      height: 2px;
+      min-width: 34px;
+      background: linear-gradient(90deg, currentColor, transparent);
+      opacity: .7;
+    }
+
+    .ah-stage-head:last-child::after { display: none; }
+
+    .ah-column {
+      display: grid;
+      gap: 16px;
+      min-width: 0;
+    }
+
+    .ah-step-card {
+      position: relative;
+      min-height: 132px;
+      padding: 22px 22px 20px 92px;
+      border-radius: var(--radius);
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.9)),
+        var(--panel);
+      border: 1px solid color-mix(in srgb, currentColor 42%, rgba(255,255,255,0.12));
+      box-shadow:
+        0 14px 34px rgba(16, 24, 40, .10),
+        inset 0 1px 0 rgba(255,255,255,.82),
+        0 0 20px color-mix(in srgb, currentColor 8%, transparent);
+      overflow: hidden;
+    }
+
+    .ah-step-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at 12% 12%, color-mix(in srgb, currentColor 10%, transparent), transparent 42%);
+      pointer-events: none;
+    }
+
+    .ah-step-no {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      width: 44px;
+      height: 44px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 24px;
+      font-weight: 900;
+      background: radial-gradient(circle at 35% 25%, rgba(255,255,255,.34), currentColor 70%);
+      box-shadow: 0 8px 24px color-mix(in srgb, currentColor 48%, transparent);
+    }
+
+    .ah-step-icon {
+      position: absolute;
+      left: 24px;
+      bottom: 24px;
+      font-size: 34px;
+      opacity: .9;
+      filter: drop-shadow(0 4px 10px color-mix(in srgb, currentColor 24%, transparent));
+    }
+
+    .ah-step-card h3 {
+      position: relative;
+      z-index: 1;
+      margin: 0 0 9px;
+      color: var(--text);
+      font-size: 21px;
+      line-height: 1.25;
+      font-weight: 850;
+    }
+
+    .ah-step-card p {
+      position: relative;
+      z-index: 1;
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .ah-exec-zone {
+      position: relative;
+      padding: 40px 18px 22px;
+      border: 1.5px dashed color-mix(in srgb, var(--cyan) 72%, transparent);
+      border-radius: 24px;
+      background: rgba(8, 145, 178, .045);
+      box-shadow: inset 0 0 24px rgba(8, 145, 178, .05), 0 16px 40px rgba(16, 24, 40, .08);
+    }
+
+    .ah-loop-badge {
+      position: absolute;
+      top: -19px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 32px;
+      border-radius: 999px;
+      background: linear-gradient(180deg, rgba(8, 145, 178, .12), rgba(8, 145, 178, .04));
+      border: 1px solid rgba(39, 215, 232, .86);
+      color: var(--cyan);
+      font-weight: 800;
+      box-shadow: 0 8px 22px rgba(8, 145, 178, .12);
+      width: fit-content;
+      white-space: nowrap;
+    }
+
+    .ah-exec-zone .ah-step-card {
+      min-height: 90px;
+      padding: 14px 16px 14px 72px;
+    }
+    .ah-exec-zone .ah-step-card .ah-step-no {
+      top: 14px;
+      left: 14px;
+      width: 36px;
+      height: 36px;
+      font-size: 20px;
+    }
+    .ah-exec-zone .ah-step-card .ah-step-icon {
+      left: 18px;
+      bottom: 14px;
+      font-size: 26px;
+    }
+    .ah-exec-zone .ah-step-card h3 {
+      font-size: 17px;
+    }
+    .ah-exec-zone .ah-step-card p {
+      font-size: 12px;
+    }
+
+    .ah-loop-grid {
+      display: grid;
+      grid-template-columns: 1fr 46px 1fr;
+      grid-template-areas:
+        "s5 a56 s6"
+        "a85 loop a67"
+        "s8 a78 s7";
+      gap: 20px 0;
+      align-items: center;
+    }
+
+    .ah-s5 { grid-area: s5; }
+    .ah-s6 { grid-area: s6; }
+    .ah-s7 { grid-area: s7; }
+    .ah-s8 { grid-area: s8; }
+
+    .ah-arrow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--cyan);
+      font-weight: 900;
+      font-size: 28px;
+      opacity: .95;
+      text-shadow: none;
+    }
+
+    .ah-a56 { grid-area: a56; }
+    .ah-a67 { grid-area: a67; transform: rotate(90deg); }
+    .ah-a78 { grid-area: a78; transform: rotate(180deg); }
+    .ah-a85 { grid-area: a85; transform: rotate(-90deg); }
+
+    .ah-loop-caption {
+      grid-area: loop;
+      align-self: center;
+      justify-self: center;
+      width: 100%;
+      min-height: 70px;
+      border-radius: 999px;
+      border-bottom: 3px solid rgba(39,215,232,.78);
+      color: var(--cyan);
+      display: grid;
+      place-items: end center;
+      padding-bottom: 8px;
+      font-weight: 800;
+      font-size: 15px;
+      text-align: center;
+    }
+
+    .ah-complete-col {
+      display: grid;
+      gap: 26px;
+      align-items: start;
+      padding-top: 50px;
+    }
+
+    .ah-complete-card {
+      min-height: 178px;
+      padding-left: 88px;
+      background:
+        radial-gradient(circle at 12% 25%, rgba(22, 163, 74, .12), transparent 35%),
+        linear-gradient(180deg, rgba(240, 253, 244, .98), rgba(220, 252, 231, .86));
+    }
+
+    .ah-complete-pill {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      min-height: 74px;
+      border-radius: 999px;
+      color: var(--green);
+      background: linear-gradient(180deg, rgba(22, 163, 74, .12), rgba(22, 163, 74, .04));
+      border: 1px solid rgba(126,224,106,.72);
+      box-shadow: 0 12px 30px rgba(22, 163, 74, .10), inset 0 1px 0 rgba(255,255,255,.75);
+      font-size: 27px;
+      font-weight: 900;
+    }
+
+    .ah-failure-wrap {
+      width: min(760px, 100%);
+      margin: 54px auto 0;
+      position: relative;
+    }
+
+    .ah-failure-label {
+      width: fit-content;
+      margin: 0 auto 18px;
+      padding: 8px 28px;
+      border-radius: 12px;
+      background: linear-gradient(180deg, rgba(220, 38, 38, .10), rgba(220, 38, 38, .04));
+      border: 1px solid rgba(255,94,94,.7);
+      color: var(--red);
+      font-weight: 900;
+      font-size: 22px;
+      box-shadow: 0 8px 22px rgba(220, 38, 38, .10);
+    }
+
+    .ah-failure-box {
+      display: grid;
+      grid-template-columns: 1fr 34px 1.6fr 34px 1fr;
+      gap: 12px 0;
+      align-items: center;
+      padding: 18px;
+      border-radius: 22px;
+      border: 1.5px dashed rgba(255,155,66,.72);
+      background: rgba(255, 247, 237, .72);
+      box-shadow: inset 0 0 24px rgba(234, 88, 12, .04);
+    }
+
+    .ah-failure-card {
+      min-height: 118px;
+      color: var(--orange);
+      background: linear-gradient(180deg, rgba(255, 247, 237, .96), rgba(255, 237, 213, .75));
+    }
+
+    .ah-failure-arrow {
+      color: var(--orange);
+      font-size: 28px;
+      font-weight: 900;
+      text-align: center;
+    }
+
+    .ah-return-note {
+      margin: 18px auto 0;
+      color: var(--orange);
+      text-align: center;
+      font-weight: 800;
+      font-size: 15px;
+    }
+
+    .ah-mobile-flow { display: none; }
+
+    @media (max-width: 980px) {
+      .ah-stage-heads,
+      .ah-main-flow { display: none; }
+      .ah-mobile-flow {
+        display: grid;
+        gap: 16px;
+      }
+      .ah-mobile-group {
+        display: grid;
+        gap: 14px;
+        padding: 18px;
+        border-radius: 22px;
+        border: 1px solid rgba(16,24,40,.08);
+        background: rgba(255,255,255,.7);
+      }
+      .ah-mobile-group-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 20px;
+        font-weight: 900;
+      }
+      .ah-step-card { min-height: 112px; }
+      .ah-failure-wrap { margin-top: 22px; }
+      .ah-failure-box { grid-template-columns: 1fr; }
+      .ah-failure-arrow { transform: rotate(90deg); }
+    }
+
+    @media (max-width: 560px) {
+      .ah-lifecycle-section { padding: 60px 14px 70px; }
+      .ah-lifecycle-title { margin-bottom: 28px; }
+      .ah-lifecycle-title p { letter-spacing: .06em; }
+      .ah-step-card { padding: 20px 18px 18px 82px; }
+      .ah-step-card h3 { font-size: 19px; }
+    }
+  </style>
+
+  <div class="ah-lifecycle-wrap">
+    <header class="ah-lifecycle-title">
+      <h2>完整请求生命周期</h2>
+      <p>从用户发送消息到所有任务执行完毕的闭环流程</p>
+    </header>
+
+    <div class="ah-stage-heads" aria-hidden="true">
+      <div class="ah-stage-head ah-blue"><span class="ah-stage-icon">🛡️</span><span>连接与请求理解</span></div>
+      <div class="ah-stage-head ah-purple"><span class="ah-stage-icon">🧠</span><span>计划生成与确认</span></div>
+      <div class="ah-stage-head ah-cyan"><span class="ah-stage-icon">🔄</span><span>执行循环</span></div>
+      <div class="ah-stage-head ah-green"><span class="ah-stage-icon">🗄️</span><span>完成归档</span></div>
+    </div>
+
+    <div class="ah-main-flow">
+      <div class="ah-column">
+        <article class="ah-step-card ah-blue">
+          <span class="ah-step-no">1</span><span class="ah-step-icon">🛡️</span>
+          <h3>连接建立</h3>
+          <p>JWT 认证 → WebSocket<br>双向通道建立</p>
+        </article>
+        <article class="ah-step-card ah-blue">
+          <span class="ah-step-no">2</span><span class="ah-step-icon">💬</span>
+          <h3>消息解析</h3>
+          <p>@提及提取 · 命令识别<br>意图分析</p>
+        </article>
       </div>
-      <div class="flow-arrow">→</div>
-      <div class="flow-node flow-user">
-        <span class="flow-step">2</span>
-        <strong>消息解析</strong>
-        <small>@提及提取 · 命令识别 · 意图分析</small>
+
+      <div class="ah-column">
+        <article class="ah-step-card ah-purple">
+          <span class="ah-step-no">3</span><span class="ah-step-icon">🔗</span>
+          <h3>Planner 任务拆解</h3>
+          <p>接收需求 + 上下文 + Agent 列表<br>生成 DAG 计划 → Schema 校验 → 持久化</p>
+        </article>
+        <article class="ah-step-card ah-purple">
+          <span class="ah-step-no">4</span><span class="ah-step-icon">🖥️</span>
+          <h3>计划可视确认</h3>
+          <p>React Flow 渲染 DAG<br>用户审查/修改 · 确认执行</p>
+        </article>
+      </div>
+
+      <div class="ah-exec-zone ah-cyan">
+        <div class="ah-loop-badge">执行循环</div>
+        <div class="ah-loop-grid">
+          <article class="ah-step-card ah-cyan ah-s5">
+            <span class="ah-step-no">5</span><span class="ah-step-icon">🗂️</span>
+            <h3>依赖调度</h3>
+            <p>扫描就绪任务<br>并发槽位计算 · FIFO 选取</p>
+          </article>
+          <div class="ah-arrow ah-a56">→</div>
+          <article class="ah-step-card ah-cyan ah-s6">
+            <span class="ah-step-no">6</span><span class="ah-step-icon">🚀</span>
+            <h3>Agent 启动</h3>
+            <p>Provider 创建<br>沙箱执行 · 上下文注入</p>
+          </article>
+          <div class="ah-arrow ah-a67">→</div>
+          <article class="ah-step-card ah-cyan ah-s7">
+            <span class="ah-step-no">7</span><span class="ah-step-icon">〽️</span>
+            <h3>流式推送</h3>
+            <p>stdout 解析<br>事件标准化 · WS 广播</p>
+          </article>
+          <div class="ah-arrow ah-a78">→</div>
+          <article class="ah-step-card ah-cyan ah-s8">
+            <span class="ah-step-no">8</span><span class="ah-step-icon">✅</span>
+            <h3>验证完成</h3>
+            <p>退出码 + 产物检查<br>ContextBus 写入</p>
+          </article>
+          <div class="ah-arrow ah-a85">→</div>
+          <div class="ah-loop-caption">触发下游任务解锁，继续调度</div>
+        </div>
+      </div>
+
+      <div class="ah-complete-col">
+        <article class="ah-step-card ah-green ah-complete-card">
+          <span class="ah-step-no">12</span><span class="ah-step-icon">📋</span>
+          <h3>计划完成</h3>
+          <p>生成执行摘要<br>Planner 反思 · 归档</p>
+        </article>
+        <div class="ah-complete-pill"><span>✓</span><span>闭环完成</span></div>
       </div>
     </div>
 
-    <!-- Arrow down -->
-    <div class="flow-down-arrow">▼</div>
-
-    <!-- Planner -->
-    <div class="flow-row flow-row-center">
-      <div class="flow-node flow-planner flow-node-wide">
-        <span class="flow-step">3</span>
-        <strong>Planner 任务拆解</strong>
-        <small>接收需求 + 上下文 + Agent 列表 → 生成 DAG 计划 → Schema 校验 → 持久化</small>
+    <div class="ah-failure-wrap">
+      <div class="ah-failure-label">失败</div>
+      <div class="ah-failure-box">
+        <article class="ah-step-card ah-failure-card">
+          <span class="ah-step-no">9</span><span class="ah-step-icon">🔁</span>
+          <h3>自动重试</h3>
+          <p>最多 3 次<br>指数退避</p>
+        </article>
+        <div class="ah-failure-arrow">→</div>
+        <article class="ah-step-card ah-failure-card">
+          <span class="ah-step-no">10</span><span class="ah-step-icon">⚠️</span>
+          <h3>ManagerLoop 审查</h3>
+          <p>失败分析<br>决策</p>
+        </article>
+        <div class="ah-failure-arrow">→</div>
+        <article class="ah-step-card ah-failure-card">
+          <span class="ah-step-no">11</span><span class="ah-step-icon">🧠</span>
+          <h3>Planner 升级</h3>
+          <p>重新评估方案</p>
+        </article>
       </div>
+      <div class="ah-return-note">失败恢复后重新进入执行循环</div>
     </div>
 
-    <!-- Arrow down -->
-    <div class="flow-down-arrow">▼</div>
-
-    <!-- Confirm -->
-    <div class="flow-row flow-row-center">
-      <div class="flow-node flow-confirm">
-        <span class="flow-step">4</span>
-        <strong>计划可视确认</strong>
-        <small>React Flow 渲染 DAG · 用户审查/修改 · 确认执行</small>
+    <div class="ah-mobile-flow" aria-label="完整请求生命周期移动端流程">
+      <div class="ah-mobile-group">
+        <div class="ah-mobile-group-title ah-blue">🛡️ 连接与请求理解</div>
+        <article class="ah-step-card ah-blue"><span class="ah-step-no">1</span><span class="ah-step-icon">🛡️</span><h3>连接建立</h3><p>JWT 认证 → WebSocket 双向通道建立</p></article>
+        <article class="ah-step-card ah-blue"><span class="ah-step-no">2</span><span class="ah-step-icon">💬</span><h3>消息解析</h3><p>@提及提取 · 命令识别 · 意图分析</p></article>
       </div>
-    </div>
-
-    <!-- Arrow down -->
-    <div class="flow-down-arrow">▼</div>
-
-    <!-- Execution Loop (5-8) -->
-    <div class="flow-loop-box">
-      <div class="flow-loop-label">执行循环</div>
-      <div class="flow-row">
-        <div class="flow-node flow-exec">
-          <span class="flow-step">5</span>
-          <strong>依赖调度</strong>
-          <small>扫描就绪任务 · 并发槽位计算 · FIFO 选取</small>
-        </div>
-        <div class="flow-arrow">→</div>
-        <div class="flow-node flow-exec">
-          <span class="flow-step">6</span>
-          <strong>Agent 启动</strong>
-          <small>Provider 创建 · 沙箱执行 · 上下文注入</small>
-        </div>
-        <div class="flow-arrow">→</div>
-        <div class="flow-node flow-exec">
-          <span class="flow-step">7</span>
-          <strong>流式推送</strong>
-          <small>stdout 解析 · 事件标准化 · WS 广播</small>
-        </div>
-        <div class="flow-arrow">→</div>
-        <div class="flow-node flow-exec">
-          <span class="flow-step">8</span>
-          <strong>验证完成</strong>
-          <small>退出码 + 产物检查 · ContextBus 写入</small>
-        </div>
+      <div class="ah-mobile-group">
+        <div class="ah-mobile-group-title ah-purple">🧠 计划生成与确认</div>
+        <article class="ah-step-card ah-purple"><span class="ah-step-no">3</span><span class="ah-step-icon">🔗</span><h3>Planner 任务拆解</h3><p>接收需求 + 上下文 + Agent 列表 → 生成 DAG 计划 → Schema 校验 → 持久化</p></article>
+        <article class="ah-step-card ah-purple"><span class="ah-step-no">4</span><span class="ah-step-icon">🖥️</span><h3>计划可视确认</h3><p>React Flow 渲染 DAG · 用户审查/修改 · 确认执行</p></article>
       </div>
-      <!-- Loop back -->
-      <div class="flow-loop-note">← 触发下游任务解锁，回到步骤 5 继续调度 →</div>
-    </div>
-
-    <!-- Branch: Success vs Failure -->
-    <div class="flow-branch">
-      <div class="flow-branch-success">
-        <div class="flow-down-arrow" style="color: var(--accent-success);">▼</div>
-        <div class="flow-row flow-row-center">
-          <div class="flow-node flow-done">
-            <span class="flow-step">12</span>
-            <strong>计划完成</strong>
-            <small>生成执行摘要 · Planner 反思 · 归档</small>
-          </div>
-        </div>
+      <div class="ah-mobile-group">
+        <div class="ah-mobile-group-title ah-cyan">🔄 执行循环</div>
+        <article class="ah-step-card ah-cyan"><span class="ah-step-no">5</span><span class="ah-step-icon">🗂️</span><h3>依赖调度</h3><p>扫描就绪任务 · 并发槽位计算 · FIFO 选取</p></article>
+        <article class="ah-step-card ah-cyan"><span class="ah-step-no">6</span><span class="ah-step-icon">🚀</span><h3>Agent 启动</h3><p>Provider 创建 · 沙箱执行 · 上下文注入</p></article>
+        <article class="ah-step-card ah-cyan"><span class="ah-step-no">7</span><span class="ah-step-icon">〽️</span><h3>流式推送</h3><p>stdout 解析 · 事件标准化 · WS 广播</p></article>
+        <article class="ah-step-card ah-cyan"><span class="ah-step-no">8</span><span class="ah-step-icon">✅</span><h3>验证完成</h3><p>退出码 + 产物检查 · ContextBus 写入</p></article>
       </div>
-      <div class="flow-branch-failure">
-        <div class="flow-down-arrow" style="color: var(--accent-danger);">▼ 失败</div>
-        <div class="flow-failure-chain">
-          <div class="flow-node flow-retry">
-            <span class="flow-step">9</span>
-            <strong>自动重试</strong>
-            <small>3 次 · 指数退避</small>
-          </div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-node flow-retry">
-            <span class="flow-step">10</span>
-            <strong>ManagerLoop</strong>
-            <small>审查分析 · 决策</small>
-          </div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-node flow-retry">
-            <span class="flow-step">11</span>
-            <strong>Planner 升级</strong>
-            <small>重新评估方案</small>
-          </div>
-        </div>
-        <div class="flow-loop-note" style="color: var(--accent-danger);">失败恢复后重新进入执行循环</div>
+      <div class="ah-mobile-group">
+        <div class="ah-mobile-group-title ah-orange">⚠️ 失败恢复</div>
+        <article class="ah-step-card ah-failure-card"><span class="ah-step-no">9</span><span class="ah-step-icon">🔁</span><h3>自动重试</h3><p>最多 3 次 · 指数退避</p></article>
+        <article class="ah-step-card ah-failure-card"><span class="ah-step-no">10</span><span class="ah-step-icon">⚠️</span><h3>ManagerLoop 审查</h3><p>失败分析 · 决策</p></article>
+        <article class="ah-step-card ah-failure-card"><span class="ah-step-no">11</span><span class="ah-step-icon">🧠</span><h3>Planner 升级</h3><p>重新评估方案</p></article>
+      </div>
+      <div class="ah-mobile-group">
+        <div class="ah-mobile-group-title ah-green">🗄️ 完成归档</div>
+        <article class="ah-step-card ah-green"><span class="ah-step-no">12</span><span class="ah-step-icon">📋</span><h3>计划完成</h3><p>生成执行摘要 · Planner 反思 · 归档</p></article>
+        <div class="ah-complete-pill"><span>✓</span><span>闭环完成</span></div>
       </div>
     </div>
   </div>
