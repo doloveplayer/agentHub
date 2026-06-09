@@ -44,7 +44,7 @@ bash scripts/startup.sh          # 日志 → ./logs/
 bash scripts/cleanup.sh
 
 # 构建沙箱镜像（Dockerfile 变更后）
-docker build -t agenthub-sandbox:latest -f docker/sandbox.Dockerfile .
+docker build -t agenthub-sandbox:latest -f docker/sandbox.Dockerfile docker/
 
 # TypeScript 类型检查
 npx tsc --noEmit -p apps/api/tsconfig.json
