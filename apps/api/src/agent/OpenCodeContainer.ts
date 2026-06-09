@@ -16,10 +16,14 @@ export interface OpenCodeContainerOptions {
 }
 
 /**
- * Generate opencode.json configuration for DeepSeek / OpenAI-compatible providers.
+ * Generate opencode.json configuration for OpenAI-compatible providers.
  *
- * Uses the `{env:AGENTHUB_OPENCODE_API_KEY}` placeholder so the actual key
- * is injected at runtime via docker exec -e, never written to disk.
+ * Uses a custom provider name (`agenthub`) to avoid conflicting with
+ * opencode's built-in `deepseek` provider, which only recognizes its
+ * own official model names.
+ *
+ * The `{env:AGENTHUB_OPENCODE_API_KEY}` placeholder is resolved at
+ * runtime via docker exec -e, never written to disk.
  */
 export function generateOpenCodeConfig(
   baseUrl: string,
@@ -28,11 +32,11 @@ export function generateOpenCodeConfig(
   const modelName = stripAnsi(model);
 
   return {
-    model: `deepseek/${modelName}`,
+    model: `agenthub/${modelName}`,
     provider: {
-      deepseek: {
+      agenthub: {
         npm: '@ai-sdk/openai-compatible',
-        name: 'DeepSeek',
+        name: 'AgentHub',
         options: {
           baseURL: baseUrl,
           apiKey: '{env:AGENTHUB_OPENCODE_API_KEY}',
@@ -93,7 +97,7 @@ export function spawnOpenCodeInDocker(
     opts.containerId,
     'opencode', 'run',
     '--format', 'json',
-    '-m', `deepseek/${resolvedModel}`,
+    '-m', `agenthub/${resolvedModel}`,
   ];
 
   if (opts.resumeSession) {
