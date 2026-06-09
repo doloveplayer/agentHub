@@ -15,7 +15,8 @@ build/
 .sandboxes/
 .agent-runtime/
 
-# Claude Code local state (share CLAUDE.md, settings.json, skills/; keep personal files local)
+# Claude Code local state (share CLAUDE.md, skills/; keep personal/config files local)
+.claude/settings.json
 .claude/settings.local.json
 .claude/memory/
 .claude/worktrees/
@@ -28,6 +29,7 @@ build/
 # IDE
 .vscode/
 .idea/
+.trae/
 
 # OS
 .DS_Store
