@@ -766,6 +766,12 @@ a, button, input, textarea, select, [tabindex] {
       position: relative;
     }
 
+    .ah-lifecycle-header {
+      width: min(1040px, 100%);
+      margin: 0 auto 54px;
+      padding: 0;
+    }
+
     .ah-stage-heads,
     .ah-main-flow {
       display: grid;
@@ -1112,9 +1118,11 @@ a, button, input, textarea, select, [tabindex] {
   </style>
 
   <div class="ah-lifecycle-wrap">
-    <span class="section-label">Lifecycle</span>
-    <h2 class="section-title">完整请求生命周期</h2>
-    <p class="section-desc">从用户发送消息到所有任务执行完毕的闭环流程。</p>
+    <div class="ah-lifecycle-header">
+      <span class="section-label">Lifecycle</span>
+      <h2 class="section-title">完整请求生命周期</h2>
+      <p class="section-desc">从用户发送消息到所有任务执行完毕的闭环流程。</p>
+    </div>
 
     <div class="ah-stage-heads" aria-hidden="true">
       <div class="ah-stage-head ah-blue"><span class="ah-stage-icon">🛡️</span><span>连接与请求理解</span></div>
