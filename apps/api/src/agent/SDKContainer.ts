@@ -8,7 +8,7 @@ export interface SDKContainerOptions {
   prompt: string;
   hostWorkDir: string;
   hostSandboxDir: string;  // host path to sandbox dir (agent config + runtime files)
-  agentHomeDir?: string;   // host path to agent persistent home (.agents/<agentId>)
+  agentHomeDir?: string;   // host path to agent persistent home (.agent-runtime/<agentId>)
   agentTag: string;
   agentConfigTag?: string;
   permissionMode: string;

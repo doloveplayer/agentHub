@@ -1,0 +1,46 @@
+{
+  "model": "mimo-v2.5-pro[1M]",
+  "env": {
+    "ANTHROPIC_AUTH_TOKEN": "tp-c25l115b6y9m804xhib4j16dx82lpd3644cl1i58pxyroxpd",
+    "ANTHROPIC_BASE_URL": "https://token-plan-cn.xiaomimimo.com/anthropic"
+  },
+  "effortLevel": "xhigh",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '[hook] Task completed. Consider running /code-review if this completes a feature section.'"
+          }
+        ]
+      }
+    ]
+  },
+  "slashCommands": [
+    {
+      "name": "code-review",
+      "description": "Code review for current working tree changes (distinct from built-in /review for PRs)",
+      "prompt": "Invoke the superpowers:requesting-code-review skill. Review the uncommitted changes against the plan or requirements. If there are no uncommitted changes, review the last commit (HEAD~1..HEAD). Report critical/important/minor issues and a merge readiness assessment."
+    }
+  ],
+  "permissions": {
+    "allow": [
+      "mcp__codegraph__codegraph_search",
+      "mcp__codegraph__codegraph_context",
+      "mcp__codegraph__codegraph_callers",
+      "mcp__codegraph__codegraph_callees",
+      "mcp__codegraph__codegraph_impact",
+      "mcp__codegraph__codegraph_node",
+      "mcp__codegraph__codegraph_status"
+    ]
+  },
+  "mcpServers": {
+    "codegraph": {
+      "type": "stdio",
+      "command": "codegraph",
+      "args": ["serve", "--mcp"]
+    }
+  }
+}

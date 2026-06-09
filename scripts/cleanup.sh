@@ -60,11 +60,11 @@ fi
 
 # --- Clean agent container directories ---
 echo "[5/8] Cleaning agent container directories..."
-if [ -d .agents ] && [ "$(ls -A .agents 2>/dev/null)" ]; then
-  rm -rf .agents/*
-  echo "  ✓ cleaned .agents/"
+if [ -d .agent-runtime ] && [ "$(ls -A .agent-runtime 2>/dev/null)" ]; then
+  rm -rf .agent-runtime/*
+  echo "  ✓ cleaned .agent-runtime/"
 else
-  echo "  - .agents/ already empty"
+  echo "  - .agent-runtime/ already empty"
 fi
 
 # --- Stop docker compose services ---

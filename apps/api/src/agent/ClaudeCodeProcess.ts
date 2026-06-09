@@ -126,7 +126,7 @@ export class ClaudeCodeProcess {
     promptFileId?: string,
     claudeSessionId?: string,    // for --resume: continue previous Claude session
     agentConfigId?: string,      // stable per Agent so --resume can find prior session state
-    agentHomeDir?: string,       // persistent agent home (.agents/<agentId>)
+    agentHomeDir?: string,       // persistent agent home (.agent-runtime/<agentId>)
   ): Promise<void> {
     this.doneEmitted = false;
     this.killed = false;

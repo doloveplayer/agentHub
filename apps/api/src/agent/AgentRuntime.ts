@@ -289,7 +289,7 @@ class AgentRuntime {
       hostWorkDir = agent.hostWorkDir!;
     }
 
-    // Ensure agent persistent home exists at .agents/<agentId>/
+    // Ensure agent persistent home exists at .agent-runtime/<agentId>/
     AgentDirectoryManager.ensureAgentHome(agentId, agent.name, agent.systemPrompt, agent.skills as any[] | null);
 
     const provider = ProviderFactory.create(agent.provider);

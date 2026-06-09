@@ -13,10 +13,14 @@ build/
 
 # Docker sandbox runtime
 .sandboxes/
-.agents/
+.agent-runtime/
 
-# Claude Code local state
-.claude/
+# Claude Code local state (share CLAUDE.md, settings.json, skills/; keep personal files local)
+.claude/settings.local.json
+.claude/memory/
+.claude/worktrees/
+.claude/agents/
+.claude/test.txt
 .codex/
 .codegraph/
 .understand-anything/
