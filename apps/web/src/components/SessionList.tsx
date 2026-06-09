@@ -15,7 +15,7 @@ interface AgentGroup {
 }
 
 export function SessionList({ onCloseMobile, iconMode, onToggleIconMode }: Props) {
-  const { sessions, activeSessionId, setSessions, setActiveSession, setAgents, agents, user, unreadCounts, clearUnread, sessionPermissionModes, setSessionPermissionMode } = useAppStore();
+  const { sessions, activeSessionId, setSessions, setActiveSession, setAgents, agents, user, unreadCounts, clearUnread, sessionPermissionModes, setSessionPermissionMode, clearSessionMessages } = useAppStore();
   const [showCreate, setShowCreate] = useState(false);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string; type: 'session' | 'agent' } | null>(null);
@@ -250,6 +250,7 @@ export function SessionList({ onCloseMobile, iconMode, onToggleIconMode }: Props
     } else {
       // Delete single session
       await api.deleteSession(id);
+      clearSessionMessages(id);
       const remaining = sessions.filter((s) => s.id !== id);
       setSessions(remaining);
       // Also remove from archived list if present

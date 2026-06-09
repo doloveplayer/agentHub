@@ -136,6 +136,7 @@ interface AppState {
   incrementUnread: (sessionId: string) => void;
   clearUnread: (sessionId: string) => void;
   clearSessionEvents: (sessionId: string) => void;
+  clearSessionMessages: (sessionId: string) => void;
   inboxNotifications: Record<string, number>;
   addInboxNotification: (agentName: string) => void;
   clearInboxNotifications: (agentName: string) => void;
@@ -579,6 +580,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         if (!msgIds.has(msgId)) filtered[msgId] = events;
       }
       return { agentEvents: filtered };
+    }),
+
+  clearSessionMessages: (sessionId) =>
+    set((state) => {
+      const { [sessionId]: _, ...rest } = state.messages;
+      return { messages: rest };
     }),
 
   addInboxNotification: (agentName) =>

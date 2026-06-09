@@ -408,10 +408,44 @@ agents.delete('/:id', async (c) => {
     broadcast(sa.sessionId, { type: 'agent_removed', agentId: id, sessionId: sa.sessionId });
   }
 
-  // Remove from all groups + hard-delete in a single transaction.
+  // Delete solo sessions where this agent is the sole participant.
+  // Group sessions only get the join record removed (handled below).
+  const soloSessionIds = sessionAgents
+    .filter((sa) => {
+      // A session is "solo" for this agent if it has exactly one SessionAgent
+      // We'll determine this via a sub-query below
+      return true;
+    })
+    .map((sa) => sa.sessionId);
+
+  // Find sessions that ONLY have this agent (solo sessions)
+  const orphanSessions = await prisma.session.findMany({
+    where: {
+      id: { in: soloSessionIds },
+      type: 'solo',
+      agents: { every: { agentId: id } },
+    },
+    select: { id: true, sandboxContainerId: true },
+  });
+
+  // Destroy sandbox containers for solo sessions being deleted
+  const { SandboxManager } = await import('../agent/SandboxManager.js');
+  for (const s of orphanSessions) {
+    if (s.sandboxContainerId) {
+      try {
+        await SandboxManager.destroy(s.sandboxContainerId);
+      } catch { /* best-effort */ }
+    }
+    SandboxManager.destroyHostDir(s.id);
+    broadcast(s.id, { type: 'session_deleted', sessionId: s.id });
+  }
+
+  // Remove from all groups + delete solo sessions + hard-delete agent in a single transaction.
   // Hard delete (not soft) because all resources are already cleaned up above
   // and the unique constraint on `name` would block re-creation with the same name.
   await prisma.$transaction([
+    prisma.message.deleteMany({ where: { sessionId: { in: orphanSessions.map((s) => s.id) } } }),
+    prisma.session.deleteMany({ where: { id: { in: orphanSessions.map((s) => s.id) } } }),
     prisma.sessionAgent.deleteMany({ where: { agentId: id } }),
     prisma.agent.delete({ where: { id } }),
   ]);
