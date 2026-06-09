@@ -766,27 +766,6 @@ a, button, input, textarea, select, [tabindex] {
       position: relative;
     }
 
-    .ah-lifecycle-title {
-      text-align: center;
-      margin-bottom: 54px;
-    }
-
-    .ah-lifecycle-title h2 {
-      margin: 0 0 14px;
-      font-size: clamp(34px, 5vw, 58px);
-      line-height: 1.05;
-      font-weight: 900;
-      letter-spacing: 0.04em;
-      text-shadow: none;
-    }
-
-    .ah-lifecycle-title p {
-      margin: 0;
-      color: var(--muted);
-      font-size: clamp(15px, 2vw, 20px);
-      letter-spacing: 0.18em;
-    }
-
     .ah-stage-heads,
     .ah-main-flow {
       display: grid;
@@ -1127,18 +1106,15 @@ a, button, input, textarea, select, [tabindex] {
 
     @media (max-width: 560px) {
       .ah-lifecycle-section { padding: 60px 14px 70px; }
-      .ah-lifecycle-title { margin-bottom: 28px; }
-      .ah-lifecycle-title p { letter-spacing: .06em; }
       .ah-step-card { padding: 20px 18px 18px 82px; }
       .ah-step-card h3 { font-size: 19px; }
     }
   </style>
 
   <div class="ah-lifecycle-wrap">
-    <header class="ah-lifecycle-title">
-      <h2>完整请求生命周期</h2>
-      <p>从用户发送消息到所有任务执行完毕的闭环流程</p>
-    </header>
+    <span class="section-label">Lifecycle</span>
+    <h2 class="section-title">完整请求生命周期</h2>
+    <p class="section-desc">从用户发送消息到所有任务执行完毕的闭环流程。</p>
 
     <div class="ah-stage-heads" aria-hidden="true">
       <div class="ah-stage-head ah-blue"><span class="ah-stage-icon">🛡️</span><span>连接与请求理解</span></div>
