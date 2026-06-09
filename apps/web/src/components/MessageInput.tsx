@@ -52,6 +52,8 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
   const [tags, setTags] = useState<MentionTag[]>([]);
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [inputHeight, setInputHeight] = useState(96);
+  const dragRef = useRef({ startY: 0, startH: 0 });
   const [slashQuery, setSlashQuery] = useState('');
   const [showSlash, setShowSlash] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0);
@@ -99,6 +101,21 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
     window.addEventListener('agenthub:prompt-insert', handler);
     return () => window.removeEventListener('agenthub:prompt-insert', handler);
   }, []);
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragRef.current = { startY: e.clientY, startH: inputHeight };
+    document.addEventListener('mousemove', handleResizeMove);
+    document.addEventListener('mouseup', handleResizeEnd);
+  };
+  const handleResizeMove = (e: MouseEvent) => {
+    const delta = dragRef.current.startY - e.clientY;
+    setInputHeight(Math.max(60, Math.min(400, dragRef.current.startH + delta)));
+  };
+  const handleResizeEnd = () => {
+    document.removeEventListener('mousemove', handleResizeMove);
+    document.removeEventListener('mouseup', handleResizeEnd);
+  };
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
@@ -311,7 +328,10 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
   };
 
   return (
-    <div className="border-t border-hub p-4 bg-hub-root">
+    <div className="border-t border-hub bg-hub-root flex flex-col" style={{ height: inputHeight }}>
+      {/* Drag handle */}
+      <div className="flex-shrink-0 cursor-ns-resize group h-0.5 hover:bg-hub-accent/60 active:bg-hub-accent transition-colors" onMouseDown={handleResizeStart} title="拖拽调整输入区高度" />
+      <div className="px-4 py-3 flex-1 flex flex-col min-h-0">
       {tags.length > 0 && (
         <div className="flex gap-1.5 mb-2 flex-wrap">
           {tags.map((tag) => (
@@ -325,15 +345,14 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
         </div>
       )}
 
-      <div className="relative flex gap-2 items-end">
+      <div className="relative flex gap-2 items-end flex-1 min-h-0">
         <textarea
           ref={ref}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder="Type a message... @ to mention an agent"
-          rows={1}
-          className="flex-1 bg-hub-surface border border-hub-border text-hub-primary rounded-2xl px-4 py-3 resize-none focus:outline-none focus:ring-1 focus:ring-hub-accent text-body placeholder:text-hub-muted"
+          className="flex-1 bg-hub-surface border border-hub-border text-hub-primary rounded-2xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-hub-accent text-body placeholder:text-hub-muted resize-none self-stretch"
           disabled={disabled}
         />
 
@@ -411,6 +430,7 @@ export function MessageInput({ onSend, disabled, mentionableAgents, streamingMes
             <Send className="w-4 h-4" />
           </button>
         )}
+      </div>
       </div>
     </div>
   );
