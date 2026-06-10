@@ -123,6 +123,13 @@ ADMIN_USERNAME=admin
 
 # AI Provider（至少配置一个 token）
 ANTHROPIC_AUTH_TOKEN=your_anthropic_api_key
+ANTHROPIC_BASE_URL=your_anthropic_url
+ANTHROPIC_MODEL=your_model_name
+
+# 同样还支持opencode平台 其他平台将在后续接入
+OPENCODE_API_KEY=
+OPENCODE_BASE_URL=
+OPENCODE_MODEL=
 
 # 其他可选
 PORT=3000
@@ -159,7 +166,7 @@ cd apps/web && npx vite
 
 ## 使用方式
 
-1. **创建 Agent** — 点击侧边栏 "+" 按钮，选择模板创建 Agent（CodeAgent、ReviewAgent 等）
+1. **创建 Agent** — 点击侧边栏 "+" 按钮，选择模板或者自定义创建 Agent（CodeAgent、ReviewAgent 、custom 等）
 2. **Solo 会话** — 点击 Agent 名称，进入一对一对话
 3. **Group 会话** — 创建群聊，添加多个 Agent，用 `@AgentName` 指定任务对象
 4. **任务规划** — 在群聊中描述需求，Planner 会自动拆解为 DAG 任务并分配执行
