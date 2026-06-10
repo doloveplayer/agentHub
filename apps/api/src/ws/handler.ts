@@ -44,6 +44,12 @@ import {
   handleApprovalReply,
 } from './approvalHandlers.js';
 
+import {
+  handleTurnDelete,
+  handleTurnRegenerate,
+  handleAgentUndo,
+} from './turnHandlers.js';
+
 export { broadcast } from './state.js';
 
 // ---- Connection handler ----
@@ -246,6 +252,9 @@ function handleMessage(ws: WebSocket, sessionId: string, data: any): void {
     case 'conflict_retry': handleConflictRetry(sessionId, data); break;
     case 'recover_plan': handleRecoverPlan(sessionId, data, ws); break;
     case 'discard_plan': handleDiscardPlan(sessionId, data, ws); break;
+    case 'turn_delete': handleTurnDelete(sessionId, ws, data); break;
+    case 'turn_regenerate': handleTurnRegenerate(sessionId, ws, data); break;
+    case 'agent_undo': handleAgentUndo(sessionId, ws, data); break;
     default: sendTo(ws, { type: 'error', message: `Unknown message type: ${data.type}` });
   }
 }

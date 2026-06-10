@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { authMiddleware } from '../middleware/auth.js';
 import { prisma } from '../db/prisma.js';
 import { selectDefaultAgent } from '../agent/turns.js';
+import { TurnManager } from '../agent/TurnManager.js';
 
 const chat = new Hono();
 chat.use('*', authMiddleware);
@@ -31,11 +32,18 @@ chat.post('/send', async (c) => {
   const parsed = sendSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'Validation failed', details: parsed.error.flatten() }, 400);
 
-  const { sessionId, content, mentions } = parsed.data;
+  const { sessionId, content, mentions, parentTurnId } = {
+    parentTurnId: undefined as string | null | undefined,
+    ...parsed.data,
+  };
 
   const session = await prisma.session.findUnique({
     where: { id: sessionId },
-    include: {
+    select: {
+      id: true,
+      type: true,
+      userId: true,
+      workspacePath: true,
       agents: {
         include: {
           agent: {
@@ -53,9 +61,19 @@ chat.post('/send', async (c) => {
     return c.json({ error: 'Mentions are not supported in solo sessions' }, 400);
   }
 
-  // Create user message
+  // --- Turn auto-creation ---
+  // Create user message first so Turn can reference it
+  const workspacePath = session.workspacePath || null;
+
   const userMessage = await prisma.message.create({
     data: { sessionId, senderType: 'human', content, status: 'done' },
+  });
+
+  const turn = await TurnManager.createTurn({
+    sessionId,
+    userMessageId: userMessage.id,
+    workspacePath,
+    parentTurnId: parentTurnId ?? undefined,
   });
 
   // Touch session updatedAt so it reflects recent activity for sorting
@@ -84,6 +102,7 @@ chat.post('/send', async (c) => {
         agentId: m.agentId || null,
         content: '',
         status: 'streaming',
+        turnId: turn.id,
       },
     });
     agentMessages.push({ agentMessageId: agentMsg.id, agentId: m.agentId });
@@ -97,17 +116,25 @@ chat.post('/send', async (c) => {
   return c.json({ userMessageId: userMessage.id, agentMessages }, 201);
 });
 
-// DELETE /messages/:id — delete a message (must belong to user's session)
+// DELETE /messages/:id — Turn-level delete: finds the Turn containing this message and deletes it
 chat.delete('/messages/:id', async (c) => {
   const { userId } = c.get('user');
   const messageId = c.req.param('id');
 
-  const message = await prisma.message.findUnique({ where: { id: messageId } });
+  const message = await prisma.message.findUnique({
+    where: { id: messageId },
+    include: { session: { select: { userId: true } } },
+  });
   if (!message) return c.json({ error: 'Message not found' }, 404);
+  if (message.session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
 
-  const session = await prisma.session.findUnique({ where: { id: message.sessionId } });
-  if (!session || session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
+  // If message belongs to a Turn, delete the entire Turn
+  if (message.turnId) {
+    const result = await TurnManager.deleteTurn(message.turnId);
+    return c.json({ ok: true, deletedTurn: true, ...result });
+  }
 
+  // Legacy: message without Turn association — direct hard delete
   await prisma.message.delete({ where: { id: messageId } });
   return c.json({ ok: true });
 });

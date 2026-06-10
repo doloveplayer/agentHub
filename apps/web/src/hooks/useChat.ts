@@ -638,6 +638,25 @@ export function useChat(sessionId: string) {
             case 'pinned_updated':
               window.dispatchEvent(new CustomEvent('pinned_event', { detail: data }));
               break;
+            case 'turn_deleted':
+              if (data.turnId && data.sessionId) {
+                useAppStore.getState().deleteTurnLocal(data.sessionId, data.turnId);
+              }
+              break;
+            case 'turn_regenerated':
+              // New turn messages handled by standard chat flow
+              break;
+            case 'turn_regenerate_prompt':
+              // Auto-resend the original prompt with parentTurnId for the new Turn
+              if (data.content && data.parentTurnId) {
+                send(data.content, [], undefined, null, null, data.parentTurnId).catch(() => {});
+              }
+              break;
+            case 'agent_undone':
+              if (data.messageId && data.sessionId) {
+                useAppStore.getState().undoMessageLocal(data.sessionId, data.messageId);
+              }
+              break;
           }
         } catch { /* ignore parse errors */ }
       };
@@ -663,7 +682,7 @@ export function useChat(sessionId: string) {
     });
   }, [sessionId, token, appendToMessage, setMessageStatus, addAgentEvent, removeStreamingMessage, addToast]);
 
-  const send = useCallback(async (content: string, mentionedAgents: MentionTag[] = [], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null, skillInvocation?: string | null) => {
+  const send = useCallback(async (content: string, mentionedAgents: MentionTag[] = [], mode?: 'parallel' | 'sequential', quoteReferenceId?: string | null, skillInvocation?: string | null, parentTurnId?: string | null) => {
     const msgId = 'temp-' + Date.now();
     const userMsg: Message = {
       id: msgId,
@@ -735,6 +754,7 @@ export function useChat(sessionId: string) {
         trustMode,
         orchestrationMode: mode || orchestrationMode,
         skillInvocation: skillInvocation || null,
+        parentTurnId: parentTurnId || null,
       }));
     } catch (err: any) {
       console.error('[WS] Failed to send message:', err);
@@ -862,6 +882,50 @@ export function useChat(sessionId: string) {
     }
   }, [sessionId, ensureConnection, removeStreamingMessage]);
 
+  // Turn-level delete
+  const deleteTurn = useCallback(async (turnId: string) => {
+    try {
+      await api.deleteTurn(turnId);
+      useAppStore.getState().deleteTurnLocal(sessionId, turnId);
+      addToast('Turn deleted', 'info');
+    } catch (err: any) {
+      console.error('[Turn] Delete failed:', err);
+      addToast('Delete failed', 'error');
+    }
+  }, [sessionId, addToast]);
+
+  // Turn-level regenerate
+  const regenerateTurn = useCallback(async (turnId: string) => {
+    try {
+      const result = await api.regenerateTurn(turnId);
+      await send(result.originalContent, [], undefined, null, null, result.oldTurnId);
+      addToast('Turn regenerated', 'info');
+    } catch (err: any) {
+      console.error('[Turn] Regenerate failed:', err);
+      addToast('Regenerate failed', 'error');
+    }
+  }, [send, sessionId, addToast]);
+
+  // Single agent message undo
+  const undoAgentMessage = useCallback(async (messageId: string) => {
+    const store = useAppStore.getState();
+    const sessionMsgs = store.messages[sessionId] ?? [];
+    const msg = sessionMsgs.find((m) => m.id === messageId);
+    const turnId = msg?.turnId;
+    if (!turnId) {
+      console.error('[Turn] Cannot undo: message has no turnId');
+      return;
+    }
+    try {
+      await api.undoAgentMessage(turnId, messageId);
+      store.undoMessageLocal(sessionId, messageId);
+      addToast('Message undone', 'info');
+    } catch (err: any) {
+      console.error('[Turn] Undo failed:', err);
+      addToast('Undo failed', 'error');
+    }
+  }, [sessionId, addToast]);
+
   const connect = useCallback(() => {
     ensureConnection().catch((err) => console.error('[WS] Connect failed:', err));
   }, [ensureConnection]);
@@ -870,5 +934,5 @@ export function useChat(sessionId: string) {
     if (sessionId) connect();
   }, [sessionId, connect]);
 
-  return { send, connect, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan, forceCompleteTask, forceFailTask };
+  return { send, connect, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan, forceCompleteTask, forceFailTask, deleteTurn, regenerateTurn, undoAgentMessage };
 }

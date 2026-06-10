@@ -236,6 +236,13 @@ async function dispatchPlan(
     tasks: taskList,
   });
 
+  // Track plan creation to active Turn for cleanup
+  import('../agent/TurnManager.js').then(({ TurnManager: TM }) => {
+    TM.getActiveTurn(sessionId).then((turn) => {
+      if (turn) TM.trackPlanId(turn.id, planId);
+    }).catch(() => {});
+  }).catch(() => {});
+
   // Always dispatch — permission mode handles action-level gating
   console.log(`[PlanWatcher] Dispatching plan ${planId} (risk=${risk}, tasks=${plan.tasks.length})`);
 

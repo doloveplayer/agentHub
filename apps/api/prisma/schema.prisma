@@ -35,6 +35,7 @@ model Session {
   archived           Boolean        @default(false)
   user               User           @relation(fields: [userId], references: [id])
   messages           Message[]
+  turns              ConversationTurn[]
   agents             SessionAgent[]
   quoteReferences    QuoteReference[]
   pinnedMessages     PinnedMessage[]
@@ -62,6 +63,8 @@ model SessionAgent {
 model Message {
   id               String   @id @default(uuid())
   sessionId        String
+  turnId           String?
+  turnStatus       String   @default("active") // active | undone
   senderType       String   @default("human")
   agentId          String?
   content          String
@@ -72,8 +75,32 @@ model Message {
   cacheReadTokens  Int?     @default(0)
   cacheCreateTokens Int?    @default(0)
   session          Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turn             ConversationTurn? @relation(fields: [turnId], references: [id], onDelete: SetNull)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+
+  @@index([turnId])
+}
+
+model ConversationTurn {
+  id               String    @id @default(uuid())
+  sessionId        String
+  sequence         Int       // session-scoped incrementing sequence number
+  parentTurnId     String?   // parent Turn (for regenerate chains)
+  status           String    @default("active") // active | completed | cancelled | superseded
+  triggerMsgId     String    // the human message that kicked off this turn
+  planExecutionId  String?   // associated PlanExecution (if DAG dispatch occurred)
+  workspaceSnapshot   Json?  // { ref, mode, workspacePath, createdAt } for rollback
+  contextEntryKeys    String[] @default([]) // ContextEntry keys created during this turn
+  planIds             String[] @default([]) // PlanExecution planIds created during this turn
+  messages         Message[]
+  session          Session   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([sessionId, sequence])
+  @@index([sessionId])
+  @@index([parentTurnId])
 }
 
 model QuoteReference {

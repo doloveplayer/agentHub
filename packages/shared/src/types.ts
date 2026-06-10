@@ -51,9 +51,47 @@ export interface SessionAgentInfo {
   displayName: string;
 }
 
+// ---- Conversation Turn ----
+
+export type TurnStatus = 'active' | 'completed' | 'cancelled' | 'superseded';
+export type TurnMessageStatus = 'active' | 'undone';
+
+export interface WorkspaceSnapshot {
+  ref: string;
+  mode: 'stash' | 'branch';
+  workspacePath: string;
+  createdAt: number;
+}
+
+export interface ConversationTurn {
+  id: string;
+  sessionId: string;
+  sequence: number;
+  parentTurnId?: string | null;
+  status: TurnStatus;
+  triggerMsgId: string;
+  planExecutionId?: string | null;
+  workspaceSnapshot?: WorkspaceSnapshot | null;
+  contextEntryKeys: string[];
+  planIds: string[];
+  messages?: Message[];
+  createdAt: string;
+}
+
+export interface TurnVersion {
+  turnId: string;
+  sequence: number;
+  parentTurnId: string | null;
+  status: TurnStatus;
+  messages: Message[];
+  createdAt: string;
+}
+
 export interface Message {
   id: string;
   sessionId: string;
+  turnId?: string | null;
+  turnStatus?: TurnMessageStatus;
   senderType: 'human' | 'agent' | 'system';
   agentId?: string;
   content: string;
@@ -127,6 +165,7 @@ export interface SendRequest {
   content: string;
   mentions?: Mention[];
   quoteReferenceId?: string | null;
+  parentTurnId?: string | null;
 }
 
 export interface SendResponse {
@@ -264,6 +303,58 @@ export interface WorkspaceChangedEvent {
   path: string;
   mode: WorkspaceMode;
   timestamp: number;
+}
+
+// ---- Turn WebSocket Messages ----
+
+export interface TurnDeleteRequest {
+  type: 'turn_delete';
+  turnId: string;
+}
+
+export interface TurnDeleteResult {
+  type: 'turn_deleted';
+  turnId: string;
+  sessionId: string;
+  messageIds: string[];
+  undoneMessageIds?: string[];
+  revertedFiles: string[];
+}
+
+export interface TurnRegenerateRequest {
+  type: 'turn_regenerate';
+  turnId: string;
+  editContent?: string;
+}
+
+export interface TurnRegenerateResult {
+  type: 'turn_regenerated';
+  sessionId: string;
+  oldTurnId: string;
+  parentTurnId: string;
+  originalContent: string;
+  userMessageId: string;
+  agentMessageIds: string[];
+}
+
+export interface AgentUndoRequest {
+  type: 'agent_undo';
+  messageId: string;
+}
+
+export interface AgentUndoResult {
+  type: 'agent_undone';
+  messageId: string;
+  sessionId: string;
+  turnId: string;
+  agentId: string;
+  agentName: string;
+}
+
+export interface TurnVersionsResult {
+  type: 'turn_versions';
+  turnId: string;
+  versions: TurnVersion[];
 }
 
 // ---- Context Bus ----

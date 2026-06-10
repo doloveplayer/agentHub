@@ -28,6 +28,7 @@ import reviewRoutes from "./routes/review.js";
 import settingsRoutes from "./routes/settings.js";
 import avatarRoutes from "./routes/avatar.js";
 import quoteRefRoutes from "./routes/quoteReferences.js";
+import turnRoutes from "./routes/turns.js";
 import pinnedRoutes from "./routes/pinned.js";
 import { planRecovery } from "./routes/planRecovery.js";
 import { seedAgentTemplates } from "./defaultAgents.js";
@@ -133,6 +134,7 @@ app.route("/api/review", reviewRoutes);
 app.route("/api/settings", settingsRoutes);
 app.route("/api/avatar", avatarRoutes);
 app.route("/api/quote-references", quoteRefRoutes);
+app.route("/api/turns", turnRoutes);
 app.route("/api/plans", planRecovery);
 
 // Health check

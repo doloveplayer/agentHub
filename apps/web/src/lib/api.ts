@@ -490,4 +490,26 @@ export const api = {
     if (!res.ok) throw new Error(`getPlanHistory failed: ${res.status}`);
     return res.json();
   },
+
+  // Turn operations
+  deleteTurn: (turnId: string, keepUndone?: boolean) =>
+    request<{ ok: boolean; deletedMessageIds: string[]; undoneMessageIds: string[]; revertedFiles: string[] }>(
+      `/turns/${turnId}${keepUndone ? '?keepUndone=true' : ''}`,
+      { method: 'DELETE' },
+    ),
+
+  regenerateTurn: (turnId: string, editContent?: string) =>
+    request<{ ok: boolean; oldTurnId: string; newTurnId: string; newSequence: number; originalContent: string }>(
+      `/turns/${turnId}/regenerate`,
+      { method: 'POST', body: JSON.stringify({ editContent }) },
+    ),
+
+  undoAgentMessage: (turnId: string, messageId: string) =>
+    request<{ ok: boolean; messageId: string; agentId: string; turnId: string }>(
+      `/turns/${turnId}/messages/${messageId}/undo`,
+      { method: 'POST' },
+    ),
+
+  getTurnVersions: (turnId: string) =>
+    request<{ versions: any[] }>(`/turns/${turnId}/versions`),
 };

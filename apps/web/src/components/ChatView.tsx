@@ -9,6 +9,9 @@ import { MessageInput } from './MessageInput';
 import { MessageActions } from './MessageActions';
 import { AgentStatusPanel } from './AgentStatusPanel';
 import { QuoteToolbar } from './QuoteToolbar';
+import { TurnBoundary } from './TurnBoundary';
+import { UndoPlaceholder } from './UndoPlaceholder';
+import { VersionSwitcher } from './VersionSwitcher';
 import { agentColor } from './AgentMentionPopup';
 import { Shield, AlertTriangle, ChevronDown, Lock, Sparkles, Zap, Settings, Plus, Minus, FolderOpen } from 'lucide-react';
 import { ConfirmationPanel } from './ConfirmationPanel';
@@ -27,7 +30,7 @@ import { SessionLogPanel } from './SessionLogPanel';
 import { RecoveryBanner } from './RecoveryBanner';
 import { PinnedPanel } from './PinnedPanel';
 import { PinnedPinMenu } from './PinnedPinMenu';
-import type { Message, AgentConfig } from '@agenthub/shared';
+import type { Message, AgentConfig, ConversationTurn } from '@agenthub/shared';
 import { safeContent, formatTokens } from '../lib/text';
 
 const EMPTY_MESSAGES: Message[] = [];
@@ -243,11 +246,13 @@ function ConflictRetryCard({ planId, taskIds, onRetry }: { planId: string; taskI
 
 /** Single message row with bubble, actions, agent info, and inline diff cards. Subscribes only to its own agentEvents. */
 const MessageItem = React.memo(function MessageItem({
-  msg, agentDisplayName, agentName, onCopy, onQuote, onPin, onRegenerate, onDelete, respondToPermission,
+  msg, agentDisplayName, agentName, onCopy, onQuote, onPin, onRegenerate, onDelete, onUndo, onDeleteTurn, onRegenerateTurn, respondToPermission, isGroupSession,
 }: {
   msg: Message; agentDisplayName?: string; agentName?: string;
   onCopy: () => void; onQuote: () => void; onPin: () => void; onRegenerate: () => void; onDelete: () => void;
+  onUndo?: () => void; onDeleteTurn?: () => void; onRegenerateTurn?: () => void;
   respondToPermission: (id: string, allowed: boolean) => void;
+  isGroupSession?: boolean;
 }) {
   // Subscribe only to this message's agent events — no global store pollution
   const events = useAppStore((s) => s.agentEvents[msg.id]);
@@ -273,7 +278,9 @@ const MessageItem = React.memo(function MessageItem({
         {msg.status !== 'streaming' && msg.status !== 'sending' && (
           <div className={`flex-shrink-0 flex items-start pt-2.5 ${msg.senderType === 'human' ? 'mr-3 order-first' : 'ml-1'}`}>
             <MessageActions message={msg} agentDisplayName={agentDisplayName}
-              onCopy={onCopy} onQuote={onQuote} onPin={onPin} onRegenerate={onRegenerate} onDelete={onDelete} />
+              onCopy={onCopy} onQuote={onQuote} onPin={onPin} onRegenerate={onRegenerate} onDelete={onDelete}
+              onUndo={onUndo} onDeleteTurn={onDeleteTurn} onRegenerateTurn={onRegenerateTurn}
+              isGroupSession={isGroupSession} />
           </div>
         )}
       </div>
@@ -394,6 +401,46 @@ export function ChatView() {
     activeSessionId ? (s.messages[activeSessionId] ?? EMPTY_MESSAGES) : EMPTY_MESSAGES,
     activeSessionId ? (s.taskPlans[activeSessionId] ?? EMPTY_PLANS) : EMPTY_PLANS,
   ]));
+  const turns = useAppStore((s) => s.turns);
+
+  // Group messages by turnId for Turn boundary display.
+  // Derives minimal Turn info from messages when store turns are not yet populated.
+  const messagesByTurn = useMemo(() => {
+    interface TurnGroup {
+      turnId: string | null;
+      turn: ConversationTurn | null;
+      messages: Message[];
+    }
+    const groups: TurnGroup[] = [];
+    let currentGroup: TurnGroup | null = null;
+
+    for (const msg of messages) {
+      const msgTurnId = msg.turnId || null;
+      if (!currentGroup || msgTurnId !== currentGroup.turnId) {
+        if (currentGroup) groups.push(currentGroup);
+        const storedTurn = msgTurnId ? turns[msgTurnId] : null;
+        currentGroup = {
+          turnId: msgTurnId,
+          turn: storedTurn ?? (msgTurnId ? {
+            id: msgTurnId,
+            sessionId: msg.sessionId,
+            sequence: groups.length + 1,
+            status: 'active' as const,
+            triggerMsgId: '',
+            contextEntryKeys: [],
+            planIds: [],
+            createdAt: msg.createdAt,
+          } : null),
+          messages: [],
+        };
+      }
+      currentGroup!.messages.push(msg);
+    }
+    if (currentGroup) groups.push(currentGroup);
+    return groups;
+  }, [messages, turns]);
+
+  const isGroupSession = activeSession?.type === 'group';
 
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
   const streamingMessageIds = useAppStore((s) => s.streamingMessages[activeSessionId ?? ''] ?? EMPTY_STR_ARR);
@@ -403,7 +450,7 @@ export function ChatView() {
   const [showScrollButton, setShowScrollButton] = useState(false);
   const prevMessageLenRef = useRef(messages.length);
   const setTaskPlan = useAppStore((s) => s.setTaskPlan);
-  const { send, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan, forceCompleteTask, forceFailTask } = useChat(activeSessionId ?? '');
+  const { send, ensureConnection, stopAgent, respondToPermission, confirmPlan, deleteMessage, regenerate, sendReplan, forceCompleteTask, forceFailTask, deleteTurn, regenerateTurn, undoAgentMessage } = useChat(activeSessionId ?? '');
   const addToast = useAppStore((s) => s.addToast);
   const [confirmedPlans, setConfirmedPlans] = useState<Set<string>>(() => new Set());
   const renderedPlanIds = useRef(new Set<string>());
@@ -767,8 +814,39 @@ export function ChatView() {
         ) : (
         <div className="flex-1 overflow-y-auto chat-scroll" ref={scrollContainerRef} onScroll={handleChatScroll}>
           <RecoveryBanner sessionId={activeSessionId!} />
-          {messages.map((msg: Message) => (
-            <React.Fragment key={msg.id}>
+          {messagesByTurn.map((group) => (
+            <div key={group.turnId || 'orphan'} className="turn-group">
+              {/* Turn boundary line */}
+              {group.turn && group.turn.sequence > 1 && (
+                <TurnBoundary
+                  turnNumber={group.turn.sequence}
+                  isActive={group.turn.status === 'active'}
+                  messageCount={group.messages.length}
+                />
+              )}
+
+              {/* Version switcher for turns with multiple versions */}
+              {group.turn && group.turn.parentTurnId && (
+                <VersionSwitcher
+                  turnId={group.turn.id}
+                  currentVersionTurnId={group.turn.id}
+                  onSwitchVersion={(version) => {
+                    useAppStore.getState().setTurnVersionView(group.turn!.id, version.turnId);
+                  }}
+                />
+              )}
+
+              {/* Messages in this turn group */}
+              {group.messages.map((msg: Message) => (
+                <React.Fragment key={msg.id}>
+                  {msg.turnStatus === 'undone' ? (
+                    <UndoPlaceholder
+                      agentDisplayName={msg.agentId ? agentMap.get(msg.agentId)?.displayName : undefined}
+                      agentId={msg.agentId || ''}
+                      timestamp={msg.createdAt}
+                    />
+                  ) : (
+                    <>
               <MessageItem
                 msg={msg}
                 agentDisplayName={msg.agentId ? agentMap.get(msg.agentId)?.displayName : undefined}
@@ -778,7 +856,17 @@ export function ChatView() {
                 onPin={() => handlePinMessage(msg)}
                 onRegenerate={() => handleRegenerateMessage(msg)}
                 onDelete={() => handleDeleteMessage(msg)}
+                onUndo={msg.senderType === 'agent' && msg.turnId && isGroupSession
+                  ? () => undoAgentMessage(msg.id)
+                  : undefined}
+                onDeleteTurn={msg.turnId
+                  ? () => deleteTurn(msg.turnId!)
+                  : undefined}
+                onRegenerateTurn={msg.turnId
+                  ? () => regenerateTurn(msg.turnId!)
+                  : undefined}
                 respondToPermission={respondToPermission}
+                isGroupSession={isGroupSession}
               />
               {/* Conflict retry button */}
               {msg.senderType === 'agent' && (msg as any).metadata?.conflictActions && msg.status === 'done' && (
@@ -798,7 +886,11 @@ export function ChatView() {
                   setConfirmedPlans={setConfirmedPlans} setTaskPlan={setTaskPlan} confirmPlan={confirmPlan}
                   renderedPlanIds={renderedPlanIds} />
               )}
-            </React.Fragment>
+                    </>
+                  )}
+                </React.Fragment>
+              ))}
+            </div>
           ))}
           <ArtifactFeed sessionId={activeSessionId!} />
           {/* Inline artifact preview — only newly created PPTX/HTML files */}

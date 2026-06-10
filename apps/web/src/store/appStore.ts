@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Session, Message, AgentConfig } from '@agenthub/shared';
+import type { Session, Message, AgentConfig, ConversationTurn, TurnMessageStatus } from '@agenthub/shared';
 
 export interface AgentEvent {
   id: string;
@@ -143,6 +143,13 @@ interface AppState {
   toasts: Toast[];
   addToast: (message: string, type?: 'error' | 'info' | 'success') => void;
   deleteMessage: (sessionId: string, msgId: string) => void;
+  // Turn state
+  turns: Record<string, ConversationTurn>;
+  selectedTurnVersion: Record<string, string>;  // turnId -> selected version turnId
+  setTurn: (turn: ConversationTurn) => void;
+  deleteTurnLocal: (sessionId: string, turnId: string) => void;
+  undoMessageLocal: (sessionId: string, messageId: string) => void;
+  setTurnVersionView: (turnId: string, versionTurnId: string) => void;
   removeToast: (id: string) => void;
   skillStats: Record<string, { skillName: string; count: number }[]>;
   planRecoveries: Record<string, { planId: string; planTitle: string; pendingCount: number; pendingTasks: { id: string; title: string; agentType: string }[] }[]>;
@@ -193,6 +200,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   toasts: [],
   skillStats: {},
   planRecoveries: {},
+  turns: {},
+  selectedTurnVersion: {},
 
   setToken: (token) => {
     if (token) localStorage.setItem('agenthub_token', token);
@@ -626,6 +635,45 @@ export const useAppStore = create<AppState>((set, get) => ({
   removeToast: (id) =>
     set((state) => ({
       toasts: state.toasts.filter((t) => t.id !== id),
+    })),
+
+  // Turn actions
+  setTurn: (turn) =>
+    set((state) => ({
+      turns: { ...state.turns, [turn.id]: turn },
+    })),
+
+  deleteTurnLocal: (sessionId, turnId) =>
+    set((state) => {
+      const sessionMsgs = (state.messages[sessionId] || []).filter(
+        (m) => m.turnId !== turnId,
+      );
+      const newTurns = { ...state.turns };
+      delete newTurns[turnId];
+      return {
+        turns: newTurns,
+        messages: { ...state.messages, [sessionId]: sessionMsgs },
+      };
+    }),
+
+  undoMessageLocal: (sessionId, messageId) =>
+    set((state) => {
+      const sessionMsgs = state.messages[sessionId] || [];
+      return {
+        messages: {
+          ...state.messages,
+          [sessionId]: sessionMsgs.map((m) =>
+            m.id === messageId
+              ? { ...m, turnStatus: 'undone' as TurnMessageStatus, content: '' }
+              : m,
+          ),
+        },
+      };
+    }),
+
+  setTurnVersionView: (turnId, versionTurnId) =>
+    set((state) => ({
+      selectedTurnVersion: { ...state.selectedTurnVersion, [turnId]: versionTurnId },
     })),
 
   setRecoveryPlans: (sessionId, plans) =>

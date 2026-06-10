@@ -17,6 +17,7 @@ import { agentCoordinator } from './AgentCoordinator.js';
 import { MilestoneBroadcaster } from './MilestoneBroadcaster.js';
 import { broadcast, clearRunningAgent, quoteBackfillMap, sessionAgentNames, sessionPermissionModes, permissionTimeouts, agentStates } from '../ws/state.js';
 import { takeMessageBeforeVersion, broadcastDiffSummary } from '../ws/diffBroadcast.js';
+import { TurnManager } from './TurnManager.js';
 
 interface QueueItem {
   sessionId: string;
@@ -699,6 +700,32 @@ class AgentRuntime {
             }
 
             this.tokenUsageMap.delete(agentMessageId);
+          }
+
+          // --- Turn completion check ---
+          // When an agent finishes, check if this was the last active agent in the Turn.
+          if (agentMessageId) {
+            try {
+              const msg = await prisma.message.findUnique({
+                where: { id: agentMessageId },
+                select: { turnId: true },
+              });
+              if (msg?.turnId) {
+                const activeCount = await prisma.message.count({
+                  where: {
+                    turnId: msg.turnId,
+                    senderType: 'agent',
+                    status: { in: ['streaming', 'queued'] },
+                  },
+                });
+                if (activeCount === 0) {
+                  await TurnManager.completeTurn(msg.turnId);
+                  console.log(`[AgentRuntime] Turn ${msg.turnId} completed`);
+                }
+              }
+            } catch (err: any) {
+              console.warn(`[AgentRuntime] Turn completion check failed: ${err.message}`);
+            }
           }
         }
         entry.currentSession = null;
