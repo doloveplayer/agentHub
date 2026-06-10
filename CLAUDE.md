@@ -73,6 +73,13 @@ git remote set-url origin git@github.com:doloveplayer/agentHub.git
 
 → 详细执行指南：使用 `/doc-archival` skill
 
+## 文档编写规范
+
+任何涉及飞书文档、技术架构文档、产品设计文档、ADR、Changelog 的编写或修改，必须遵循统一规范（Google / Apple / AWS / Stripe / Linear 标准提炼）。
+文档编写先构思表达逻辑，搜索代码实现事实，再进行补充编写 
+
+→ 详细执行指南：使用 `/doc-writing-standards` skill
+
 ## 代码审查工作流
 
 每完成一个功能板块，必须进行代码审查。不要跳过。

@@ -178,6 +178,15 @@ cd apps/web && npx vite
 
 ---
 
+## 文档
+
+深入了解 AgentHub 的设计理念和技术架构：
+
+- [**产品设计文档**](https://my.feishu.cn/docx/DZtpd6pXdoqMl9xdI5hctQwFnec?from=from_copylink) — 产品定位、功能设计、交互流程、用户场景
+- [**技术方案文档**](https://my.feishu.cn/docx/O2gUdRekRoqF0qx1RuQciKuunVC?from=from_copylink) — 系统架构、核心模块、DAG 编排、沙箱隔离方案
+
+---
+
 ## 开源协议
 
 本项目基于 [MIT License](LICENSE) 开源。
