@@ -204,9 +204,9 @@ cd apps/web && npx vite
 ## 功能演示
 
 <div align="center">
-  <img src="docs/gif/output_databoard(1).gif" alt="数据看板" width="48%">
+  <img src="https://github.com/doloveplayer/agentHub/releases/download/demo-v1/output_databoard(1).gif" alt="数据看板" width="48%">
   &nbsp;
-  <img src="docs/gif/output_ultra_hd(1).gif" alt="宣传网站" width="48%">
+  <img src="https://github.com/doloveplayer/agentHub/releases/download/demo-v1/output_ultra_hd(1).gif" alt="宣传网站" width="48%">
 </div>
 
 ---

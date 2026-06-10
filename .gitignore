@@ -71,3 +71,6 @@ TESTCASES.md
 testAgent/
 
 apps/api/uploads/*
+
+# Demo media (hosted on GitHub Releases)
+docs/gif/
