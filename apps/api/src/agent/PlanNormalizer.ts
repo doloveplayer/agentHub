@@ -55,7 +55,8 @@ export function normalizePlan(raw: Record<string, unknown>): Plan {
     }
   }
 
-  // No recognizable task structure
+  // No recognizable task structure — log raw keys for debugging
+  console.warn(`[PlanNormalizer] Unrecognized plan format, keys: ${Object.keys(raw).join(', ')}. Expected "tasks", "dag", or "phases" array.`);
   return { planTitle, summary, tasks: [] };
 }
 
@@ -112,6 +113,6 @@ export function assessRisk(plan: Plan): 'low' | 'high' {
  * bypass dedup and trigger duplicate dispatches.
  */
 export function planHash(plan: Plan): string {
-  const parts = plan.tasks.map((t) => `${t.id}:${t.agentType}:${t.title}`).sort().join(',');
-  return parts;
+  const ids = plan.tasks.map((t) => t.id).sort().join(',');
+  return `${plan.planTitle}|${ids}`;
 }

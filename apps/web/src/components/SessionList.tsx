@@ -248,17 +248,21 @@ export function SessionList({ onCloseMobile, iconMode, onToggleIconMode }: Props
         console.error('Failed to delete agent:', err);
       }
     } else {
-      // Delete single session
-      await api.deleteSession(id);
-      clearSessionMessages(id);
-      const remaining = sessions.filter((s) => s.id !== id);
-      setSessions(remaining);
-      // Also remove from archived list if present
-      setArchivedSessions(prev => prev.filter(s => s.id !== id));
-      if (activeSessionId === id) {
-        const idx = sessions.findIndex((s) => s.id === id);
-        const next = remaining[Math.min(idx, remaining.length - 1)];
-        setActiveSession(next?.id ?? null);
+      try {
+        await api.deleteSession(id);
+        clearSessionMessages(id);
+        const remaining = sessions.filter((s) => s.id !== id);
+        setSessions(remaining);
+        // Also remove from archived list if present
+        setArchivedSessions(prev => prev.filter(s => s.id !== id));
+        if (activeSessionId === id) {
+          const idx = sessions.findIndex((s) => s.id === id);
+          const next = remaining[Math.min(idx, remaining.length - 1)];
+          setActiveSession(next?.id ?? null);
+        }
+      } catch (err: any) {
+        console.error('Failed to delete session:', err);
+        useAppStore.getState().addToast(err?.message || 'Delete failed', 'error');
       }
     }
     setDeleteTarget(null);
@@ -621,7 +625,42 @@ export function SessionList({ onCloseMobile, iconMode, onToggleIconMode }: Props
             <p className="text-xs text-hub-tertiary mb-4">{deleteTarget.type === 'agent' ? `Delete "${deleteTarget.title}" and all its sessions? This cannot be undone.` : `Delete "${deleteTarget.title}"? This cannot be undone.`}</p>
             <div className="flex justify-end gap-2">
               <button onClick={cancelDelete} className="px-3 py-1.5 text-xs font-medium text-hub-secondary hover:bg-hub-hover rounded-md transition">Cancel</button>
-              <button onClick={deleteTarget.type === 'agent' ? confirmDelete : confirmDelete} className="px-3 py-1.5 text-xs font-medium bg-hub-danger text-white rounded-md hover:bg-hub-danger/80 transition">Delete</button>
+              <button onClick={async (e) => {
+                e.stopPropagation();
+                const target = deleteTarget;
+                if (!target) return;
+                setDeleteTarget(null);
+                try {
+                  if (target.type === 'session') {
+                    await api.deleteSession(target.id);
+                    const remaining = sessions.filter((s) => s.id !== target.id);
+                    setSessions(remaining);
+                    setArchivedSessions(prev => prev.filter(s => s.id !== target.id));
+                    if (activeSessionId === target.id) {
+                      const idx = sessions.findIndex((s) => s.id === target.id);
+                      const next = remaining[Math.min(idx, remaining.length - 1)];
+                      setActiveSession(next?.id ?? null);
+                    }
+                  } else {
+                    await api.deleteAgent(target.id);
+                    const remaining = sessions.filter((s) => {
+                      if (s.type !== 'solo') return true;
+                      return !(s.agents?.[0]?.agentId === target.id);
+                    });
+                    setSessions(remaining);
+                    api.getAgents().then(setAgents).catch(console.error);
+                    if (remaining.length < sessions.length) {
+                      const deletedSessions = sessions.filter(s => s.type === 'solo' && s.agents?.[0]?.agentId === target.id);
+                      if (deletedSessions.some(s => s.id === activeSessionId)) {
+                        setActiveSession(remaining[0]?.id ?? null);
+                      }
+                    }
+                  }
+                } catch (err: any) {
+                  console.error('Delete failed:', err);
+                  useAppStore.getState().addToast(err?.message || 'Delete failed', 'error');
+                }
+              }} className="px-3 py-1.5 text-xs font-medium bg-hub-danger text-white rounded-md hover:bg-hub-danger/80 transition">Delete</button>
             </div>
           </div>
         </div>

@@ -640,7 +640,7 @@ export function ChatView() {
 
   const hasRunningAgent = activeSessionId ? isSessionStreaming(activeSessionId) : false;
   const { width: panelWidth, onMouseDown: onPanelResize } = useResizablePanel({
-    defaultWidth: 288, minWidth: 220, maxWidth: 500, side: 'right',
+    defaultWidth: 288, minWidth: 220, maxWidth: 1250, side: 'right',
   });
 
   // Message action callbacks

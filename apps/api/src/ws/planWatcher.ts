@@ -141,10 +141,14 @@ async function dispatchPlan(
     if (retriesLeft > 0) {
       setTimeout(() => {
         dispatchPlan(sessionId, planPath, sandbox, retriesLeft - 1);
-      }, 500);
+      }, 800);
       return;
     }
     console.warn(`[PlanWatcher] Invalid JSON in plan.json for ${sessionId.slice(0, 8)} after retries, giving up`);
+    broadcast(sessionId, {
+      type: 'stream_error',
+      error: 'Plan file (plan.json) could not be parsed. Please ask Planner to rewrite it.',
+    });
     return;
   }
 
@@ -160,6 +164,10 @@ async function dispatchPlan(
   const validation = validateBasic(plan);
   if (!validation.valid) {
     console.warn(`[PlanWatcher] Invalid plan for ${sessionId.slice(0, 8)}: ${validation.reason}`);
+    broadcast(sessionId, {
+      type: 'stream_error',
+      error: `Plan parse failed: ${validation.reason}. Please ask Planner to rewrite plan.json with valid tasks.`,
+    });
     return;
   }
 
