@@ -329,7 +329,7 @@ const MessageItem = React.memo(function MessageItem({
                     </div>
                   )
                 )}
-                {msg.status === 'streaming' ? (
+                {msg.status !== 'done' && msg.status !== 'error' ? (
                   <div className="flex gap-2">
                     <button onClick={() => { setResolvedPermissions(prev => new Set(prev).add(pid)); respondToPermission(pid, true); }}
                       className="px-4 py-1.5 bg-hub-success hover:bg-hub-success/80 text-white text-xs rounded-md font-medium transition">Allow</button>
@@ -640,7 +640,7 @@ export function ChatView() {
 
   const hasRunningAgent = activeSessionId ? isSessionStreaming(activeSessionId) : false;
   const { width: panelWidth, onMouseDown: onPanelResize } = useResizablePanel({
-    defaultWidth: 288, minWidth: 220, maxWidth: 500, side: 'right',
+    defaultWidth: 288, minWidth: 220, maxWidth: 1500, side: 'right',
   });
 
   // Message action callbacks

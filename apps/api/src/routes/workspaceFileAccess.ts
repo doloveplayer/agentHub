@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { dirname, relative, resolve, sep } from 'path';
+import { config } from '../config.js';
 
 export interface WorkspaceFileMetadata {
   path: string;
@@ -11,7 +12,7 @@ export type WorkspacePathResult =
   | { ok: true; absolutePath: string; workspacePath: string }
   | { ok: false; status: 400 | 403; error: string };
 
-export function getWorkspaceRoot(sessionId: string, baseDir = resolve(process.cwd(), '..', '..', '.sandboxes')): string {
+export function getWorkspaceRoot(sessionId: string, baseDir = config.sandbox.root): string {
   return resolve(baseDir, sessionId);
 }
 

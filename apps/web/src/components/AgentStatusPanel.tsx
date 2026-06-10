@@ -36,6 +36,7 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
   const [fullscreenFilePath, setFullscreenFilePath] = useState<string | null>(null);
   const [fullscreenDiff, setFullscreenDiff] = useState<{ from: string; to: string } | null>(null);
+  const [htmlPreviewSrc, setHtmlPreviewSrc] = useState<string | null>(null);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const addToast = useAppStore((s) => s.addToast);
   const agentEvents = useAppStore((s) => s.agentEvents);
@@ -176,6 +177,15 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
           )}
         </div>
       )}
+      {activeTab === 'Preview' && activeSessionId ? (
+        <div className="flex-1 min-h-0 flex flex-col">
+          {htmlPreviewSrc ? (
+            <iframe srcDoc={htmlPreviewSrc} className="flex-1 w-full border-0 bg-white" sandbox="allow-scripts allow-forms allow-same-origin" />
+          ) : (
+            <PreviewFrame sessionId={activeSessionId} onSelection={onPreviewSelection} />
+          )}
+        </div>
+      ) : (
       <div className="flex-1 overflow-y-auto panel-scroll p-3">
         {activeTab === 'Agents' && viewMode === 'aggregated' && (
           <AggregatedSummary
@@ -232,13 +242,32 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
               onDownloadPath={downloadWorkspacePath}
             />
             {selectedFilePath && (
-              <WorkspaceFileEditor
-                sessionId={activeSessionId}
-                path={selectedFilePath}
-                onClose={() => setSelectedFilePath(null)}
-                onToggleFullscreen={() => setFullscreenFilePath(selectedFilePath)}
-                onDownloadOriginal={(path) => downloadWorkspacePath(path, 'file')}
-              />
+              <>
+                {/\.html?$/i.test(selectedFilePath) && (
+                  <div className="flex gap-2 px-3">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const result = await api.downloadWorkspacePath(activeSessionId!, selectedFilePath, 'utf-8') as any;
+                          const text = typeof result === 'string' ? result : (result.blob ? await (result.blob as Blob).text() : String(result));
+                          setHtmlPreviewSrc(text);
+                          setActiveTab('Preview');
+                        } catch { addToast('Failed to load preview', 'error'); }
+                      }}
+                      className="px-3 py-1.5 text-xs bg-hub-accent text-white rounded-md hover:bg-hub-accent-hover transition"
+                    >
+                      🔍 Preview
+                    </button>
+                  </div>
+                )}
+                <WorkspaceFileEditor
+                  sessionId={activeSessionId}
+                  path={selectedFilePath}
+                  onClose={() => setSelectedFilePath(null)}
+                  onToggleFullscreen={() => setFullscreenFilePath(selectedFilePath)}
+                  onDownloadOriginal={(path) => downloadWorkspacePath(path, 'file')}
+                />
+              </>
             )}
             {fullscreenFilePath && (
               <WorkspaceFileEditor
@@ -269,10 +298,8 @@ export function AgentStatusPanel({ sessionAgents, onStopAgent, onReplanTask, onP
         {activeTab === 'Tasks' && (
           <ActivePlanView onReplanTask={onReplanTask} onForceComplete={onForceComplete} onForceFail={onForceFail} />
         )}
-        {activeTab === 'Preview' && activeSessionId && (
-          <PreviewFrame sessionId={activeSessionId} onSelection={onPreviewSelection} />
-        )}
       </div>
+      )}
     </div>
   );
 }

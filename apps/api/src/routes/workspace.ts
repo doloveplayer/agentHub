@@ -3,6 +3,7 @@ import { readdirSync, statSync, realpathSync, existsSync } from "fs";
 import { resolve, basename } from "path";
 import { authMiddleware } from "../middleware/auth.js";
 import { prisma } from "../db/prisma.js";
+import { config } from "../config.js";
 import { WorkspaceManager } from "../agent/WorkspaceManager.js";
 import { realWorkspacePaths } from "../ws/state.js";
 import {
@@ -21,7 +22,7 @@ import {
 const workspace = new Hono();
 workspace.use("*", authMiddleware);
 
-const SANDBOX_ROOT = resolve(process.cwd(), "..", "..", ".sandboxes");
+const SANDBOX_ROOT = config.sandbox.root;
 
 export interface FileNode {
   name: string;

@@ -62,7 +62,7 @@ export function normalizePlan(raw: Record<string, unknown>): Plan {
 function normalizeTask(t: Record<string, unknown>): PlanTask {
   return {
     id: String(t.id || t.taskId || t.task_id || ''),
-    title: String(t.title || t.subject || t.name || ''),
+    title: String(t.title || t.subject || t.name || t.id || t.taskId || ''),
     description: String(t.description || t.desc || ''),
     agentType: stripSessionSuffix(String(t.agentType || t.agent_type || t.agent || '')),
     dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn.map(String)
@@ -88,9 +88,6 @@ export function validateBasic(plan: Plan): { valid: true } | { valid: false; rea
   for (const task of plan.tasks) {
     if (!task.id.trim()) {
       return { valid: false, reason: `task has empty id: ${JSON.stringify(task.title)}` };
-    }
-    if (!task.title.trim()) {
-      return { valid: false, reason: `task ${task.id} has empty title` };
     }
     if (!task.agentType.trim()) {
       return { valid: false, reason: `task ${task.id} has empty agentType` };
