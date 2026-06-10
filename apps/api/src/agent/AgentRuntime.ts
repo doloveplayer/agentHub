@@ -630,7 +630,7 @@ class AgentRuntime {
                 planTitle: plan.planTitle,
                 summary: plan.summary,
                 risk: 'low',
-                requiresConfirmation: true,
+                requiresConfirmation: false, // Auto-dispatch — permission mode gates per-action
                 tasks: plan.tasks.map((t) => ({
                   taskId: t.id,
                   planId,

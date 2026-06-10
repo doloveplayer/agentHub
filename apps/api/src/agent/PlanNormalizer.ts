@@ -55,7 +55,8 @@ export function normalizePlan(raw: Record<string, unknown>): Plan {
     }
   }
 
-  // No recognizable task structure
+  // No recognizable task structure — log raw keys for debugging
+  console.warn(`[PlanNormalizer] Unrecognized plan format, keys: ${Object.keys(raw).join(', ')}. Expected "tasks", "dag", or "phases" array.`);
   return { planTitle, summary, tasks: [] };
 }
 

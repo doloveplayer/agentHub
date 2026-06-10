@@ -4,6 +4,9 @@ set -euo pipefail
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+# Use local Node.js v20 (system default v18 lacks import.meta.dirname)
+export PATH="$HOME/.local/nodejs/bin:$PATH"
+
 TIMESTAMP=$(date '+%Y-%m-%d_%H-%M-%S')
 LOG_DIR="$PROJECT_ROOT/logs/$TIMESTAMP"
 mkdir -p "$LOG_DIR"
