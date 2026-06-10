@@ -192,6 +192,15 @@ cd apps/web && npx vite
 - [**产品设计文档**](https://my.feishu.cn/docx/DZtpd6pXdoqMl9xdI5hctQwFnec?from=from_copylink) — 产品定位、功能设计、交互流程、用户场景
 - [**技术方案文档**](https://my.feishu.cn/docx/O2gUdRekRoqF0qx1RuQciKuunVC?from=from_copylink) — 系统架构、核心模块、DAG 编排、沙箱隔离方案
 
+**[`docs/`](./docs) 目录** 包含 AI 协作开发过程的完整记录：
+
+- [**ADR**](./docs/adr) — 架构决策记录，记录关键技术选型与设计取舍
+- [**Changelog**](./docs/changelog) — 按月功能迭代总结，追溯版本演进
+- [**Plans**](./docs/plans) — 活跃的功能实现计划，AI 子 Agent 执行参考
+- [**Architecture**](./docs/architecture) — 架构设计文档与测试报告
+- [**Security**](./docs/security) — 安全审查报告与整改记录
+- [**Onboarding**](./docs/onboarding.md) — 新开发者入门指南
+
 ---
 
 ## 开源协议
