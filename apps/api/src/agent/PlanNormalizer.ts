@@ -108,8 +108,10 @@ export function assessRisk(plan: Plan): 'low' | 'high' {
 
 /**
  * Compute a stable hash for dedup — same plan should produce same hash.
+ * Uses task IDs + agentTypes only, NOT planTitle, so title updates don't
+ * bypass dedup and trigger duplicate dispatches.
  */
 export function planHash(plan: Plan): string {
-  const ids = plan.tasks.map((t) => t.id).sort().join(',');
-  return `${plan.planTitle}|${ids}`;
+  const ids = plan.tasks.map((t) => `${t.id}:${t.agentType}`).sort().join(',');
+  return ids;
 }

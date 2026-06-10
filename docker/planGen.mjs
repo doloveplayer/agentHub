@@ -31,12 +31,13 @@ const { z } = await import(zodPath);
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 function parseArgs(args) {
-  const opts = { mode: '', input: '', dryRun: false, help: false, output: '/workspace/plan.json' };
+  const opts = { mode: '', input: '', dryRun: false, help: false, output: '/workspace/plan.json', agentTypes: '' };
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
       case '--mode': opts.mode = args[++i] || ''; break;
       case '--input': opts.input = args[++i] || ''; break;
       case '--output': opts.output = args[++i] || '/workspace/plan.json'; break;
+      case '--agent-types': opts.agentTypes = args[++i] || ''; break;
       case '--dry-run': opts.dryRun = true; break;
       case '--help': case '-h': opts.help = true; break;
     }
@@ -60,15 +61,19 @@ Modes:
             Stage N tasks auto-depend on all tasks in stages 0..N-1
 
 Options:
-  --mode <mode>    Plan mode (required)
-  --input <path>   Read input from file instead of stdin
-  --output <path>  Output path (default: /workspace/plan.json)
-  --dry-run        Write to stdout instead of file
-  --help, -h       Show this help
+  --mode <mode>         Plan mode (required)
+  --input <path>        Read input from file instead of stdin
+  --output <path>       Output path (default: /workspace/plan.json)
+  --agent-types <list>  Comma-separated allowed agentType values from cap-inventory
+  --dry-run             Write to stdout instead of file
+  --help, -h            Show this help
 
 All modes produce the same canonical plan.json format:
   { planTitle, summary, tasks: [{ id, title, description, agentType,
      dependsOn, expectedOutput, risk }] }
+
+IMPORTANT: Always pass --agent-types with the Schema Reference values from
+cap-inventory.md. This prevents silent agent mismatches at dispatch time.
 `);
 }
 
@@ -229,6 +234,25 @@ function validateCrossTaskRefs(tasks) {
   return errors;
 }
 
+/**
+ * Validate agentType against the allowed list from cap-inventory.
+ * When --agent-types is provided, every task's agentType must match exactly
+ * one of the allowed values. Returns an array of error strings (empty = valid).
+ */
+function validateAgentTypes(tasks, allowedRaw) {
+  if (!allowedRaw || !allowedRaw.trim()) return []; // No restriction — skip
+  const allowed = new Set(allowedRaw.split(',').map(s => s.trim()).filter(Boolean));
+  if (allowed.size === 0) return [];
+  const errors = [];
+  for (let i = 0; i < tasks.length; i++) {
+    const t = tasks[i];
+    if (!allowed.has(t.agentType)) {
+      errors.push(`agentType: task ${t.id || i} has agentType "${t.agentType}" which is not in the allowed list: [${[...allowed].join(', ')}]`);
+    }
+  }
+  return errors;
+}
+
 // ===== ERROR FORMATTING =====================================================
 
 function formatZodError(result, mode) {
@@ -330,6 +354,17 @@ async function main() {
     console.error(`[planGen] VALIDATION FAILED (mode: ${opts.mode}):`);
     for (const e of crossErrors) console.error(`  - ${e}`);
     console.error('\nFix errors above and retry.');
+    process.exit(1);
+  }
+
+  // Agent-type validation (only when --agent-types is provided)
+  const agentTypeErrors = validateAgentTypes(validatedTasks, opts.agentTypes);
+  if (agentTypeErrors.length > 0) {
+    console.error(`[planGen] VALIDATION FAILED — agentType mismatch:`);
+    for (const e of agentTypeErrors) console.error(`  - ${e}`);
+    console.error('\nYour agentType values MUST match the Schema Reference in cap-inventory.md.');
+    console.error('Do NOT append session IDs or suffixes to agentType.');
+    console.error('Fix errors above and retry.');
     process.exit(1);
   }
 

@@ -316,6 +316,17 @@ sessions.delete('/:id', async (c) => {
 
   await prisma.session.delete({ where: { id: sessionId } });
 
+  // Clean up orphaned records from tables that lack cascade FK constraints
+  try {
+    await Promise.all([
+      prisma.sessionCheckpoint.deleteMany({ where: { sessionId } }),
+      prisma.planExecution.deleteMany({ where: { sessionId } }),
+      prisma.contextEntryRecord.deleteMany({ where: { sessionId } }),
+    ]);
+  } catch (err: any) {
+    console.error(`[api] Failed to clean up orphaned session records for ${sessionId}: ${err.message}`);
+  }
+
   // Cleanup orphaned system agents: group-chat agents that are no longer
   // in any session should be removed. Solo agents (type='user') are kept —
   // they are reused across solo sessions.

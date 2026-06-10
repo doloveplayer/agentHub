@@ -884,7 +884,9 @@ export async function dispatchTasksToAgents(
   const assignments: DagTaskAssignment[] = [];
 
   for (const task of tasks) {
-    const candidates = agentsByType.get(task.agentType.toLowerCase()) || [];
+    // Normalize agentType: strip session suffix so "code-agent-9ef33efe" → "code-agent"
+    const normalizedType = task.agentType.replace(/-\w{6,}$/, '').toLowerCase();
+    let candidates = agentsByType.get(normalizedType) || agentsByType.get(task.agentType.toLowerCase()) || [];
     if (candidates.length === 0) {
       const suggested = findClosestAgent(task.agentType, sessionAgents.map(sa => sa.agent));
       if (suggested) {
@@ -904,6 +906,12 @@ export async function dispatchTasksToAgents(
           availableAgentTypes,
           message: `No agent matches "${task.agentType}". Available in session: ${availableAgentTypes.join(', ')}`,
         });
+        // Mark task as blocked rather than silently dropping it
+        const execution = planExecutions.get(planKey(sessionId, planId));
+        if (execution) {
+          const item = execution.tasks.get(task.id);
+          if (item) { item.status = 'blocked'; item.lastError = `No agent matches "${task.agentType}"`; }
+        }
         continue;
       }
     }

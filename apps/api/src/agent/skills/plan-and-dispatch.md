@@ -16,15 +16,18 @@ Triggered when the user requests task planning. Read cap-inventory.md first, the
 1. **Read** cap-inventory.md in your skills directory to see available agents
 2. **Analyze** the user's requirement against each agent's capabilities
 3. **Decompose** into tasks that respect agent constraints
-4. **Generate** plan.json using planGen:
+4. **Note the Schema Reference** section in cap-inventory.md — these are the EXACT agentType values you must use
+5. **Generate** plan.json using planGen with --agent-types:
 
    ```bash
-   echo '<plan-json>' | node /usr/local/bin/planGen.mjs --mode flat
+   echo '<plan-json>' | node /usr/local/bin/planGen.mjs --mode flat --agent-types 'code-agent,review-agent,test-agent,uiagent'
    ```
+
+   Replace the --agent-types list with the actual Schema Reference values from cap-inventory.md.
 
    If validation fails, the error output tells you exactly what to fix — correct your JSON and retry. On success, `/workspace/plan.json` is written and the Hub auto-detects and dispatches it.
 
-5. **Announce** completion — the Hub auto-dispatches
+6. **Announce** completion — the Hub auto-dispatches
 
 ## Plan Modes
 

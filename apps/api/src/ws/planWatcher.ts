@@ -5,6 +5,7 @@ import { broadcast } from './state.js';
 import type { TaskDispatchNode } from './state.js';
 import { DagPersistence } from '../agent/DagPersistence.js';
 import { addDispatchedPlan } from './planHandlers.js';
+import { planExecutions } from './taskDispatcher.js';
 
 const watchers = new Map<string, FSWatcher>();
 const pollingIntervals = new Map<string, NodeJS.Timeout>();
@@ -162,27 +163,31 @@ async function dispatchPlan(
     return;
   }
 
-  // Check if this plan matches an existing DAG execution (by planTitle).
-  // If so, reconcile Planner's status updates → DAG state instead of re-dispatching.
-  const { reconcilePlanWithDag } = await import('./taskDispatcher.js');
-  const reconciled = reconcilePlanWithDag(sessionId, plan.planTitle, plan.tasks.map((t) => ({
-    id: t.id,
-    status: t.risk,
-  })), sandbox);
+  // Check if this plan's task IDs match an existing DAG execution.
+  // If so, this is the same plan being updated (e.g. title change) — skip
+  // re-dispatch. The DAG execution already tracks task completion in memory.
+  const newTaskIds = new Set(plan.tasks.map((t) => t.id));
+  let matchedExistingPlanId: string | null = null;
+  for (const [key, execution] of planExecutions) {
+    if (!key.startsWith(sessionId)) continue;
+    const existingIds = new Set([...execution.tasks.keys()]);
+    if (newTaskIds.size === existingIds.size && [...newTaskIds].every((id) => existingIds.has(id))) {
+      matchedExistingPlanId = execution.planId;
+      break;
+    }
+  }
 
-  const planTasks = (parsed.tasks as Array<Record<string, unknown>>) || [];
-  const reconciled2 = reconcilePlanWithDag(sessionId, plan.planTitle, planTasks.map((t: Record<string, unknown>) => ({
-    id: String(t.id || t.taskId || t.task_id || ''),
-    status: String(t.status || ''),
-  })), sandbox);
-
-  if (reconciled > 0 || reconciled2 > 0) {
-    console.log(`[PlanWatcher] Reconciled ${reconciled + reconciled2} tasks for session ${sessionId.slice(0, 8)}`);
+  if (matchedExistingPlanId) {
+    console.log(`[PlanWatcher] Plan matches existing DAG execution ${matchedExistingPlanId}, updating title and skipping re-dispatch`);
     processedHashes.set(sessionId, hash);
+    // Update planTitle on the existing execution (Planner may have refined it)
+    const execution = planExecutions.get(`${sessionId}:${matchedExistingPlanId}`);
+    if (execution) execution.planTitle = plan.planTitle;
     broadcast(sessionId, {
       type: 'plan_reconciled',
       planTitle: plan.planTitle,
-      reconciled: reconciled + reconciled2,
+      planId: matchedExistingPlanId,
+      reconciled: 0,
     });
     return;
   }
@@ -234,7 +239,28 @@ async function dispatchPlan(
     priority: 'medium',
   }));
 
-  const { dispatchTasksToAgents } = await import('./taskDispatcher.js');
+  const { dispatchTasksToAgents, resolveAgentNameInSession } = await import('./taskDispatcher.js');
+
+  // Pre-dispatch agentType validation: warn if any task references an agent
+  // not currently in the session. The dispatcher will still try fuzzy matching,
+  // but this gives early feedback when the Planner used wrong agentType values.
+  const unresolvableTypes = new Set<string>();
+  for (const t of tasks) {
+    const normalized = t.agentType.replace(/-\w{6,}$/, '');
+    if (!resolveAgentNameInSession(sessionId, normalized) && !resolveAgentNameInSession(sessionId, t.agentType)) {
+      unresolvableTypes.add(t.agentType);
+    }
+  }
+  if (unresolvableTypes.size > 0) {
+    console.warn(`[PlanWatcher] Plan ${planId} has ${unresolvableTypes.size} unresolvable agentType(s): ${[...unresolvableTypes].join(', ')}`);
+    broadcast(sessionId, {
+      type: 'plan_warning',
+      planId,
+      planTitle: plan.planTitle,
+      message: `Some agentTypes may not match session agents: ${[...unresolvableTypes].join(', ')}. Tasks for missing agents will be blocked until the agent is added.`,
+      unresolvableTypes: [...unresolvableTypes],
+    });
+  }
 
   // Prevent double-dispatch if user also clicks "Confirm All" in frontend panel
   addDispatchedPlan(planId);
