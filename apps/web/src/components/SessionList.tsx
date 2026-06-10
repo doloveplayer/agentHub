@@ -62,7 +62,10 @@ export function SessionList({ onCloseMobile, iconMode, onToggleIconMode }: Props
   useEffect(() => {
     if (loadState === 'done' && activeSessionId && !initialLoadDone.current) {
       initialLoadDone.current = true;
-      handleSelect(activeSessionId);
+      handleSelect(activeSessionId).catch((err) => {
+        console.warn('[SessionList] Stale activeSessionId, clearing:', activeSessionId, err);
+        setActiveSession(null);
+      });
     }
   }, [loadState, activeSessionId]);
 

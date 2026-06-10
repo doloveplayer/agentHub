@@ -670,6 +670,13 @@ export function useChat(sessionId: string) {
       ws.onclose = (evt) => {
         console.log('[WS] Connection closed:', evt.code, evt.reason);
         if (socketPool.get(sessionId) === ws) socketPool.delete(sessionId);
+        // 4003 = session deleted or access revoked → clear stale activeSessionId
+        if (evt.code === 4003) {
+          const store = useAppStore.getState();
+          if (store.activeSessionId === sessionId) {
+            store.setActiveSession(null);
+          }
+        }
         // Auto-reconnect on non-manual close (not 1000=normal, 4001=user not found, 4003=access denied)
         if (evt.code !== 1000 && evt.code !== 4001 && evt.code !== 4003) {
           reconnectTimerRef.current = setTimeout(() => {
@@ -720,6 +727,7 @@ export function useChat(sessionId: string) {
           senderType: 'human',
           content,
           status: 'done',
+          turnId: result.turnId ?? null,
           createdAt: new Date().toISOString(),
         });
       } else {
@@ -735,6 +743,7 @@ export function useChat(sessionId: string) {
           agentId: am.agentId || undefined,
           content: '',
           status: 'streaming',
+          turnId: result.turnId ?? null,
           createdAt: new Date().toISOString(),
         };
         addMessage(sessionId, agentMsg);

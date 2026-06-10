@@ -20,6 +20,7 @@ const sendSchema = z.object({
     message: 'content must not be blank',
   }),
   mentions: z.array(mentionSchema).optional(),
+  parentTurnId: z.string().uuid().optional().nullable(),
 });
 
 // POST /send — send a message in a session
@@ -113,7 +114,7 @@ chat.post('/send', async (c) => {
     data: { updatedAt: new Date() },
   });
 
-  return c.json({ userMessageId: userMessage.id, agentMessages }, 201);
+  return c.json({ userMessageId: userMessage.id, turnId: turn.id, agentMessages }, 201);
 });
 
 // DELETE /messages/:id — Turn-level delete: finds the Turn containing this message and deletes it

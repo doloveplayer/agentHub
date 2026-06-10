@@ -389,6 +389,15 @@ export function ChatView() {
   const agents = useAppStore((s) => s.agents);
   const setAgents = useAppStore((s) => s.setAgents);
 
+  const setActiveSession = useAppStore((s) => s.setActiveSession);
+
+  // Clear stale activeSessionId (e.g. after DB reset) when sessions are already loaded
+  useEffect(() => {
+    if (activeSessionId && sessions.length > 0 && !sessions.find((s) => s.id === activeSessionId)) {
+      setActiveSession(null);
+    }
+  }, [activeSessionId, sessions, setActiveSession]);
+
   // Ensure agents are loaded when entering a session (handles race with loadSessions)
   useEffect(() => {
     if (agents.length === 0 && activeSessionId) {
@@ -440,6 +449,8 @@ export function ChatView() {
     return groups;
   }, [messages, turns]);
 
+  // Determine active session — used by messagesByTurn memo and isGroupSession below
+  const activeSession = sessions.find((s) => s.id === activeSessionId);
   const isGroupSession = activeSession?.type === 'group';
 
   const isSessionStreaming = useAppStore((s) => s.isSessionStreaming);
@@ -587,7 +598,6 @@ export function ChatView() {
   }, [agents]);
 
   // Determine session type and participants — memoized
-  const activeSession = sessions.find((s) => s.id === activeSessionId);
   const sessionAgents = useMemo((): AgentConfig[] => {
     return (activeSession as any)?.agents
       ?.map((sa: any) => agentMap.get(sa.agentId) ?? {
@@ -746,7 +756,9 @@ export function ChatView() {
     });
   }, [activeSessionId, addToast]);
 
-  if (!activeSessionId) {
+  // Show empty state when no session selected, or when the active session
+  // doesn't exist in the loaded sessions list (e.g. deleted after DB reset).
+  if (!activeSessionId || (sessions.length > 0 && !activeSession)) {
     return (
       <div className="flex-1 flex items-center justify-center text-hub-muted">
         <div className="text-center">

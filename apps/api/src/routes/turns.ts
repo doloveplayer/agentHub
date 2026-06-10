@@ -18,7 +18,7 @@ turns.use('*', authMiddleware);
  * Query: ?keepUndone=true to preserve undone messages as placeholders.
  */
 turns.delete('/:turnId', async (c) => {
-  const user = c.get('user');
+  const { userId } = c.get('user');
   const turnId = c.req.param('turnId');
   const keepUndone = c.req.query('keepUndone') === 'true';
 
@@ -27,7 +27,7 @@ turns.delete('/:turnId', async (c) => {
     include: { session: { select: { userId: true } } },
   });
   if (!turn) return c.json({ error: 'Turn not found' }, 404);
-  if (turn.session.userId !== user.id) return c.json({ error: 'Forbidden' }, 403);
+  if (turn.session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
 
   const result = await TurnManager.deleteTurn(turnId, {
     keepUndoneAsPlaceholder: keepUndone,
@@ -52,7 +52,7 @@ turns.delete('/:turnId', async (c) => {
  * Body: { editContent?: string }
  */
 turns.post('/:turnId/regenerate', async (c) => {
-  const user = c.get('user');
+  const { userId } = c.get('user');
   const turnId = c.req.param('turnId');
   const body = await c.req.json().catch(() => ({}));
   const { editContent } = body as { editContent?: string };
@@ -62,7 +62,7 @@ turns.post('/:turnId/regenerate', async (c) => {
     include: { session: { select: { userId: true } } },
   });
   if (!turn) return c.json({ error: 'Turn not found' }, 404);
-  if (turn.session.userId !== user.id) return c.json({ error: 'Forbidden' }, 403);
+  if (turn.session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
 
   const result = await TurnManager.regenerateTurn(turnId, editContent);
 
@@ -85,7 +85,7 @@ turns.post('/:turnId/regenerate', async (c) => {
  * Soft-undo a single agent message within a Turn.
  */
 turns.post('/:turnId/messages/:messageId/undo', async (c) => {
-  const user = c.get('user');
+  const { userId } = c.get('user');
   const turnId = c.req.param('turnId');
   const messageId = c.req.param('messageId');
 
@@ -95,7 +95,7 @@ turns.post('/:turnId/messages/:messageId/undo', async (c) => {
     include: { session: { select: { userId: true } } },
   });
   if (!turn) return c.json({ error: 'Turn not found' }, 404);
-  if (turn.session.userId !== user.id) return c.json({ error: 'Forbidden' }, 403);
+  if (turn.session.userId !== userId) return c.json({ error: 'Forbidden' }, 403);
 
   const result = await TurnManager.undoAgentMessage(messageId);
 

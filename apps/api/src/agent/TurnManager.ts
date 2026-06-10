@@ -328,11 +328,11 @@ export class TurnManager {
 
     // Walk up to the root
     while (current!.parentTurnId) {
-      const parent = await prisma.conversationTurn.findUnique({
+      const nextParent = await prisma.conversationTurn.findUnique({
         where: { id: current!.parentTurnId },
-      });
-      if (!parent) break;
-      current = parent;
+      }) as typeof current;
+      if (!nextParent) break;
+      current = nextParent;
     }
 
     const root = current as unknown as ConversationTurn;

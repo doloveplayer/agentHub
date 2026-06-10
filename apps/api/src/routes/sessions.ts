@@ -257,6 +257,8 @@ sessions.get('/:id', async (c) => {
           agentId: true,
           content: true,
           status: true,
+          turnId: true,
+          turnStatus: true,
           createdAt: true,
           inputTokens: true,
           outputTokens: true,
