@@ -277,8 +277,9 @@ export function useChat(sessionId: string) {
             case 'plan_archived':
               if (data.planId) {
                 addToast(`Plan ${data.planId.slice(0, 8)} 归档完成 · ${data.experienceCount || 0} 条经验`, 'success');
-                // Trim task plans: keep only the latest 3 completed plans per session
                 const store = useAppStore.getState();
+                store.removeTaskPlan(sessionId, data.planId);
+                // Also trim older plans: keep only the latest 3 completed plans per session
                 const sessionPlans = store.taskPlans[sessionId] ?? {};
                 const planIds = Object.keys(sessionPlans);
                 if (planIds.length > 3) {

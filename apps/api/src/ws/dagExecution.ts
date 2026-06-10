@@ -24,6 +24,7 @@ export interface DagExecutionState {
   planTitle?: string;
   tasks: Map<string, DagExecutionItem>;
   summaryBroadcasted?: boolean;
+  archived?: boolean;
 }
 
 export function createDagExecutionState(

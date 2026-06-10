@@ -1477,6 +1477,7 @@ function maybeBroadcastPlanSummary(sessionId: string, execution: DagExecutionSta
         archiveTasks, failedArchiveTasks,
         sandbox?.hostWorkDir || '', archiveStartTime,
       ).then(({ manifest, experiences }) => {
+        execution.archived = true;
         console.log(`[archive] Plan ${execution.planId} archived: ${manifest.tasks.length} tasks, ${experiences.length} experiences`);
         broadcast(sessionId, {
           type: 'plan_archived',

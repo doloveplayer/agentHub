@@ -112,6 +112,6 @@ export function assessRisk(plan: Plan): 'low' | 'high' {
  * bypass dedup and trigger duplicate dispatches.
  */
 export function planHash(plan: Plan): string {
-  const ids = plan.tasks.map((t) => `${t.id}:${t.agentType}`).sort().join(',');
-  return ids;
+  const parts = plan.tasks.map((t) => `${t.id}:${t.agentType}:${t.title}`).sort().join(',');
+  return parts;
 }

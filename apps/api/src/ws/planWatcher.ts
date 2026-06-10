@@ -163,13 +163,15 @@ async function dispatchPlan(
     return;
   }
 
-  // Check if this plan's task IDs match an existing DAG execution.
+  // Check if this plan's task IDs match an existing non-archived DAG execution.
   // If so, this is the same plan being updated (e.g. title change) — skip
   // re-dispatch. The DAG execution already tracks task completion in memory.
+  // Archived plans are excluded — they represent completed cycles, not in-flight work.
   const newTaskIds = new Set(plan.tasks.map((t) => t.id));
   let matchedExistingPlanId: string | null = null;
   for (const [key, execution] of planExecutions) {
     if (!key.startsWith(sessionId)) continue;
+    if (execution.archived) continue;
     const existingIds = new Set([...execution.tasks.keys()]);
     if (newTaskIds.size === existingIds.size && [...newTaskIds].every((id) => existingIds.has(id))) {
       matchedExistingPlanId = execution.planId;
